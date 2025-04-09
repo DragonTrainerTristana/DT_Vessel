@@ -41,6 +41,9 @@ public class AgentFighter : Agent
     private float[] currentRayHits;    // 현재 레이캐스트 결과
     private float[] previousRayHits;   // 이전 레이캐스트 결과
 
+    // 통신 관련 변수
+    public int maxCommunicationTargets = 4; // 최대 통신 대상 수
+
     // 추가된 컴포넌트 참조
     private COLREGsHandler colregsHandler;
     private VesselCommunicationSystem communicationSystem;
@@ -53,10 +56,10 @@ public class AgentFighter : Agent
         rb = GetComponent<Rigidbody>();
         colregsHandler = GetComponent<COLREGsHandler>();
         communicationSystem = GetComponent<VesselCommunicationSystem>();
-        
+
         previousRayHits = new float[numberOfRays];
         currentRayHits = new float[numberOfRays];
-        
+
         // 초기값 설정
         for (int i = 0; i < numberOfRays; i++)
         {
@@ -76,7 +79,7 @@ public class AgentFighter : Agent
 
         this.gameObject.transform.position = myInitialPos.position;
         this.gameObject.transform.rotation = myInitialPos.rotation;
-        
+
         initialGoalDistance = Vector3.Distance(myGoal.transform.position, this.gameObject.transform.position);
         goalDistance = UnityEngine.Vector3.Distance(myGoal.transform.position, this.gameObject.transform.position);
         preDistance = goalDistance;
@@ -101,9 +104,9 @@ public class AgentFighter : Agent
             AddReward(-0.1f * goalDistance);
             EndEpisode();
         }
-        
+
         goalDistance = UnityEngine.Vector3.Distance(myGoal.transform.position, this.gameObject.transform.position);
-    
+
         float powerAction = actions.ContinuousActions[0];  // 추진력 액션 (-1 ~ 1)
         float rudderAction = actions.ContinuousActions[1]; // 방향타 액션 (-1 ~ 1)
 
@@ -114,7 +117,7 @@ public class AgentFighter : Agent
 
         if (rb.velocity.magnitude == 0)
         {
-            AddReward(-0.01f); 
+            AddReward(-0.01f);
         }
 
         if (goalDistance <= 1.0f)
@@ -156,7 +159,7 @@ public class AgentFighter : Agent
             AddReward(colregsReward);
         }
     }
-    
+
     /// <summary>
     /// 에이전트의 움직임을 처리하는 함수입니다.
     /// </summary>
@@ -174,7 +177,7 @@ public class AgentFighter : Agent
         {
             rb.velocity *= 0.98f;
         }
-            
+
         Quaternion turnRotation = Quaternion.Euler(0f, rudderSpeed, 0f);
         rb.MoveRotation(rb.rotation * turnRotation);
 
@@ -182,7 +185,7 @@ public class AgentFighter : Agent
         rbVelocity = force.z;
         rb.AddForce(force, ForceMode.VelocityChange);
     }
-    
+
     /// <summary>
     /// 에이전트의 관측 정보를 수집하는 함수입니다.
     /// </summary>
@@ -190,9 +193,9 @@ public class AgentFighter : Agent
     public override void CollectObservations(VectorSensor sensor)
     {
         float angleStep = fieldOfView / numberOfRays;
-        Vector3 forward = transform.forward; 
+        Vector3 forward = transform.forward;
         Vector3 startDirection = Quaternion.Euler(0, -fieldOfView / 2, 0) * forward;
-        
+
         bool vesselDetected = false;
         float closestVesselDistance = rayLength;
         Vector3 closestVesselDirection = Vector3.zero;
@@ -209,7 +212,7 @@ public class AgentFighter : Agent
             {
                 distance = hit.distance;
                 currentRayHits[i] = distance;
-                
+
                 // 다른 선박을 감지했을 때
                 if (hit.collider.CompareTag("Vessel"))
                 {
@@ -227,25 +230,33 @@ public class AgentFighter : Agent
                 currentRayHits[i] = rayLength;
             }
 
-            sensor.AddObservation(distance / rayLength); 
+            sensor.AddObservation(distance / rayLength);
         }
-        
+
         // 가장 가까운 선박에 대한 COLREGs 상황 판단 - COLREGsHandler 컴포넌트에 위임
         if (vesselDetected && closestVessel != null)
         {
             colregsHandler.DetermineCOLREGsSituation(closestVesselDirection, closestVessel, closestVesselDistance);
-            
-            // 현재 COLREGs 상황을 관측에 추가 (원-핫 인코딩)
-            sensor.AddOneHot((int)colregsHandler.currentSituation, 5); // None 포함 5가지 상태
+
+            // 현재 COLREGs 상황을 관측에 추가 (원-핫 인코딩 직접 구현)
+            int situationIndex = (int)colregsHandler.currentSituation;
+            for (int i = 0; i < 5; i++) // None 포함 5가지 상태
+            {
+                sensor.AddObservation(i == situationIndex ? 1.0f : 0.0f);
+            }
         }
         else
         {
             colregsHandler.currentSituation = COLREGsHandler.COLREGsSituation.None;
-            // 상황이 없을 때 원-핫 인코딩
-            sensor.AddOneHot(0, 5);
+            // 상황이 없을 때 원-핫 인코딩 (직접 구현)
+            sensor.AddObservation(1.0f); // None(0)에 1, 나머지 0
+            for (int i = 1; i < 5; i++)
+            {
+                sensor.AddObservation(0.0f);
+            }
         }
 
-        sensor.AddObservation(transform.forward); 
+        sensor.AddObservation(transform.forward);
         sensor.AddObservation(transform.rotation.y);
         UnityEngine.Vector3 relativePosition = myGoal.transform.position - this.gameObject.transform.position;
         sensor.AddObservation(relativePosition.magnitude);
@@ -253,30 +264,34 @@ public class AgentFighter : Agent
 
         // 통신으로 받은 데이터를 관측에 추가 - VesselCommunicationSystem 컴포넌트의 결과 활용
         int communicationTargetCount = communicationSystem.GetCommunicationTargetCount();
-        
+
         for (int i = 0; i < maxCommunicationTargets; i++)
         {
             if (i < communicationTargetCount)
             {
                 VesselCommunicationSystem.CommunicationData data = communicationSystem.GetReceivedData(i);
-                
+
                 // 각 통신 대상에 대한 상대적 위치 (3)
                 Vector3 relativePos = data.position - transform.position;
                 sensor.AddObservation(relativePos.normalized);
-                
+
                 // 상대적 속도 (3)
                 Vector3 relativeVel = data.velocity - rb.velocity;
                 sensor.AddObservation(relativeVel.normalized);
-                
+
                 // 상대 선박의 방향 (3)
                 sensor.AddObservation(data.forward);
-                
+
                 // 상대 선박의 제어 상태 (2)
                 sensor.AddObservation(data.rudderSpeed);
                 sensor.AddObservation(data.power);
-                
-                // 상대 선박의 COLREGs 상황 (원-핫 인코딩) (5)
-                sensor.AddOneHot((int)data.situation, 5);
+
+                // 상대 선박의 COLREGs 상황 (원-핫 인코딩 직접 구현) (5)
+                int sitIndex = (int)data.situation;
+                for (int j = 0; j < 5; j++)
+                {
+                    sensor.AddObservation(j == sitIndex ? 1.0f : 0.0f);
+                }
             }
             else
             {
@@ -286,7 +301,13 @@ public class AgentFighter : Agent
                 sensor.AddObservation(Vector3.zero); // 방향 (3)
                 sensor.AddObservation(0f); // 러더 속도 (1)
                 sensor.AddObservation(0f); // 파워 (1)
-                sensor.AddOneHot(0, 5); // COLREGs 상황 (5)
+
+                // COLREGs 상황 (5) - 없음 상태로 원-핫 인코딩
+                sensor.AddObservation(1.0f); // None에 1
+                for (int j = 1; j < 5; j++)
+                {
+                    sensor.AddObservation(0.0f);
+                }
             }
         }
     }
@@ -305,14 +326,14 @@ public class AgentFighter : Agent
         for (int i = 0; i < numberOfRays; i++)
         {
             Vector3 rayDirection = Quaternion.Euler(0, angleStep * i, 0) * startDirection;
-            
+
             // 레이 색상 - 충돌 감지된 레이는 빨간색, 아니면 녹색
             if (currentRayHits != null && i < currentRayHits.Length && currentRayHits[i] < rayLength)
             {
                 Gizmos.color = Color.red;
                 Gizmos.DrawRay(transform.position, rayDirection * currentRayHits[i]);
                 Gizmos.color = Color.yellow;
-                Gizmos.DrawRay(transform.position + rayDirection * currentRayHits[i], 
+                Gizmos.DrawRay(transform.position + rayDirection * currentRayHits[i],
                                rayDirection * (rayLength - currentRayHits[i]));
             }
             else
