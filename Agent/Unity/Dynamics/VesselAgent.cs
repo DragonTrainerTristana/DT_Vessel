@@ -13,16 +13,21 @@ public class VesselAgent : Agent
     
     [Header("보상 파라미터")]
     public float arrivalReward = 15.0f;      // 목표 도달 보상
-    public float goalDistanceCoef = 2.5f;     // 목표 거리 감소에 대한 보상 계수
+    public float goalDistanceCoef = 5.0f;     // 목표 거리 감소에 대한 보상 계수 (증가됨)
     public float collisionPenalty = -15.0f;   // 충돌 패널티
-    public float angularVelocityPenalty = -0.1f; // 회전 속도 패널티
+    public float angularVelocityPenalty = -0.05f; // 회전 속도 패널티 (완화됨)
     public float maxAngularVelocity = 0.7f;   // 패널티를 받기 시작하는 회전 속도 임계값
     public float goalReachedDistance = 5.0f;  // 목표 도달로 간주하는 거리
     public float collisionRadius = 2.0f;      // 충돌 감지 거리
+    public float movementRewardCoef = 0.01f;  // 기본 이동 보상 계수 (새로 추가)
+    public float stalematePenalty = -2.0f;    // 정지 상태 패널티 (강화됨)
     
     // 목표 위치 변수
-    private Vector3 goalPosition;
-    private bool hasGoal = false;
+    [Header("목표 위치 정보")]
+    public Vector3 goalPosition;
+    public bool hasGoal = false;
+    public string goalPointName;  // 목표 지점 이름 추가
+    public int goalPointIndex;    // 목표 지점 인덱스 추가
     private Vector3 previousPosition;
     private float previousDistanceToGoal;
     
@@ -38,6 +43,14 @@ public class VesselAgent : Agent
     private Rigidbody rb;
     private Vector3 initialPosition;
     private Quaternion initialRotation;
+    
+    [Header("레이더 설정")]
+    private VesselRadar radar;
+    public float radarRange = 100f;           // 레이더 감지 거리 설정
+    public LayerMask radarDetectionLayers;    // 레이더가 감지할 레이어 설정
+    
+    [Header("좌표계 설정")]
+    public Vector3 originReference = Vector3.zero;  // 원점 기준 좌표
     
     /// <summary>
     /// 에이전트 초기화 함수
@@ -78,6 +91,21 @@ public class VesselAgent : Agent
         {
             Debug.LogWarning("VesselManager를 찾을 수 없습니다. 자동 재스폰이 작동하지 않을 수 있습니다.");
         }
+        
+        // 랜덤 속도 계수 설정 범위 확대
+        float speedMultiplier = Random.Range(0.8f, 1.8f);
+        vesselDynamics.maxSpeed *= speedMultiplier;
+        
+        // 레이더 컴포넌트 추가 및 설정
+        radar = gameObject.GetComponent<VesselRadar>();
+        if (radar == null)
+        {
+            radar = gameObject.AddComponent<VesselRadar>();
+        }
+        
+        // 레이더 설정 적용
+        radar.radarRange = radarRange;
+        radar.detectionLayers = radarDetectionLayers;
     }
     
     /// <summary>
@@ -90,7 +118,10 @@ public class VesselAgent : Agent
         isCollided = false;
         collisionTimer = 0f;
         
-        // 매니저가 있으면 새 목표 요청
+        // 초기 속도에 랜덤성 추가
+        float initialSpeed = Random.Range(0.2f, 0.5f) * vesselDynamics.maxSpeed;
+        vesselDynamics.SetTargetSpeed(initialSpeed);
+        
         if (vesselManager != null)
         {
             vesselManager.RespawnVessel(gameObject);
@@ -102,7 +133,6 @@ public class VesselAgent : Agent
             transform.rotation = initialRotation;
         }
         
-        // 현재 위치 저장 (거리 변화 계산용)
         previousPosition = transform.position;
         if (hasGoal)
         {
@@ -133,36 +163,76 @@ public class VesselAgent : Agent
     /// </summary>
     private void CalculateReward()
     {
-        // 1. 목표 도달 보상 (g_r)
+        // 1. 기본 이동 보상
+        float currentSpeed = vesselDynamics.CurrentSpeed;
+        float movementReward = (currentSpeed / vesselDynamics.maxSpeed) * movementRewardCoef;
+        AddReward(movementReward);
+        
+        // 2. 목표 도달 보상
         if (hasGoal)
         {
             float currentDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
             
-            // 목표에 도달했는지 확인
+            // 디버그 로그 추가
+            Debug.Log($"{gameObject.name} - 현재 위치: {transform.position}, 목표 위치: {goalPosition}, 거리: {currentDistanceToGoal}");
+            
             if (currentDistanceToGoal < goalReachedDistance)
             {
-                // 목표 도달 보상
                 AddReward(arrivalReward);
                 Debug.Log($"{gameObject.name}이(가) 목표에 도달했습니다! 보상: {arrivalReward}");
                 EndEpisode();
                 return;
             }
             
-            // 목표에 가까워지는 것에 대한 보상
+            // 목표 방향으로의 진행 보상 계산
             float distanceChange = previousDistanceToGoal - currentDistanceToGoal;
+            Debug.Log($"{gameObject.name} - 이전 거리: {previousDistanceToGoal}, 현재 거리: {currentDistanceToGoal}, 변화량: {distanceChange}");
+            
             float goalProgressReward = goalDistanceCoef * distanceChange;
             AddReward(goalProgressReward);
             
-            // 이동 거리 저장
+            // 목표를 향한 방향 정렬 보상
+            Vector3 directionToGoal = (goalPosition - transform.position).normalized;
+            float alignment = Vector3.Dot(transform.forward, directionToGoal);
+            AddReward(alignment * 0.01f);
+            
             previousDistanceToGoal = currentDistanceToGoal;
         }
         
-        // 2. 회전 패널티 (w_r)
+        // 3. 회전 패널티 (완화됨)
         float angularVelocity = Mathf.Abs(vesselDynamics.YawRate);
         if (angularVelocity > maxAngularVelocity)
         {
-            float rotationPenalty = angularVelocityPenalty * angularVelocity;
+            float rotationPenalty = angularVelocityPenalty * angularVelocity * 0.5f;
             AddReward(rotationPenalty);
+        }
+        
+        // 4. COLREGs 규칙 준수 보상 (가중치 증가)
+        foreach (var otherVessel in FindObjectsOfType<VesselAgent>())
+        {
+            if (otherVessel == this) continue;
+
+            var situation = COLREGsHandler.AnalyzeSituation(
+                transform.position, transform.forward, vesselDynamics.CurrentSpeed,
+                otherVessel.transform.position, otherVessel.transform.forward, otherVessel.vesselDynamics.CurrentSpeed
+            );
+
+            if (situation != COLREGsHandler.CollisionSituation.None)
+            {
+                var (recommendedRudder, recommendedSpeed) = COLREGsHandler.GetRecommendedAction(
+                    situation,
+                    vesselDynamics.CurrentSpeed,
+                    otherVessel.transform.position - transform.position
+                );
+
+                float complianceReward = COLREGsHandler.EvaluateCompliance(
+                    situation,
+                    vesselDynamics.RudderAngle,
+                    recommendedRudder
+                ) * 1.5f;  // COLREGs 준수 보상 증가
+
+                AddReward(complianceReward);
+            }
         }
     }
     
@@ -192,21 +262,14 @@ public class VesselAgent : Agent
             return;
             
         // 장애물인지 확인
-        if (collidedObject.CompareTag("Obstacle") || collidedObject.CompareTag("Vessel"))
+        if (collidedObject.CompareTag("Obstacle"))
         {
             // 충돌 패널티 적용
             AddReward(collisionPenalty);
             Debug.Log($"{gameObject.name}이(가) {collidedObject.name}와(과) 충돌! 패널티: {collisionPenalty}");
             
-            // 충돌 상태 설정
-            isCollided = true;
-            collisionTimer = 0f;
-            
-            // 심각한 충돌이면 에피소드 종료 (선택 사항)
-            if (Random.value < 0.3f) // 30% 확률로 에피소드 종료
-            {
-                EndEpisode();
-            }
+            // 에피소드 즉시 종료
+            EndEpisode();
         }
     }
     
@@ -215,78 +278,102 @@ public class VesselAgent : Agent
     /// </summary>
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 속도 관련 정보
-        sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);
-        
-        // 방향 및 회전 관련 정보
-        sensor.AddObservation(transform.forward.x);
-        sensor.AddObservation(transform.forward.z);
-        sensor.AddObservation(vesselDynamics.YawRate / vesselDynamics.maxTurnRate);
-        
-        // 제어 입력 상태
-        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate);
-        
-        // 목표 관련 관측 추가 (목표가 있는 경우)
-        if (hasGoal)
+        if (!hasGoal)
         {
-            // 목표까지의 방향 (로컬 좌표계)
-            Vector3 directionToGoal = transform.InverseTransformDirection(goalPosition - transform.position);
-            sensor.AddObservation(directionToGoal.normalized.x);
-            sensor.AddObservation(directionToGoal.normalized.z);
-            
-            // 목표까지의 거리 (정규화)
-            float distanceToGoal = Vector3.Distance(transform.position, goalPosition);
-            sensor.AddObservation(Mathf.Clamp01(distanceToGoal / 500f)); // 500m 기준으로 정규화
+            Debug.LogWarning($"{gameObject.name}: 목표가 설정되지 않았습니다.");
+            return;
         }
-        else
+
+        // 레이더 스캔 실행
+        radar.ScanRadar();
+
+        // 1. 레이더 관측값 (360도)
+        for (int i = 0; i < 360; i++)
         {
-            // 목표가 없는 경우 0으로 채움
-            sensor.AddObservation(0);
-            sensor.AddObservation(0);
-            sensor.AddObservation(0);
+            float distance = radar.GetDistanceAtAngle(i);
+            sensor.AddObservation(distance / radar.radarRange);  // 정규화된 거리
         }
+
+        // 2. 선박 상태
+        sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);  // 정규화된 속도
+        sensor.AddObservation(transform.forward.x);  // 선수 방향 x
+        sensor.AddObservation(transform.forward.z);  // 선수 방향 z
+        sensor.AddObservation(vesselDynamics.YawRate / vesselDynamics.maxTurnRate);  // 정규화된 회전 속도
+
+        // 3. 제어 입력
+        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate);  // 정규화된 타각
+
+        // 4. 목표 관련
+        Vector3 directionToGoal = (goalPosition - transform.position).normalized;
+        sensor.AddObservation(directionToGoal.x);  // 목표 방향 x
+        sensor.AddObservation(directionToGoal.z);  // 목표 방향 z
+        sensor.AddObservation(Vector3.Distance(transform.position, goalPosition) / radarRange);  // 정규화된 목표 거리
+
+        // COLREGs 상황 및 위험도 관측
+        var (mostDangerousSituation, maxRisk, dangerousVessel) = 
+            COLREGsHandler.AnalyzeMostDangerousVessel(this, radar.GetDetectedVessels());
+
+        // COLREGs 상황을 개별 bool값으로 관측값에 추가
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f);
         
-        // 레이캐스트로 장애물 감지 (선택적)
-        AddRaycastObservations(sensor);
+        // 위험도 추가
+        sensor.AddObservation(maxRisk);
+
+        // 통신 데이터 추가
+        var communication = GetComponent<VesselCommunication>();
+        if (communication != null)
+        {
+            var commData = communication.GetCommunicationData();
+            foreach (var data in commData.Values)
+            {
+                // 상대적 위치
+                Vector3 relativePos = data.position - transform.position;
+                sensor.AddObservation(relativePos.normalized);
+                sensor.AddObservation(Vector3.Distance(transform.position, data.position));
+
+                // 상대 선박의 속도와 방향
+                sensor.AddObservation(data.velocity.normalized);
+                sensor.AddObservation(data.speed);
+
+                // COLREGs 상황
+                sensor.AddObservation((int)data.currentCOLREGsSituation);
+                sensor.AddObservation(data.riskLevel);
+            }
+
+            // 통신하는 선박 수가 4개 미만인 경우 나머지는 0으로 채움
+            int remainingVessels = maxCommunicationPartners - commData.Count;
+            for (int i = 0; i < remainingVessels; i++)
+            {
+                // 더미 데이터 추가 (모두 0)
+                sensor.AddObservation(Vector3.zero); // 상대적 위치
+                sensor.AddObservation(0f);          // 거리
+                sensor.AddObservation(Vector3.zero); // 속도 방향
+                sensor.AddObservation(0f);          // 속도
+                sensor.AddObservation(0);           // COLREGs 상황
+                sensor.AddObservation(0f);          // 위험도
+            }
+        }
     }
     
     /// <summary>
-    /// 레이캐스트 관측 추가 (장애물 감지용)
+    /// 월드 좌표를 로컬 좌표로 변환
     /// </summary>
-    private void AddRaycastObservations(VectorSensor sensor)
+    public Vector3 WorldToLocalPosition(Vector3 worldPos)
     {
-        // 8방향 레이캐스트 (전방 및 45도 간격)
-        float rayLength = 50f;
-        int rayCount = 8;
-        
-        for (int i = 0; i < rayCount; i++)
-        {
-            float angle = i * 360f / rayCount;
-            Vector3 direction = Quaternion.Euler(0, angle, 0) * transform.forward;
-            
-            Ray ray = new Ray(transform.position, direction);
-            RaycastHit hit;
-            
-            if (Physics.Raycast(ray, out hit, rayLength))
-            {
-                // 장애물까지의 정규화된 거리
-                float normalizedDistance = hit.distance / rayLength;
-                sensor.AddObservation(normalizedDistance);
-                
-                // 디버깅용 레이
-                Debug.DrawRay(ray.origin, ray.direction * hit.distance, Color.red);
-            }
-            else
-            {
-                // 장애물이 없으면 1.0 (최대 거리)
-                sensor.AddObservation(1.0f);
-                
-                // 디버깅용 레이
-                Debug.DrawRay(ray.origin, ray.direction * rayLength, Color.green);
-            }
-        }
+        return worldPos - originReference;
     }
-    
+
+    /// <summary>
+    /// 로컬 좌표를 월드 좌표로 변환
+    /// </summary>
+    public Vector3 LocalToWorldPosition(Vector3 localPos)
+    {
+        return localPos + originReference;
+    }
+
     /// <summary>
     /// 목표 위치 설정 메서드
     /// </summary>
@@ -295,6 +382,7 @@ public class VesselAgent : Agent
         goalPosition = position;
         hasGoal = true;
         previousDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
+        Debug.Log($"새로운 목표 설정 - 월드 좌표: {position}, 로컬 좌표: {WorldToLocalPosition(position)}");
     }
     
     /// <summary>
@@ -322,26 +410,25 @@ public class VesselAgent : Agent
     /// 교착 상태 감지 (오랫동안 제자리에 있으면 패널티)
     /// </summary>
     private float stalemateTimer = 0f;
-    private float stalemateThreshold = 30f; // 30초 정지 상태 임계값
+    private float stalemateThreshold = 20f; // 정지 상태 임계값 감소
     private Vector3 lastPosition;
-    private float positionThreshold = 1.0f; // 1m 이상 이동해야 정지 상태가 아님
+    private float positionThreshold = 1.0f;
+    private float lastStaleCheckTime = 0f;
+    private float staleCheckInterval = 5f;  // 더 자주 체크
     
     private void DetectStalemate()
     {
         if (!hasGoal) return;
         
-        // 10초마다 위치 확인
-        if (Time.time - stalemateTimer > 10f)
+        if (Time.time - lastStaleCheckTime >= staleCheckInterval)
         {
             float movedDistance = Vector3.Distance(transform.position, lastPosition);
             
             if (movedDistance < positionThreshold)
             {
-                // 이동이 거의 없으면 패널티
-                AddReward(-1.0f);
-                Debug.Log($"{gameObject.name}이(가) 정지 상태입니다. 패널티 적용");
+                AddReward(stalematePenalty);
+                Debug.Log($"{gameObject.name}이(가) 정지 상태입니다. 패널티: {stalematePenalty}");
                 
-                // 너무 오래 정지해 있으면 에피소드 종료
                 if (Time.time - stalemateTimer > stalemateThreshold)
                 {
                     Debug.Log($"{gameObject.name}이(가) 너무 오래 정지해 있습니다. 에피소드 종료");
@@ -350,10 +437,11 @@ public class VesselAgent : Agent
             }
             else
             {
-                // 충분히 이동했으면 타이머 리셋
                 stalemateTimer = Time.time;
-                lastPosition = transform.position;
             }
+            
+            lastStaleCheckTime = Time.time;
+            lastPosition = transform.position;
         }
     }
     
@@ -368,5 +456,43 @@ public class VesselAgent : Agent
             Gizmos.DrawLine(transform.position, goalPosition);
             Gizmos.DrawSphere(goalPosition, 1f);
         }
+    }
+
+    /// <summary>
+    /// 레이더 범위 설정
+    /// </summary>
+    public void SetRadarRange(float range)
+    {
+        radarRange = range;
+        if (radar != null)
+        {
+            radar.radarRange = range;
+        }
+    }
+
+    /// <summary>
+    /// 레이더 감지 레이어 설정
+    /// </summary>
+    public void SetRadarDetectionLayers(LayerMask layers)
+    {
+        radarDetectionLayers = layers;
+        if (radar != null)
+        {
+            radar.detectionLayers = layers;
+        }
+    }
+
+    void Start()
+    {
+        // 기존 코드...
+        
+        // Audio Listener 제거
+        AudioListener audioListener = GetComponent<AudioListener>();
+        if (audioListener != null)
+        {
+            Destroy(audioListener);
+        }
+        
+        // 기존 코드...
     }
 }
