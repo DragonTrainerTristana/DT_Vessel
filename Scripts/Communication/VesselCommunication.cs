@@ -4,7 +4,6 @@ using System.Linq;
 
 public struct VesselCommunicationData
 {
-    public int vesselId;                     // 선박 식별자
     public Vector3 position;                 // 위치
     public Vector3 velocity;                 // 속도 벡터 (방향 포함)
     public float speed;                      // 속도 크기
@@ -99,7 +98,7 @@ public class VesselCommunication : MonoBehaviour
         // 상대적 거리 계산
         float relativeDistance = Vector3.Distance(transform.position, otherVessel.transform.position);
         
-        // 데이터 저장
+        // 데이터 저장 (ID는 여전히 필요하지만, 통신 데이터에는 포함하지 않음)
         receivedData[otherId] = otherData;
     }
 
@@ -179,7 +178,6 @@ public class VesselCommunication : MonoBehaviour
         
         return new VesselCommunicationData
         {
-            vesselId = gameObject.GetInstanceID(),
             position = transform.position,
             velocity = myVesselAgent.vesselDynamics.GetComponent<Rigidbody>().velocity,
             speed = myVesselAgent.vesselDynamics.CurrentSpeed,

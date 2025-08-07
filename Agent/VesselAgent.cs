@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
@@ -45,9 +46,12 @@ public class VesselAgent : Agent
     private Quaternion initialRotation;
     
     [Header("레이더 설정")]
-    private VesselRadar radar;
+    public VesselRadar radar;
     public float radarRange = 100f;           // 레이더 감지 거리 설정
     public LayerMask radarDetectionLayers;    // 레이더가 감지할 레이어 설정
+    
+    [Header("통신 설정")]
+    public int maxCommunicationPartners = 4;  // 최대 통신 가능 선박 수
     
     [Header("좌표계 설정")]
     public Vector3 originReference = Vector3.zero;  // 원점 기준 좌표
@@ -163,9 +167,9 @@ public class VesselAgent : Agent
     /// </summary>
     private void CalculateReward()
     {
-        // 1. 기본 이동 보상
+        // 1. 기본 이동 보상 (정규화)
         float currentSpeed = vesselDynamics.CurrentSpeed;
-        float movementReward = (currentSpeed / vesselDynamics.maxSpeed) * movementRewardCoef;
+        float movementReward = (currentSpeed / vesselDynamics.maxSpeed) * 0.1f;  // 스케일 조정
         AddReward(movementReward);
         
         // 2. 목표 도달 보상
@@ -173,28 +177,22 @@ public class VesselAgent : Agent
         {
             float currentDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
             
-            // 디버그 로그 추가
-            Debug.Log($"{gameObject.name} - 현재 위치: {transform.position}, 목표 위치: {goalPosition}, 거리: {currentDistanceToGoal}");
-            
             if (currentDistanceToGoal < goalReachedDistance)
             {
-                AddReward(arrivalReward);
-                Debug.Log($"{gameObject.name}이(가) 목표에 도달했습니다! 보상: {arrivalReward}");
+                AddReward(10.0f);  // 목표 도달 보상 감소
                 EndEpisode();
                 return;
             }
             
-            // 목표 방향으로의 진행 보상 계산
+            // 목표 방향으로의 진행 보상 계산 (정규화)
             float distanceChange = previousDistanceToGoal - currentDistanceToGoal;
-            Debug.Log($"{gameObject.name} - 이전 거리: {previousDistanceToGoal}, 현재 거리: {currentDistanceToGoal}, 변화량: {distanceChange}");
-            
-            float goalProgressReward = goalDistanceCoef * distanceChange;
+            float goalProgressReward = Mathf.Clamp(distanceChange * 2.0f, -1.0f, 1.0f);  // 스케일 조정
             AddReward(goalProgressReward);
             
-            // 목표를 향한 방향 정렬 보상
+            // 목표를 향한 방향 정렬 보상 (정규화)
             Vector3 directionToGoal = (goalPosition - transform.position).normalized;
             float alignment = Vector3.Dot(transform.forward, directionToGoal);
-            AddReward(alignment * 0.01f);
+            AddReward(alignment * 0.1f);  // 스케일 조정
             
             previousDistanceToGoal = currentDistanceToGoal;
         }
@@ -203,11 +201,11 @@ public class VesselAgent : Agent
         float angularVelocity = Mathf.Abs(vesselDynamics.YawRate);
         if (angularVelocity > maxAngularVelocity)
         {
-            float rotationPenalty = angularVelocityPenalty * angularVelocity * 0.5f;
+            float rotationPenalty = -0.1f * (angularVelocity / maxAngularVelocity);  // 정규화된 패널티
             AddReward(rotationPenalty);
         }
         
-        // 4. COLREGs 규칙 준수 보상 (가중치 증가)
+        // 4. COLREGs 규칙 준수 보상 (정규화)
         foreach (var otherVessel in FindObjectsOfType<VesselAgent>())
         {
             if (otherVessel == this) continue;
@@ -229,7 +227,7 @@ public class VesselAgent : Agent
                     situation,
                     vesselDynamics.RudderAngle,
                     recommendedRudder
-                ) * 1.5f;  // COLREGs 준수 보상 증가
+                ) * 0.5f;  // COLREGs 준수 보상 정규화
 
                 AddReward(complianceReward);
             }
@@ -261,8 +259,8 @@ public class VesselAgent : Agent
         if (isCollided)
             return;
             
-        // 장애물인지 확인
-        if (collidedObject.CompareTag("Obstacle"))
+        // 장애물 또는 다른 선박과의 충돌 확인
+        if (collidedObject.CompareTag("Obstacle") || collidedObject.GetComponent<VesselAgent>() != null)
         {
             // 충돌 패널티 적용
             AddReward(collisionPenalty);
@@ -287,11 +285,25 @@ public class VesselAgent : Agent
         // 레이더 스캔 실행
         radar.ScanRadar();
 
-        // 1. 레이더 관측값 (360도)
-        for (int i = 0; i < 360; i++)
+        // 1. 섹터별 레이더 관측값 (8섹터 × 3정보 = 24차원)
+        for (int sector = 0; sector < 8; sector++) // 8개 섹터 (45도씩)
         {
-            float distance = radar.GetDistanceAtAngle(i);
-            sensor.AddObservation(distance / radar.radarRange);  // 정규화된 거리
+            float minDist = float.MaxValue;
+            float maxDist = 0f;
+            float sumDist = 0f;
+            
+            // 각 섹터 내 45개 각도 분석
+            for (int angle = 0; angle < 45; angle++)
+            {
+                float distance = radar.GetDistanceAtAngle(sector * 45 + angle);
+                minDist = Mathf.Min(minDist, distance);
+                maxDist = Mathf.Max(maxDist, distance);
+                sumDist += distance;
+            }
+            
+            sensor.AddObservation(minDist / radar.radarRange);        // 섹터 내 최근접 거리
+            sensor.AddObservation((sumDist / 45) / radar.radarRange); // 섹터 내 평균 거리
+            sensor.AddObservation(maxDist / radar.radarRange);        // 섹터 내 최원거리
         }
 
         // 2. 선박 상태
@@ -300,10 +312,7 @@ public class VesselAgent : Agent
         sensor.AddObservation(transform.forward.z);  // 선수 방향 z
         sensor.AddObservation(vesselDynamics.YawRate / vesselDynamics.maxTurnRate);  // 정규화된 회전 속도
 
-        // 3. 제어 입력
-        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate);  // 정규화된 타각
-
-        // 4. 목표 관련
+        // 3. 목표 관련
         Vector3 directionToGoal = (goalPosition - transform.position).normalized;
         sensor.AddObservation(directionToGoal.x);  // 목표 방향 x
         sensor.AddObservation(directionToGoal.z);  // 목표 방향 z
@@ -313,47 +322,124 @@ public class VesselAgent : Agent
         var (mostDangerousSituation, maxRisk, dangerousVessel) = 
             COLREGsHandler.AnalyzeMostDangerousVessel(this, radar.GetDetectedVessels());
 
-        // COLREGs 상황을 개별 bool값으로 관측값에 추가
-        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f);
-        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f);
-        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f);
-        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f);
+        // COLREGs 상황을 강조하기 위해 3번 반복 (4차원 → 12차원)
+        for (int repeat = 0; repeat < 3; repeat++)
+        {
+            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f);
+            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f);
+            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f);
+            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f);
+        }
         
-        // 위험도 추가
-        sensor.AddObservation(maxRisk);
+        // 위험도를 강조하기 위해 3번 반복 (1차원 → 3차원)
+        for (int repeat = 0; repeat < 3; repeat++)
+        {
+            sensor.AddObservation(maxRisk);
+        }
+    }
 
-        // 통신 데이터 추가
+    /// <summary>
+    /// 목표 정보 수집 (Python에서 obs[1]로 접근)
+    /// </summary>
+    public void CollectGoalObservations(VectorSensor sensor)
+    {
+        if (hasGoal)
+        {
+            Vector3 directionToGoal = (goalPosition - transform.position).normalized;
+            sensor.AddObservation(directionToGoal.x);  // 목표 방향 x
+            sensor.AddObservation(directionToGoal.z);  // 목표 방향 z
+        }
+        else
+        {
+            sensor.AddObservation(0f);  // 목표 방향 x
+            sensor.AddObservation(0f);  // 목표 방향 z
+        }
+    }
+
+    /// <summary>
+    /// 속도 정보 수집 (Python에서 obs[2]로 접근)
+    /// </summary>
+    public void CollectSpeedObservations(VectorSensor sensor)
+    {
+        sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);  // 정규화된 속도
+        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate);  // 정규화된 타각
+    }
+
+    /// <summary>
+    /// 이웃 정보 수집 (Python에서 obs[3]로 접근)
+    /// </summary>
+    public void CollectNeighborObservations(VectorSensor sensor)
+    {
         var communication = GetComponent<VesselCommunication>();
         if (communication != null)
         {
             var commData = communication.GetCommunicationData();
-            foreach (var data in commData.Values)
+            
+            // 이웃 관찰 배열 - 각 이웃의 46차원 상태
+            for (int i = 0; i < maxCommunicationPartners; i++)
             {
-                // 상대적 위치
-                Vector3 relativePos = data.position - transform.position;
-                sensor.AddObservation(relativePos.normalized);
-                sensor.AddObservation(Vector3.Distance(transform.position, data.position));
-
-                // 상대 선박의 속도와 방향
-                sensor.AddObservation(data.velocity.normalized);
-                sensor.AddObservation(data.speed);
-
-                // COLREGs 상황
-                sensor.AddObservation((int)data.currentCOLREGsSituation);
-                sensor.AddObservation(data.riskLevel);
+                if (i < commData.Count)
+                {
+                    var data = commData.Values.ElementAt(i);
+                    
+                    // 이웃의 46차원 상태 전송
+                    if (data.radarData != null)
+                    {
+                        // 섹터별 레이더 데이터 (24차원)
+                        for (int j = 0; j < 24; j++)
+                        {
+                            sensor.AddObservation(data.radarData[j]);
+                        }
+                        
+                        // 선박 상태 (4차원)
+                        for (int j = 0; j < 4; j++)
+                        {
+                            sensor.AddObservation(data.vesselState[j]);
+                        }
+                        
+                        // 목표 정보 (3차원)
+                        for (int j = 0; j < 3; j++)
+                        {
+                            sensor.AddObservation(data.goalInfo[j]);
+                        }
+                        
+                        // COLREGs 상황 (12차원)
+                        for (int j = 0; j < 12; j++)
+                        {
+                            sensor.AddObservation(data.colregsSituation[j]);
+                        }
+                        
+                        // 위험도 (3차원)
+                        for (int j = 0; j < 3; j++)
+                        {
+                            sensor.AddObservation(data.dangerLevel[j]);
+                        }
+                    }
+                    else
+                    {
+                        // 더미 데이터 (46차원)
+                        for (int j = 0; j < 46; j++)
+                        {
+                            sensor.AddObservation(0f);
+                        }
+                    }
+                }
+                else
+                {
+                    // 더미 데이터 (46차원)
+                    for (int j = 0; j < 46; j++)
+                    {
+                        sensor.AddObservation(0f);
+                    }
+                }
             }
-
-            // 통신하는 선박 수가 4개 미만인 경우 나머지는 0으로 채움
-            int remainingVessels = maxCommunicationPartners - commData.Count;
-            for (int i = 0; i < remainingVessels; i++)
+        }
+        else
+        {
+            // 통신 컴포넌트가 없는 경우 더미 데이터
+            for (int i = 0; i < maxCommunicationPartners * 46; i++)
             {
-                // 더미 데이터 추가 (모두 0)
-                sensor.AddObservation(Vector3.zero); // 상대적 위치
-                sensor.AddObservation(0f);          // 거리
-                sensor.AddObservation(Vector3.zero); // 속도 방향
-                sensor.AddObservation(0f);          // 속도
-                sensor.AddObservation(0);           // COLREGs 상황
-                sensor.AddObservation(0f);          // 위험도
+                sensor.AddObservation(0f);  // 이웃 관찰
             }
         }
     }
