@@ -285,25 +285,47 @@ public class VesselAgent : Agent
         // 레이더 스캔 실행
         radar.ScanRadar();
 
+// ------------------------------------------------------------
+// 현재는 1'간격으로 (나중에도 마찬가지) 45도 방향으로 압축해서 학습하지만, min, avg, max로만 해서 정확도가 낮을 수 있음
+// 수정 권고 - 자체 PR
+// ------------------------------------------------------------
+
         // 1. 섹터별 레이더 관측값 (8섹터 × 3정보 = 24차원)
+        // 개선: min/median(p50)/hit_ratio (차원은 동일 유지)
         for (int sector = 0; sector < 8; sector++) // 8개 섹터 (45도씩)
         {
-            float minDist = float.MaxValue;
-            float maxDist = 0f;
-            float sumDist = 0f;
-            
-            // 각 섹터 내 45개 각도 분석
-            for (int angle = 0; angle < 45; angle++)
+            const int samplesPerSector = 45;
+            float[] distancesNorm = new float[samplesPerSector];
+            int hitCount = 0;
+
+            for (int angle = 0; angle < samplesPerSector; angle++)
             {
                 float distance = radar.GetDistanceAtAngle(sector * 45 + angle);
-                minDist = Mathf.Min(minDist, distance);
-                maxDist = Mathf.Max(maxDist, distance);
-                sumDist += distance;
+                float dNorm = Mathf.Clamp01(distance / radar.radarRange);
+                distancesNorm[angle] = dNorm;
+                if (dNorm < 1.0f) hitCount++;
             }
-            
-            sensor.AddObservation(minDist / radar.radarRange);        // 섹터 내 최근접 거리
-            sensor.AddObservation((sumDist / 45) / radar.radarRange); // 섹터 내 평균 거리
-            sensor.AddObservation(maxDist / radar.radarRange);        // 섹터 내 최원거리
+
+            // min
+            float minNorm = 1.0f;
+            for (int i = 0; i < samplesPerSector; i++)
+            {
+                float v = distancesNorm[i];
+                if (v < minNorm) minNorm = v;
+            }
+
+            // median(p50)
+            System.Array.Sort(distancesNorm);
+            float medianNorm = (samplesPerSector % 2 == 1)
+                ? distancesNorm[samplesPerSector / 2]
+                : 0.5f * (distancesNorm[samplesPerSector / 2 - 1] + distancesNorm[samplesPerSector / 2]);
+
+            // hit ratio (감지 비율)
+            float hitRatio = (float)hitCount / samplesPerSector;
+
+            sensor.AddObservation(minNorm);
+            sensor.AddObservation(medianNorm);
+            sensor.AddObservation(hitRatio);
         }
 
         // 2. 선박 상태
@@ -322,20 +344,14 @@ public class VesselAgent : Agent
         var (mostDangerousSituation, maxRisk, dangerousVessel) = 
             COLREGsHandler.AnalyzeMostDangerousVessel(this, radar.GetDetectedVessels());
 
-        // COLREGs 상황을 강조하기 위해 3번 반복 (4차원 → 12차원)
-        for (int repeat = 0; repeat < 3; repeat++)
-        {
-            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f);
-            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f);
-            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f);
-            sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f);
-        }
-        
-        // 위험도를 강조하기 위해 3번 반복 (1차원 → 3차원)
-        for (int repeat = 0; repeat < 3; repeat++)
-        {
-            sensor.AddObservation(maxRisk);
-        }
+        // COLREGs 상황 one-hot (4차원)
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f);
+        sensor.AddObservation(mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f);
+
+        // 위험도 스칼라 (1차원)
+        sensor.AddObservation(maxRisk);
     }
 
     /// <summary>
@@ -375,7 +391,7 @@ public class VesselAgent : Agent
         {
             var commData = communication.GetCommunicationData();
             
-            // 이웃 관찰 배열 - 각 이웃의 46차원 상태
+            // 이웃 관찰 배열 - 각 이웃의 36차원 상태
             for (int i = 0; i < maxCommunicationPartners; i++)
             {
                 if (i < commData.Count)
@@ -403,22 +419,22 @@ public class VesselAgent : Agent
                             sensor.AddObservation(data.goalInfo[j]);
                         }
                         
-                        // COLREGs 상황 (12차원)
-                        for (int j = 0; j < 12; j++)
+                        // COLREGs 상황 (4차원)
+                        for (int j = 0; j < 4; j++)
                         {
                             sensor.AddObservation(data.colregsSituation[j]);
                         }
                         
-                        // 위험도 (3차원)
-                        for (int j = 0; j < 3; j++)
+                        // 위험도 (1차원)
+                        for (int j = 0; j < 1; j++)
                         {
                             sensor.AddObservation(data.dangerLevel[j]);
                         }
                     }
                     else
                     {
-                        // 더미 데이터 (46차원)
-                        for (int j = 0; j < 46; j++)
+                        // 더미 데이터 (36차원)
+                        for (int j = 0; j < 36; j++)
                         {
                             sensor.AddObservation(0f);
                         }
@@ -426,8 +442,8 @@ public class VesselAgent : Agent
                 }
                 else
                 {
-                    // 더미 데이터 (46차원)
-                    for (int j = 0; j < 46; j++)
+                    // 더미 데이터 (36차원)
+                    for (int j = 0; j < 36; j++)
                     {
                         sensor.AddObservation(0f);
                     }
@@ -437,7 +453,7 @@ public class VesselAgent : Agent
         else
         {
             // 통신 컴포넌트가 없는 경우 더미 데이터
-            for (int i = 0; i < maxCommunicationPartners * 46; i++)
+            for (int i = 0; i < maxCommunicationPartners * 36; i++)
             {
                 sensor.AddObservation(0f);  // 이웃 관찰
             }

@@ -12,9 +12,8 @@ class MessageActor(nn.Module):
         self.frames = frames
         self.max_neighbors = max_neighbors
         self.logstd = nn.Parameter(torch.zeros(msg_action_space))
-
-        # 상태를 처리하는 완전연결 레이어 (46차원 입력)
-        self.act_fc1 = nn.Linear(46, 256)  # 46차원 입력
+        # 상태를 처리하는 완전연결 레이어 (STATE_SIZE * FRAMES 차원 입력)
+        self.act_fc1 = nn.Linear(STATE_SIZE * FRAMES, 256)
         self.act_fc2 = nn.Linear(256+2+2, 128)  # 256 + goal(2) + speed(2)
         
         # 메시지 생성을 위한 출력 레이어
@@ -24,8 +23,8 @@ class MessageActor(nn.Module):
         """순전파 함수"""
         batch_size = x.shape[0] if len(x.shape) > 2 else 1
         
-        # 46차원 입력 처리
-        x = x.view(-1, 46)  # 46차원으로 변경
+        # STATE_SIZE * FRAMES 입력 처리
+        x = x.view(-1, STATE_SIZE * FRAMES)
         a = F.relu(self.act_fc1(x))
         
         if batch_size > 1:
@@ -57,8 +56,8 @@ class ControlActor(nn.Module):
         self.frames = frames
         self.n_agent = n_agent
         
-        # 관측 상태 처리를 위한 레이어 (46차원 입력)
-        self.act_obs_fc1 = nn.Linear(46, 256)  # 46차원 입력
+        # 관측 상태 처리를 위한 레이어 (STATE_SIZE * FRAMES 차원 입력)
+        self.act_obs_fc1 = nn.Linear(STATE_SIZE * FRAMES, 256)
         self.act_obs_fc2 = nn.Linear(256+2+2, 128)  # 256 + goal(2) + speed(2)
         self.act_obs_fc3 = nn.Linear(128, msg_action_space)
         
@@ -71,8 +70,8 @@ class ControlActor(nn.Module):
 
     def forward(self, x, goal, speed, y):
         """순전파 함수"""
-        # 관측 상태 처리 (46차원)
-        y = y.view(-1, 46)  # 46차원으로 변경
+        # 관측 상태 처리 (STATE_SIZE * FRAMES)
+        y = y.view(-1, STATE_SIZE * FRAMES)
         a = F.relu(self.act_obs_fc1(y))
         a = a.view(-1, 1, 256)  # 단일 에이전트
 
@@ -115,8 +114,8 @@ class CNNPolicy(nn.Module):
         self.ctr_actor = ControlActor(frames, msg_action_space, ctr_action_space, max_neighbors)
         self.logstd = nn.Parameter(torch.zeros(ctr_action_space))
 
-        # 크리틱(가치 평가) 네트워크 (46차원 입력)
-        self.crt_fc1 = nn.Linear(46, 256)  # 46차원 입력
+        # 크리틱(가치 평가) 네트워크 (STATE_SIZE * FRAMES 입력)
+        self.crt_fc1 = nn.Linear(STATE_SIZE * FRAMES, 256)
         self.crt_fc2 = nn.Linear(256+2+2, 128)  # 256 + goal(2) + speed(2)
         self.critic = nn.Linear(128, 1)
 
@@ -151,6 +150,9 @@ class CNNPolicy(nn.Module):
                 if valid_neighbors.any():
                     valid_indices = torch.where(valid_neighbors)[0]
                     valid_obs = neighbor_obs[valid_indices, i]
+                    # 프레임 스택을 사용하므로 이웃 관측도 간단히 동일 프레임 반복으로 스택
+                    if valid_obs.dim() == 2:
+                        valid_obs = valid_obs.repeat(1, FRAMES)
                     valid_goal = goal[valid_indices] if len(goal.shape) > 2 else goal
                     valid_speed = speed[valid_indices] if len(speed.shape) > 2 else speed
                     
@@ -172,8 +174,8 @@ class CNNPolicy(nn.Module):
         # 행동 생성
         action, logprob, mean = self.ctr_actor(ctr_input, goal, speed, x)
         
-        # 가치 평가 (46차원 입력)
-        x = x.view(-1, 46)  # 46차원으로 변경
+        # 가치 평가 (STATE_SIZE * FRAMES 입력)
+        x = x.view(-1, STATE_SIZE * FRAMES)
         v = F.relu(self.crt_fc1(x))
         v = v.view(-1, 1, 256)  # 단일 에이전트
 

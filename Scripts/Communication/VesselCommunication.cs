@@ -15,8 +15,8 @@ public struct VesselCommunicationData
     public float[] radarData;                // 섹터별 레이더 데이터 (24차원)
     public float[] vesselState;              // 선박 상태 (4차원)
     public float[] goalInfo;                 // 목표 정보 (3차원)
-    public float[] colregsSituation;         // COLREGs 상황 (12차원)
-    public float[] dangerLevel;              // 위험도 (3차원)
+    public float[] colregsSituation;         // COLREGs 상황 (4차원)
+    public float[] dangerLevel;              // 위험도 (1차원)
 }
 
 public class VesselCommunication : MonoBehaviour
@@ -107,26 +107,40 @@ public class VesselCommunication : MonoBehaviour
         // 레이더 스캔 실행
         myVesselAgent.radar.ScanRadar();
         
-        // 섹터별 레이더 데이터 수집 (24차원)
+        // 섹터별 레이더 데이터 수집 (24차원: 섹터당 [min, median(p50), hit_ratio])
         float[] radarData = new float[24];
         int radarIndex = 0;
         for (int sector = 0; sector < 8; sector++)
         {
-            float minDist = float.MaxValue;
-            float maxDist = 0f;
-            float sumDist = 0f;
-            
-            for (int angle = 0; angle < 45; angle++)
+            const int samplesPerSector = 45;
+            float[] distancesNorm = new float[samplesPerSector];
+            int hitCount = 0;
+
+            for (int angle = 0; angle < samplesPerSector; angle++)
             {
                 float distance = myVesselAgent.radar.GetDistanceAtAngle(sector * 45 + angle);
-                minDist = Mathf.Min(minDist, distance);
-                maxDist = Mathf.Max(maxDist, distance);
-                sumDist += distance;
+                float dNorm = Mathf.Clamp01(distance / myVesselAgent.radar.radarRange);
+                distancesNorm[angle] = dNorm;
+                if (dNorm < 1.0f) hitCount++;
             }
-            
-            radarData[radarIndex++] = minDist / myVesselAgent.radar.radarRange;
-            radarData[radarIndex++] = (sumDist / 45) / myVesselAgent.radar.radarRange;
-            radarData[radarIndex++] = maxDist / myVesselAgent.radar.radarRange;
+
+            float minNorm = 1.0f;
+            for (int i = 0; i < samplesPerSector; i++)
+            {
+                float v = distancesNorm[i];
+                if (v < minNorm) minNorm = v;
+            }
+
+            System.Array.Sort(distancesNorm);
+            float medianNorm = (samplesPerSector % 2 == 1)
+                ? distancesNorm[samplesPerSector / 2]
+                : 0.5f * (distancesNorm[samplesPerSector / 2 - 1] + distancesNorm[samplesPerSector / 2]);
+
+            float hitRatio = (float)hitCount / samplesPerSector;
+
+            radarData[radarIndex++] = minNorm;
+            radarData[radarIndex++] = medianNorm;
+            radarData[radarIndex++] = hitRatio;
         }
         
         // 선박 상태 수집 (4차원)
@@ -158,23 +172,16 @@ public class VesselCommunication : MonoBehaviour
         var (mostDangerousSituation, maxRisk, dangerousVessel) = 
             COLREGsHandler.AnalyzeMostDangerousVessel(myVesselAgent, myVesselAgent.radar.GetDetectedVessels());
         
-        // COLREGs 상황을 3번 반복하여 강조 (4차원 → 12차원)
-        float[] colregsSituation = new float[12];
-        int colregsIndex = 0;
-        for (int repeat = 0; repeat < 3; repeat++)
-        {
-            colregsSituation[colregsIndex++] = mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f;
-            colregsSituation[colregsIndex++] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f;
-            colregsSituation[colregsIndex++] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f;
-            colregsSituation[colregsIndex++] = mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f;
-        }
-        
-        // 위험도를 3번 반복하여 강조 (1차원 → 3차원)
-        float[] dangerLevel = new float[3];
-        for (int repeat = 0; repeat < 3; repeat++)
-        {
-            dangerLevel[repeat] = maxRisk;
-        }
+        // COLREGs 상황 one-hot (4차원)
+        float[] colregsSituation = new float[4];
+        colregsSituation[0] = mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f;
+        colregsSituation[1] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f;
+        colregsSituation[2] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f;
+        colregsSituation[3] = mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f;
+
+        // 위험도 스칼라 (1차원)
+        float[] dangerLevel = new float[1];
+        dangerLevel[0] = maxRisk;
         
         return new VesselCommunicationData
         {
@@ -189,8 +196,8 @@ public class VesselCommunication : MonoBehaviour
             radarData = radarData,                    // 24차원
             vesselState = vesselState,                // 4차원
             goalInfo = goalInfo,                      // 3차원
-            colregsSituation = colregsSituation,      // 12차원
-            dangerLevel = dangerLevel                 // 3차원
+            colregsSituation = colregsSituation,      // 4차원
+            dangerLevel = dangerLevel                 // 1차원
         };
     }
 

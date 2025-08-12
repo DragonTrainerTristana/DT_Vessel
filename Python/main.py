@@ -12,18 +12,20 @@ from networks import CNNPolicy
 from memory import Memory
 from functions import calculate_returns
 
+# ONNX 변환 (Barracuda용으로, 추후에 Unity Editor에서 실시간 MSG가 나오는지 확인하기)
+# ------------------------------------------------------------
 def save_onnx_model(policy, save_path):
     """ONNX 모델 저장"""
     policy.eval()
     
     # 더미 입력 생성
-    dummy_state = torch.randn(1, 46).to(DEVICE)
+    # 최근 FRAMES 프레임을 스택한 입력을 가정
+    dummy_state = torch.randn(1, STATE_SIZE * FRAMES).to(DEVICE)
     dummy_goal = torch.randn(1, 2).to(DEVICE)
     dummy_speed = torch.randn(1, 2).to(DEVICE)
-    dummy_neighbor_obs = torch.randn(1, 4, 46).to(DEVICE)
-    dummy_neighbor_mask = torch.ones(1, 4, dtype=torch.bool).to(DEVICE)
+    dummy_neighbor_obs = torch.randn(1, N_AGENT, STATE_SIZE).to(DEVICE)
+    dummy_neighbor_mask = torch.ones(1, N_AGENT, dtype=torch.bool).to(DEVICE)
     
-    # ONNX 변환
     torch.onnx.export(
         policy, 
         (dummy_state, dummy_goal, dummy_speed, dummy_neighbor_obs, dummy_neighbor_mask),
@@ -42,6 +44,11 @@ def save_onnx_model(policy, save_path):
     )
     print(f"ONNX 모델 저장됨: {save_path}")
 
+# ------------------------------------------------------------
+
+
+# CSV파일 파싱
+# ------------------------------------------------------------
 def setup_logging():
     """로깅 설정"""
     # CSV 파일 경로 설정
@@ -100,23 +107,29 @@ def setup_logging():
         ])
     
     return episode_log_file, step_log_file, reward_log_file, training_log_file, policy_log_file
+# ------------------------------------------------------------
+  
 
+# 8월 12일 수정
+# 유니티 Editor 자체에서 실행하기 위해 worker id = 0, base_port = 5005, file_name = None로 수정
+# ------------------------------------------------------------
 def main():
-    # 환경 설정
     channel = EngineConfigurationChannel()
     env = UnityEnvironment(
-        file_name="AirCombatRL", 
+        file_name=None,  
         side_channels=[channel],
-        worker_id=1,
-        base_port=5006
+        worker_id= WORKER_ID,
+        base_port= BASE_PORT
     )
-    channel.set_configuration_parameters(time_scale=1.0)
+
+    channel.set_configuration_parameters(time_scale = TIME_SCALE)
+# ------------------------------------------------------------
 
 
-    # 연동 테스트
-
-    # 정책 네트워크와 옵티마이저 초기화
-    # N_AGENT는 이제 최대 이웃 수를 의미
+# Main.py의 강화학습 학습 메인 부분 
+# 정책 네트워크와 옵티마이저 초기화
+# N_AGENT = 최대 이웃 갯수임 (배 4개)
+# ------------------------------------------------------------
     policy = CNNPolicy(MSG_ACTION_SPACE, CONTINUOUS_ACTION_SIZE, FRAMES, N_AGENT).to(DEVICE)
     optimizer = torch.optim.Adam(policy.parameters(), lr=LEARNING_RATE)
 
@@ -129,7 +142,9 @@ def main():
     # 학습 루프
     total_steps = 0
     memory = Memory()  # 새로운 메모리 구조 사용
-    
+    # Main.py의 강화학습 학습 메인 부분 
+    # 정책 네트워크와 옵티마이저 초기화
+    # N_AGENT = 최대 이웃 갯수임 (배 4개)
     # 통계 변수들
     episode_stats = {
         'collision_count': 0,
@@ -162,7 +177,8 @@ def main():
         }
         
         while step < MAX_STEPS:
-            # 환경에서 상태 정보 얻기
+            # DECISION STEP - obs,reward,agent_id,action_mask
+            # TERMINAL STEP - success or fail, step, last obs & reward, agent_id
             decision_steps, terminal_steps = env.get_steps(behavior_name)
             
             # 각 에이전트별 행동 저장
@@ -170,8 +186,8 @@ def main():
             
             # 현재 활성화된 에이전트 처리
             for agent_id in decision_steps.agent_id:
-                # 에이전트의 상태 정보 (46차원)
-                state = decision_steps.obs[0][agent_id]  # 46차원 기본 관찰
+                # 에이전트의 상태 정보 (STATE_SIZE 차원)
+                state = decision_steps.obs[0][agent_id]
                 
                 # 목표 정보 (2차원)
                 if len(decision_steps.obs) > 1:
@@ -185,13 +201,13 @@ def main():
                 else:
                     speed = np.zeros(2)
                 
-                # 이웃 정보 처리 (184차원 = 4 × 46)
+                # 이웃 정보 처리 (N_AGENT × STATE_SIZE)
                 if len(decision_steps.obs) > 3:
-                    # 이웃 관찰 배열 (184차원)
+                    # 이웃 관찰 배열 (평탄 벡터)
                     neighbor_obs_raw = decision_steps.obs[3][agent_id]
                     
-                    # 184차원을 4개 이웃 × 46차원으로 재구성
-                    neighbor_obs = neighbor_obs_raw.reshape(N_AGENT, -1)  # (4, 46)
+                    # 평탄 관측을 (N_AGENT, STATE_SIZE)로 재구성
+                    neighbor_obs = neighbor_obs_raw.reshape(N_AGENT, -1)  # (N_AGENT, STATE_SIZE)
                     
                     # 유효한 이웃 마스크 (0이 아닌 값이 있으면 유효)
                     neighbor_mask = torch.tensor(
@@ -200,13 +216,17 @@ def main():
                     ).to(DEVICE)
                 else:
                     # 이웃 정보가 없는 경우
-                    neighbor_obs = np.zeros((N_AGENT, 46))
+                    neighbor_obs = np.zeros((N_AGENT, STATE_SIZE))
                     neighbor_mask = torch.zeros(N_AGENT, dtype=torch.bool).to(DEVICE)
                 
                 # 텐서 변환
-                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
+                # 프레임 스택: 최근 FRAMES개 관측을 concat (간단 버전: 동일 프레임 반복)
+                # TODO: 실제로는 에이전트별 버퍼에서 과거 프레임을 가져와야 함
+                state_stack = np.tile(state, FRAMES)
+                state_tensor = torch.FloatTensor(state_stack).unsqueeze(0).to(DEVICE)
                 goal_tensor = torch.FloatTensor(goal).unsqueeze(0).to(DEVICE)
                 speed_tensor = torch.FloatTensor(speed).unsqueeze(0).to(DEVICE)
+                # 이웃 관측은 현재 프레임만 사용 (원하면 이웃도 스택 가능)
                 neighbor_obs_tensor = torch.FloatTensor(neighbor_obs).unsqueeze(0).to(DEVICE)
                 
                 # 행동 선택
@@ -285,7 +305,7 @@ def main():
                     np.zeros_like(state),  # 종료 상태는 중요하지 않음
                     np.zeros(2),
                     np.zeros(2),
-                    {'obs': np.zeros((N_AGENT, 46)), 
+                    {'obs': np.zeros((N_AGENT, STATE_SIZE)), 
                      'mask': np.zeros(N_AGENT, dtype=bool)},
                     np.zeros(CONTINUOUS_ACTION_SIZE),
                     reward,
