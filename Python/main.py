@@ -112,6 +112,9 @@ def main():
     )
     channel.set_configuration_parameters(time_scale=1.0)
 
+
+    # 연동 테스트
+
     # 정책 네트워크와 옵티마이저 초기화
     # N_AGENT는 이제 최대 이웃 수를 의미
     policy = CNNPolicy(MSG_ACTION_SPACE, CONTINUOUS_ACTION_SIZE, FRAMES, N_AGENT).to(DEVICE)
