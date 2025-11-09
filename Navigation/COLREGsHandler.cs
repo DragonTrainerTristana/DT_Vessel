@@ -127,7 +127,51 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// COLREGs 위험도 계산
+    /// TCPA (Time to Closest Point of Approach) 계산
+    /// </summary>
+    public static float CalculateTCPA(
+        Vector3 myPosition, Vector3 myVelocity,
+        Vector3 otherPosition, Vector3 otherVelocity)
+    {
+        Vector3 relativePosition = otherPosition - myPosition;
+        Vector3 relativeVelocity = otherVelocity - myVelocity;
+
+        float relativeSpeed = relativeVelocity.magnitude;
+
+        // 상대 속도가 0이면 TCPA 계산 불가 (평행 이동)
+        if (relativeSpeed < 0.01f) return float.MaxValue;
+
+        // TCPA = -(relative_position · relative_velocity) / |relative_velocity|^2
+        float tcpa = -Vector3.Dot(relativePosition, relativeVelocity) / (relativeSpeed * relativeSpeed);
+
+        // TCPA가 음수면 이미 최근접점을 지났음
+        return Mathf.Max(0f, tcpa);
+    }
+
+    /// <summary>
+    /// DCPA (Distance at Closest Point of Approach) 계산
+    /// </summary>
+    public static float CalculateDCPA(
+        Vector3 myPosition, Vector3 myVelocity,
+        Vector3 otherPosition, Vector3 otherVelocity)
+    {
+        Vector3 relativePosition = otherPosition - myPosition;
+        Vector3 relativeVelocity = otherVelocity - myVelocity;
+
+        float relativeSpeed = relativeVelocity.magnitude;
+
+        // 상대 속도가 0이면 현재 거리가 DCPA
+        if (relativeSpeed < 0.01f) return relativePosition.magnitude;
+
+        float tcpa = CalculateTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+
+        // DCPA = |relative_position + relative_velocity * TCPA|
+        Vector3 positionAtCPA = relativePosition + relativeVelocity * tcpa;
+        return positionAtCPA.magnitude;
+    }
+
+    /// <summary>
+    /// COLREGs 위험도 계산 (TCPA, DCPA 기반 개선)
     /// </summary>
     public static float CalculateRisk(
         Vector3 myPosition, Vector3 myForward, float mySpeed,
@@ -135,16 +179,30 @@ public class COLREGsHandler
     {
         Vector3 toOther = otherPosition - myPosition;
         float distance = toOther.magnitude;
-        
+
         // 거리가 멀수록 위험도 감소
         if (distance > DETECTION_RANGE) return 0f;
-        
-        float risk = 1.0f - (distance / DETECTION_RANGE);  // 기본 거리 기반 위험도
-        
-        // 상대 방향 각도 계산
-        float bearingAngle = Vector3.SignedAngle(myForward, toOther, Vector3.up);
-        float otherBearingAngle = Vector3.SignedAngle(otherForward, -toOther, Vector3.up);
-        
+
+        // 속도 벡터 계산
+        Vector3 myVelocity = myForward.normalized * mySpeed;
+        Vector3 otherVelocity = otherForward.normalized * otherSpeed;
+
+        // TCPA와 DCPA 계산
+        float tcpa = CalculateTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+
+        // 거리 기반 위험도
+        float distanceRisk = 1.0f - (distance / DETECTION_RANGE);
+
+        // TCPA 기반 위험도 (가까운 미래일수록 위험)
+        float tcpaRisk = 1.0f / (1.0f + tcpa / 60f); // 60초 기준
+
+        // DCPA 기반 위험도 (가까워질수록 위험)
+        float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / 50f); // 50m 기준
+
+        // 종합 위험도 (가중 평균)
+        float risk = (distanceRisk * 0.3f + tcpaRisk * 0.4f + dcpaRisk * 0.3f);
+
         // 상황별 위험도 가중치
         var situation = AnalyzeSituation(myPosition, myForward, mySpeed, otherPosition, otherForward, otherSpeed);
         switch (situation)
@@ -162,10 +220,7 @@ public class COLREGsHandler
                 risk *= 1.3f;  // Stand-on도 주의 필요
                 break;
         }
-        
-        // 상대 속도에 따른 위험도 조정
-        float relativeSpeed = mySpeed + otherSpeed;
-        risk *= (1.0f + relativeSpeed / 20f);  // 속도가 빠를수록 위험도 증가   
+
         return Mathf.Clamp01(risk);  // 0~1 사이로 정규화
     }
 

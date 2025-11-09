@@ -21,21 +21,24 @@ class MessageActor(nn.Module):
 
     def forward(self, x, goal, speed):
         """순전파 함수"""
-        batch_size = x.shape[0] if len(x.shape) > 2 else 1
-        
         # STATE_SIZE * FRAMES 입력 처리
         x = x.view(-1, STATE_SIZE * FRAMES)
-        a = F.relu(self.act_fc1(x))
-        
-        if batch_size > 1:
-            a = a.view(batch_size, -1, 256)
-        else:
-            a = a.view(1, -1, 256)
+        batch_size = x.shape[0]  # 배치 크기는 view 이후 첫 번째 차원
 
-        if len(goal.shape) < 3:
-            goal = goal.unsqueeze(0)
-        if len(speed.shape) < 3:
-            speed = speed.unsqueeze(0)
+        a = F.relu(self.act_fc1(x))
+        a = a.view(batch_size, -1, 256)
+
+        # goal과 speed 차원 맞추기: [batch, 2] -> [batch, 1, 2]
+        if len(goal.shape) == 2:
+            goal = goal.unsqueeze(1)
+        if len(speed.shape) == 2:
+            speed = speed.unsqueeze(1)
+
+        # 배치 크기 맞추기
+        if goal.shape[0] != batch_size:
+            goal = goal.expand(batch_size, -1, -1)
+        if speed.shape[0] != batch_size:
+            speed = speed.expand(batch_size, -1, -1)
 
         a = torch.cat((a, goal, speed), dim=-1)
         a = F.relu(self.act_fc2(a))
@@ -55,40 +58,39 @@ class ControlActor(nn.Module):
         super(ControlActor, self).__init__()
         self.frames = frames
         self.n_agent = n_agent
-        
-        # 관측 상태 처리를 위한 레이어 (STATE_SIZE * FRAMES 차원 입력)
-        self.act_obs_fc1 = nn.Linear(STATE_SIZE * FRAMES, 256)
-        self.act_obs_fc2 = nn.Linear(256+2+2, 128)  # 256 + goal(2) + speed(2)
-        self.act_obs_fc3 = nn.Linear(128, msg_action_space)
-        
-        # 메시지와 상태를 결합하여 행동 생성
+
+        # 메시지를 받아서 행동 생성
         self.act_fc1 = nn.Linear(msg_action_space+msg_action_space, 64)  # 자신 + 이웃 메시지
         self.act_fc2 = nn.Linear(64+2+2, 128)  # 64 + goal(2) + speed(2)
         self.mu = nn.Linear(128, ctr_action_space)
         self.mu.weight.data.mul_(0.1)
         self.logstd = nn.Parameter(torch.zeros(ctr_action_space))
 
-    def forward(self, x, goal, speed, y):
-        """순전파 함수"""
-        # 관측 상태 처리 (STATE_SIZE * FRAMES)
-        y = y.view(-1, STATE_SIZE * FRAMES)
-        a = F.relu(self.act_obs_fc1(y))
-        a = a.view(-1, 1, 256)  # 단일 에이전트
-
-        if len(goal.shape) < 3:
-            goal = goal.unsqueeze(0)
-        if len(speed.shape) < 3:
-            speed = speed.unsqueeze(0)
-
-        a = torch.cat((a, goal, speed), dim=-1)
-        a = F.relu(self.act_obs_fc2(a))
-        a = F.relu(self.act_obs_fc3(a))  # msg_action_space 차원
-
-        # 메시지 결합 (자신의 메시지 + 이웃 메시지)
-        x = torch.cat((a, x), dim=-1)  # msg_action_space + msg_action_space
+    def forward(self, x, goal, speed):
+        """순전파 함수
+        Args:
+            x: 결합된 메시지 (self_msg + neighbor_sum) [batch, 1, msg_action_space*2]
+            goal: 목표 정보 [batch, 2] or [batch, 1, 2]
+            speed: 속도 정보 [batch, 2] or [batch, 1, 2]
+        """
+        # 메시지 처리
         act = self.act_fc1(x)
-        act = act.view(-1, 1, 64)  # 단일 에이전트
+        act = act.view(-1, 1, 64)
+        batch_size = act.shape[0]
 
+        # goal과 speed 차원 맞추기: [batch, 2] -> [batch, 1, 2]
+        if len(goal.shape) == 2:
+            goal = goal.unsqueeze(1)
+        if len(speed.shape) == 2:
+            speed = speed.unsqueeze(1)
+
+        # 배치 크기 맞추기
+        if goal.shape[0] != batch_size:
+            goal = goal.expand(batch_size, -1, -1)
+        if speed.shape[0] != batch_size:
+            speed = speed.expand(batch_size, -1, -1)
+
+        # Goal, speed 결합
         act = torch.cat((act, goal, speed), dim=-1)
         act = F.tanh(act)
         act = self.act_fc2(act)
@@ -153,13 +155,14 @@ class CNNPolicy(nn.Module):
                     # 프레임 스택을 사용하므로 이웃 관측도 간단히 동일 프레임 반복으로 스택
                     if valid_obs.dim() == 2:
                         valid_obs = valid_obs.repeat(1, FRAMES)
-                    valid_goal = goal[valid_indices] if len(goal.shape) > 2 else goal
-                    valid_speed = speed[valid_indices] if len(speed.shape) > 2 else speed
-                    
+
+                    # Goal과 speed는 항상 배치의 유효한 인덱스에서 추출
+                    valid_goal = goal[valid_indices] if goal.shape[0] > 1 else goal
+                    valid_speed = speed[valid_indices] if speed.shape[0] > 1 else speed
+
                     # 이웃 메시지 생성
-                    with torch.no_grad():  # 학습 시 메모리 효율성을 위해
-                        neighbor_msg, _, _ = self.msg_actor(valid_obs, valid_goal, valid_speed)
-                    
+                    neighbor_msg, _, _ = self.msg_actor(valid_obs, valid_goal, valid_speed)
+
                     # 생성된 메시지 저장
                     for j, idx in enumerate(valid_indices):
                         neighbor_msgs[idx, i] = neighbor_msg[j, 0]
@@ -172,19 +175,25 @@ class CNNPolicy(nn.Module):
         ctr_input = torch.cat((self_msg, neighbor_sum), 2)
         
         # 행동 생성
-        action, logprob, mean = self.ctr_actor(ctr_input, goal, speed, x)
+        action, logprob, mean = self.ctr_actor(ctr_input, goal, speed)
         
         # 가치 평가 (STATE_SIZE * FRAMES 입력)
         x = x.view(-1, STATE_SIZE * FRAMES)
         v = F.relu(self.crt_fc1(x))
-        v = v.view(-1, 1, 256)  # 단일 에이전트
+        v = v.view(-1, 1, 256)
+        batch_size_v = v.shape[0]
 
-        if len(goal.shape) < 3:
-            goal = goal.unsqueeze(0)
-        if len(speed.shape) < 3:
-            speed = speed.unsqueeze(0)
+        # goal과 speed 차원 맞추기: [batch, 2] -> [batch, 1, 2]
+        goal_v = goal.unsqueeze(1) if len(goal.shape) == 2 else goal
+        speed_v = speed.unsqueeze(1) if len(speed.shape) == 2 else speed
 
-        v = torch.cat((v, goal, speed), dim=-1)
+        # 배치 크기 맞추기
+        if goal_v.shape[0] != batch_size_v:
+            goal_v = goal_v.expand(batch_size_v, -1, -1)
+        if speed_v.shape[0] != batch_size_v:
+            speed_v = speed_v.expand(batch_size_v, -1, -1)
+
+        v = torch.cat((v, goal_v, speed_v), dim=-1)
         v = F.relu(self.crt_fc2(v))
         v = self.critic(v)
 

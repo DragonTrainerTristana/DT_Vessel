@@ -4,27 +4,31 @@ using System.Linq;
 
 public struct VesselCommunicationData
 {
-    public Vector3 position;                 // 위치
-    public Vector3 velocity;                 // 속도 벡터 (방향 포함)
-    public float speed;                      // 속도 크기
-    public COLREGsHandler.CollisionSituation currentCOLREGsSituation;  // 현재 COLREGs 상황
-    public float riskLevel;                  // 위험도
-    public float timeStamp;                  // 데이터 시간 기록
-    
-    // 전체 상태 정보 추가 (46차원)
-    public float[] radarData;                // 섹터별 레이더 데이터 (24차원)
-    public float[] vesselState;              // 선박 상태 (4차원)
-    public float[] goalInfo;                 // 목표 정보 (3차원)
-    public float[] colregsSituation;         // COLREGs 상황 (4차원)
-    public float[] dangerLevel;              // 위험도 (1차원)
+    public Vector3 position;
+    public Vector3 velocity;
+    public float speed;
+    public COLREGsHandler.CollisionSituation currentCOLREGsSituation;
+    public float riskLevel;
+    public float timeStamp;
+
+    // Legacy (for backwards compatibility)
+    public float[] radarData;              // Old 8 sectors × 3 = 24D
+    public float[] vesselState;            // 4D
+    public float[] goalInfo;               // 3D
+    public float[] colregsSituation;       // Old one-hot 4D
+    public float[] dangerLevel;            // 1D
+
+    // New compressed data for neighbors
+    public float[] compressedRadarData;    // 8 regions × 3 (min, tcpa, dcpa) = 24D
+    public float[] fuzzyCOLREGs;           // Fuzzy weights 4D
 }
 
 public class VesselCommunication : MonoBehaviour
 {
-    [Header("통신 설정")]
-    public int maxCommunicationPartners = 4;     // 최대 통신 가능 선박 수
-    public float communicationRange = 100f;       // 통신 가능 거리
-    public float communicationInterval = 0.1f;    // 통신 주기
+    [Header("Communication Settings")]
+    public int maxCommunicationPartners = 4;
+    public float communicationRange = 100f;
+    public float communicationInterval = 0.1f;
 
     private VesselAgent myVesselAgent;
     private Dictionary<int, VesselCommunicationData> receivedData;
@@ -48,21 +52,13 @@ public class VesselCommunication : MonoBehaviour
 
     private void CommunicateWithNearbyVessels()
     {
-        // 주변 선박 찾기
         var nearbyVessels = FindNearbyVessels();
-        
-        // 기존 데이터 초기화
         receivedData.Clear();
 
-        // 가장 가까운 4대의 선박과만 통신
         foreach (var vessel in nearbyVessels.Take(maxCommunicationPartners))
         {
             var vesselComm = vessel.GetComponent<VesselCommunication>();
-            if (vesselComm != null)
-            {
-                // 통신 데이터 교환
-                ExchangeData(vesselComm);
-            }
+            if (vesselComm != null) ExchangeData(vesselComm);
         }
     }
 
@@ -70,7 +66,7 @@ public class VesselCommunication : MonoBehaviour
     {
         var vessels = new List<GameObject>();
         var colliders = Physics.OverlapSphere(transform.position, communicationRange);
-        
+
         foreach (var collider in colliders)
         {
             if (collider.gameObject != gameObject && collider.GetComponent<VesselAgent>() != null)
@@ -79,8 +75,7 @@ public class VesselCommunication : MonoBehaviour
             }
         }
 
-        // 거리에 따라 정렬
-        vessels.Sort((a, b) => 
+        vessels.Sort((a, b) =>
             Vector3.Distance(transform.position, a.transform.position)
             .CompareTo(Vector3.Distance(transform.position, b.transform.position)));
 
@@ -91,113 +86,120 @@ public class VesselCommunication : MonoBehaviour
     {
         var myData = CreateCommunicationData();
         var otherId = otherVessel.gameObject.GetInstanceID();
-
-        // 상대방의 데이터 받기
         var otherData = otherVessel.GetVesselData();
-        
-        // 상대적 거리 계산
-        float relativeDistance = Vector3.Distance(transform.position, otherVessel.transform.position);
-        
-        // 데이터 저장 (ID는 여전히 필요하지만, 통신 데이터에는 포함하지 않음)
+
         receivedData[otherId] = otherData;
     }
 
     private VesselCommunicationData CreateCommunicationData()
     {
-        // 레이더 스캔 실행
-        myVesselAgent.radar.ScanRadar();
-        
-        // 섹터별 레이더 데이터 수집 (24차원: 섹터당 [min, median(p50), hit_ratio])
-        float[] radarData = new float[24];
+        // ========== Compressed Radar Data (8 regions × 3 = 24D) ==========
+        float[] compressedRadar = new float[24];
         int radarIndex = 0;
-        for (int sector = 0; sector < 8; sector++)
+
+        // 8 regions (45도씩) with min, tcpa, dcpa
+        for (int region = 0; region < 8; region++)
         {
-            const int samplesPerSector = 45;
-            float[] distancesNorm = new float[samplesPerSector];
-            int hitCount = 0;
+            // Map 8 regions to 30 regions (약 3.75배)
+            // region 0 → radar regions 0-3
+            // region 1 → radar regions 4-7, etc.
+            int startRadarRegion = region * 4;
+            int endRadarRegion = (region + 1) * 4;
 
-            for (int angle = 0; angle < samplesPerSector; angle++)
+            float minDist = 1.0f;
+            float avgTCPA = 0f;
+            float avgDCPA = 0f;
+            int validCount = 0;
+
+            for (int r = startRadarRegion; r < endRadarRegion && r < 30; r++)
             {
-                float distance = myVesselAgent.radar.GetDistanceAtAngle(sector * 45 + angle);
-                float dNorm = Mathf.Clamp01(distance / myVesselAgent.radar.radarRange);
-                distancesNorm[angle] = dNorm;
-                if (dNorm < 1.0f) hitCount++;
+                var regionData = myVesselAgent.radar.GetRegionData(r);
+                if (regionData.closestDistance < minDist)
+                    minDist = regionData.closestDistance;
+
+                avgTCPA += regionData.tcpa;
+                avgDCPA += regionData.dcpa;
+                validCount++;
             }
 
-            float minNorm = 1.0f;
-            for (int i = 0; i < samplesPerSector; i++)
+            if (validCount > 0)
             {
-                float v = distancesNorm[i];
-                if (v < minNorm) minNorm = v;
+                avgTCPA /= validCount;
+                avgDCPA /= validCount;
             }
 
-            System.Array.Sort(distancesNorm);
-            float medianNorm = (samplesPerSector % 2 == 1)
-                ? distancesNorm[samplesPerSector / 2]
-                : 0.5f * (distancesNorm[samplesPerSector / 2 - 1] + distancesNorm[samplesPerSector / 2]);
-
-            float hitRatio = (float)hitCount / samplesPerSector;
-
-            radarData[radarIndex++] = minNorm;
-            radarData[radarIndex++] = medianNorm;
-            radarData[radarIndex++] = hitRatio;
+            compressedRadar[radarIndex++] = minDist;
+            compressedRadar[radarIndex++] = avgTCPA;
+            compressedRadar[radarIndex++] = avgDCPA;
         }
-        
-        // 선박 상태 수집 (4차원)
-        float[] vesselState = new float[4];
-        vesselState[0] = myVesselAgent.vesselDynamics.CurrentSpeed / myVesselAgent.vesselDynamics.maxSpeed;  // 정규화된 속도
-        vesselState[1] = myVesselAgent.transform.forward.x;  // 선수 방향 x
-        vesselState[2] = myVesselAgent.transform.forward.z;  // 선수 방향 z
-        vesselState[3] = myVesselAgent.vesselDynamics.YawRate / myVesselAgent.vesselDynamics.maxTurnRate;  // 정규화된 회전 속도
-        
 
-        
-        // 목표 정보 수집 (3차원)
+        // ========== Vessel State (4D) ==========
+        float[] vesselState = new float[4];
+        vesselState[0] = myVesselAgent.vesselDynamics.CurrentSpeed / myVesselAgent.vesselDynamics.maxSpeed;
+        vesselState[1] = myVesselAgent.transform.forward.x;
+        vesselState[2] = myVesselAgent.transform.forward.z;
+        vesselState[3] = myVesselAgent.vesselDynamics.YawRate / myVesselAgent.vesselDynamics.maxTurnRate;
+
+        // ========== Goal Info (3D) ==========
         float[] goalInfo = new float[3];
         if (myVesselAgent.hasGoal)
         {
             Vector3 directionToGoal = (myVesselAgent.goalPosition - myVesselAgent.transform.position).normalized;
-            goalInfo[0] = directionToGoal.x;  // 목표 방향 x
-            goalInfo[1] = directionToGoal.z;  // 목표 방향 z
-            goalInfo[2] = Vector3.Distance(myVesselAgent.transform.position, myVesselAgent.goalPosition) / myVesselAgent.radarRange;  // 정규화된 목표 거리
+            goalInfo[0] = directionToGoal.x;
+            goalInfo[1] = directionToGoal.z;
+            goalInfo[2] = Vector3.Distance(myVesselAgent.transform.position, myVesselAgent.goalPosition) / myVesselAgent.radarRange;
         }
-        else
-        {
-            goalInfo[0] = 0f;
-            goalInfo[1] = 0f;
-            goalInfo[2] = 0f;
-        }
-        
-        // COLREGs 상황 및 위험도 관측 (12차원 + 3차원)
-        var (mostDangerousSituation, maxRisk, dangerousVessel) = 
-            COLREGsHandler.AnalyzeMostDangerousVessel(myVesselAgent, myVesselAgent.radar.GetDetectedVessels());
-        
-        // COLREGs 상황 one-hot (4차원)
-        float[] colregsSituation = new float[4];
-        colregsSituation[0] = mostDangerousSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1.0f : 0.0f;
-        colregsSituation[1] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1.0f : 0.0f;
-        colregsSituation[2] = mostDangerousSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1.0f : 0.0f;
-        colregsSituation[3] = mostDangerousSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1.0f : 0.0f;
 
-        // 위험도 스칼라 (1차원)
+        // ========== Fuzzy COLREGs (4D) ==========
+        float[] fuzzyCOLREGs = new float[4];
+        var allSituations = COLREGsHandler.AnalyzeAllCOLREGsSituations(myVesselAgent, myVesselAgent.radar.GetDetectedVessels());
+
+        if (allSituations.Count > 0)
+        {
+            float totalRisk = 0f;
+
+            // 모든 상황의 위험도 합산
+            foreach (var (situation, risk, vessel, priority) in allSituations)
+            {
+                fuzzyCOLREGs[(int)situation] += risk;
+                totalRisk += risk;
+            }
+
+            // 정규화 (fuzzy weights)
+            if (totalRisk > 0f)
+            {
+                for (int i = 0; i < 4; i++)
+                    fuzzyCOLREGs[i] /= totalRisk;
+            }
+        }
+
+        // ========== Legacy Data (for compatibility) ==========
+        float[] radarData = null;
+        float[] colregsSituation = null;
         float[] dangerLevel = new float[1];
+        var (mostDangerousSituation, maxRisk, _) =
+            COLREGsHandler.AnalyzeMostDangerousVessel(myVesselAgent, myVesselAgent.radar.GetDetectedVessels());
         dangerLevel[0] = maxRisk;
-        
+
         return new VesselCommunicationData
         {
             position = transform.position,
-            velocity = myVesselAgent.vesselDynamics.GetComponent<Rigidbody>().velocity,
+            velocity = myVesselAgent.vesselDynamics.Velocity,
             speed = myVesselAgent.vesselDynamics.CurrentSpeed,
-            currentCOLREGsSituation = GetCurrentCOLREGsSituation(),
-            riskLevel = CalculateCurrentRiskLevel(),
+            currentCOLREGsSituation = mostDangerousSituation,
+            riskLevel = maxRisk,
             timeStamp = Time.time,
-            
-            // 전체 상태 정보 추가
-            radarData = radarData,                    // 24차원
-            vesselState = vesselState,                // 4차원
-            goalInfo = goalInfo,                      // 3차원
-            colregsSituation = colregsSituation,      // 4차원
-            dangerLevel = dangerLevel                 // 1차원
+
+            // Legacy (null for now)
+            radarData = radarData,
+            colregsSituation = colregsSituation,
+            dangerLevel = dangerLevel,
+
+            // New data
+            vesselState = vesselState,
+            goalInfo = goalInfo,
+            compressedRadarData = compressedRadar,
+            fuzzyCOLREGs = fuzzyCOLREGs
         };
     }
 
@@ -206,30 +208,8 @@ public class VesselCommunication : MonoBehaviour
         return CreateCommunicationData();
     }
 
-    // 현재 통신 중인 선박들의 데이터 가져오기
     public Dictionary<int, VesselCommunicationData> GetCommunicationData()
     {
         return new Dictionary<int, VesselCommunicationData>(receivedData);
     }
-
-    private COLREGsHandler.CollisionSituation GetCurrentCOLREGsSituation()
-    {
-        // COLREGs 상황 분석 로직
-        // 현재 가장 위험한 상황을 반환
-        var (situation, _, _) = COLREGsHandler.AnalyzeMostDangerousVessel(
-            myVesselAgent, 
-            myVesselAgent.radar.GetDetectedVessels()
-        );
-        return situation;
-    }
-
-    private float CalculateCurrentRiskLevel()
-    {
-        // 현재 위험도 계산 로직
-        var (_, risk, _) = COLREGsHandler.AnalyzeMostDangerousVessel(
-            myVesselAgent, 
-            myVesselAgent.radar.GetDetectedVessels()
-        );
-        return risk;
-    }
-} 
+}
