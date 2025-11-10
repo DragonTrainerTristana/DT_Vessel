@@ -106,7 +106,7 @@ def parse_observation(obs_raw):
 
     neighbor_obs = neighbor_obs_raw.reshape(N_AGENT, NEIGHBOR_STATE_SIZE)  # (4, 35)
     neighbor_mask = torch.tensor(
-        [np.any(neighbor_obs[i] != 0) for i in range(N_AGENT)],
+        [bool(np.any(neighbor_obs[i] != 0)) for i in range(N_AGENT)],
         dtype=torch.bool
     ).to(DEVICE)
 
@@ -199,16 +199,22 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
                 batch_neighbor_obs, batch_neighbor_mask
             )
 
+            # Evaluate actions for correct logprobs
+            values, new_logprobs, dist_entropy, colregs_pred = policy.evaluate_actions(
+                batch_states, batch_goals, batch_speeds,
+                batch_actions, batch_colregs
+            )
+
             # PPO Loss 계산
             ratio = torch.exp(new_logprobs - batch_old_logprobs)
-            surr1 = ratio * batch_advantages.unsqueeze(-1)
-            surr2 = torch.clamp(ratio, 1.0 - EPSILON, 1.0 + EPSILON) * batch_advantages.unsqueeze(-1)
+            surr1 = ratio * batch_advantages
+            surr2 = torch.clamp(ratio, 1.0 - EPSILON, 1.0 + EPSILON) * batch_advantages
             policy_loss = -torch.min(surr1, surr2).mean()
 
             value_loss = F.mse_loss(values.squeeze(), batch_returns)
 
-            entropy = -(new_logprobs.exp() * new_logprobs).mean()
-            entropy_loss = -ENTROPY_BONUS * entropy
+            # Use dist_entropy from evaluate_actions
+            entropy_loss = -ENTROPY_BONUS * dist_entropy
 
             # COLREGs Classification Loss (Auxiliary Task)
             colregs_loss = F.cross_entropy(colregs_pred, batch_colregs.argmax(dim=-1))
@@ -259,11 +265,11 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             csv_writer.writerow([
                 0, total_steps, avg_policy_loss, avg_value_loss, avg_entropy_loss,
                 avg_total_loss, LEARNING_RATE, grad_norm, avg_clip_fraction,
-                values.mean().item(), values.std().item(), entropy.item(), avg_approx_kl
+                values.mean().item(), values.std().item(), dist_entropy.item(), avg_approx_kl
             ])
 
         print(f"  PPO Update: policy_loss={avg_policy_loss:.4f}, value_loss={avg_value_loss:.4f}, "
-              f"colregs_loss={avg_colregs_loss:.4f}, entropy={entropy.item():.4f}, kl={avg_approx_kl:.4f}")
+              f"colregs_loss={avg_colregs_loss:.4f}, entropy={avg_entropy_loss:.4f}, kl={avg_approx_kl:.4f}")
 
 def main():
     print("="*80)
@@ -388,11 +394,11 @@ def main():
                     ])
 
             # Terminal steps 처리
-            for agent_id in terminal_steps.agent_id:
+            for idx, agent_id in enumerate(terminal_steps.agent_id):
                 if agent_id in decision_steps.agent_id:
                     continue
 
-                reward = terminal_steps.reward[agent_id]
+                reward = terminal_steps.reward[idx]
 
                 if agent_id in episode_rewards:
                     episode_rewards[agent_id] += reward
@@ -439,8 +445,20 @@ def main():
                 all_actions[i] = agent_actions[agent_id]
 
             action_tuple = ActionTuple(continuous=all_actions)
-            env.set_actions(behavior_name, action_tuple)
-            env.step()
+
+            try:
+                env.set_actions(behavior_name, action_tuple)
+                env.step()
+            except Exception as e:
+                print(f"  ⚠️  Unity connection lost: {e}")
+                print(f"  ⚠️  Attempting to save model and exit gracefully...")
+
+                # 모델 저장
+                if episode > 0:
+                    torch.save(policy.state_dict(),
+                              os.path.join(SAVE_PATH, f'policy_emergency_{episode}_{step}.pth'))
+                    print(f"  Emergency model saved at episode {episode}, step {step}")
+                break
 
             total_steps += 1
             step += 1

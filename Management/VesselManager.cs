@@ -65,12 +65,16 @@ public class VesselManager : MonoBehaviour
 
     private GameObject SpawnVessel()
     {
+        // 수정
+
+
         int spawnIndex = GetRandomUnusedSpawnIndex();
         if (spawnIndex == -1) return null;
 
         Transform spawnPoint = spawnPoints[spawnIndex];
         usedSpawnIndices.Add(spawnIndex);
 
+        // 일단 기본 위치에 생성
         GameObject vessel = Instantiate(vesselPrefab, spawnPoint.position, spawnPoint.rotation, vesselParent.transform);
         vessels.Add(vessel);
         vessel.name = $"Vessel_{vessels.Count}";
@@ -82,7 +86,10 @@ public class VesselManager : MonoBehaviour
         if (agent != null) vesselAgents.Add(agent);
 
         vesselSpawnIndices[vessel] = spawnIndex;
+
+        // 목표 할당 후 목표를 향해 회전
         AssignGoalForVessel(vessel, spawnPoint);
+        RotateVesselTowardsGoal(vessel);
 
         return vessel;
     }
@@ -132,6 +139,29 @@ public class VesselManager : MonoBehaviour
             agent.SetGoal(goalPoint.position);
             agent.goalPointName = goalPoint.name;
             agent.goalPointIndex = goalIndex;
+        }
+    }
+
+    private void RotateVesselTowardsGoal(GameObject vessel)
+    {
+        if (!vesselGoals.ContainsKey(vessel)) return;
+
+        Transform goal = vesselGoals[vessel];
+        Vector3 direction = (goal.position - vessel.transform.position).normalized;
+
+        // Y축 회전만 적용 (선박은 수평면에서만 회전)
+        direction.y = 0;
+
+        if (direction != Vector3.zero)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(direction);
+
+            // 랜덤 각도 오차 추가 (-10도 ~ +10도)
+            float randomAngleOffset = Random.Range(-10f, 10f);
+            Quaternion randomRotation = Quaternion.Euler(0, randomAngleOffset, 0);
+
+            // 목표 방향에 랜덤 오차를 적용
+            vessel.transform.rotation = targetRotation * randomRotation;
         }
     }
 
@@ -196,6 +226,8 @@ public class VesselManager : MonoBehaviour
         VesselDynamics dynamics = vessel.GetComponent<VesselDynamics>();
         if (dynamics != null) dynamics.ResetState();
 
+        // 목표 할당 후 목표를 향해 회전
         AssignGoalForVessel(vessel, spawnPoint);
+        RotateVesselTowardsGoal(vessel);
     }
 }

@@ -1,0 +1,1 @@
+episode,total_steps,avg_reward,total_reward,collision_count,collision_rate,success_count,success_rate,episode_length,active_agents,learning_rate

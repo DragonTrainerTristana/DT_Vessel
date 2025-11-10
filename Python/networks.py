@@ -108,9 +108,9 @@ class ControlActor(nn.Module):
 
         # Goal, speed, COLREGs 결합
         act = torch.cat((act, goal, speed, colregs_situations), dim=-1)
-        act = F.tanh(act)
+        act = torch.tanh(act)
         act = self.act_fc2(act)
-        act = F.tanh(act)
+        act = torch.tanh(act)
         mean = self.mu(act)
 
         logstd = self.logstd.expand_as(mean)
