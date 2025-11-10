@@ -96,6 +96,8 @@ def parse_observation(obs_raw):
     [0:180] self state (30 regions × 6)
     [180:184] message passing (goal=2, speed=2)
     [184:324] neighbors (4 × 35D)
+
+    Neighbor 35D = compressed_radar(24) + vessel(4) + goal(3) + fuzzy_colregs(4)
     """
     state = obs_raw[:STATE_SIZE]  # [0:180]
     goal = obs_raw[STATE_SIZE:STATE_SIZE+2]  # [180:182]
@@ -108,10 +110,24 @@ def parse_observation(obs_raw):
         dtype=torch.bool
     ).to(DEVICE)
 
-    return state, goal, speed, neighbor_obs, neighbor_mask
+    # COLREGs 정보 추출 (각 이웃의 마지막 4D: fuzzy weights for 4 situations)
+    # [None, HeadOn, CrossingGiveWay, CrossingStandOn, Overtaking]
+    colregs_situations = np.zeros(4)  # 집계된 COLREGs 상황
+
+    for i in range(N_AGENT):
+        if neighbor_mask[i]:  # 유효한 이웃만
+            # 각 이웃의 fuzzy COLREGs는 마지막 4차원
+            fuzzy_colregs = neighbor_obs[i, -4:]
+            colregs_situations += fuzzy_colregs  # 모든 이웃의 COLREGs 상황 집계
+
+    # 정규화 (0-1 범위)
+    if np.sum(colregs_situations) > 0:
+        colregs_situations = colregs_situations / np.sum(colregs_situations)
+
+    return state, goal, speed, neighbor_obs, neighbor_mask, colregs_situations
 
 def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file):
-    """PPO 학습 업데이트"""
+    """PPO 학습 업데이트 (COLREGs 학습 포함)"""
     experiences = memory.get_all_experiences()
 
     if len(experiences['states']) == 0:
@@ -131,6 +147,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     states_tensor = torch.FloatTensor(states).to(DEVICE)
     goals_tensor = torch.FloatTensor(experiences['goals']).to(DEVICE)
     speeds_tensor = torch.FloatTensor(experiences['speeds']).to(DEVICE)
+    colregs_tensor = torch.FloatTensor(experiences['colregs_situations']).to(DEVICE)  # COLREGs 추가
     actions_tensor = torch.FloatTensor(experiences['actions']).to(DEVICE)
     old_logprobs_tensor = torch.FloatTensor(experiences['logprobs']).to(DEVICE)
     returns_tensor = torch.FloatTensor(returns).to(DEVICE)
@@ -149,6 +166,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     total_policy_loss = 0
     total_value_loss = 0
     total_entropy_loss = 0
+    total_colregs_loss = 0  # COLREGs loss 추가
     total_loss = 0
     clip_fraction = 0
     approx_kl = 0
@@ -166,6 +184,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             batch_states = states_tensor[batch_indices]
             batch_goals = goals_tensor[batch_indices]
             batch_speeds = speeds_tensor[batch_indices]
+            batch_colregs = colregs_tensor[batch_indices]  # COLREGs 추가
             batch_actions = actions_tensor[batch_indices]
             batch_old_logprobs = old_logprobs_tensor[batch_indices]
             batch_returns = returns_tensor[batch_indices]
@@ -173,9 +192,10 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             batch_neighbor_obs = neighbor_obs_tensor[batch_indices]
             batch_neighbor_mask = neighbor_mask_tensor[batch_indices]
 
-            # Forward pass
-            values, _, new_logprobs, _ = policy(
+            # Forward pass (COLREGs 정보 포함)
+            values, _, new_logprobs, _, colregs_pred = policy(
                 batch_states, batch_goals, batch_speeds,
+                batch_colregs,
                 batch_neighbor_obs, batch_neighbor_mask
             )
 
@@ -190,7 +210,11 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             entropy = -(new_logprobs.exp() * new_logprobs).mean()
             entropy_loss = -ENTROPY_BONUS * entropy
 
-            loss = policy_loss + VALUE_LOSS_COEF * value_loss + entropy_loss
+            # COLREGs Classification Loss (Auxiliary Task)
+            colregs_loss = F.cross_entropy(colregs_pred, batch_colregs.argmax(dim=-1))
+
+            # Total loss (COLREGs loss 추가)
+            loss = policy_loss + VALUE_LOSS_COEF * value_loss + entropy_loss + 0.1 * colregs_loss
 
             # Backward pass
             optimizer.zero_grad()
@@ -202,6 +226,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             total_policy_loss += policy_loss.item()
             total_value_loss += value_loss.item()
             total_entropy_loss += entropy_loss.item()
+            total_colregs_loss += colregs_loss.item()  # COLREGs loss 추가
             total_loss += loss.item()
 
             with torch.no_grad():
@@ -215,6 +240,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
         avg_policy_loss = total_policy_loss / num_updates
         avg_value_loss = total_value_loss / num_updates
         avg_entropy_loss = total_entropy_loss / num_updates
+        avg_colregs_loss = total_colregs_loss / num_updates  # COLREGs loss 평균
         avg_total_loss = total_loss / num_updates
         avg_clip_fraction = clip_fraction / num_updates
         avg_approx_kl = approx_kl / num_updates
@@ -223,6 +249,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
         writer.add_scalar('Loss/Policy', avg_policy_loss, total_steps)
         writer.add_scalar('Loss/Value', avg_value_loss, total_steps)
         writer.add_scalar('Loss/Entropy', avg_entropy_loss, total_steps)
+        writer.add_scalar('Loss/COLREGs', avg_colregs_loss, total_steps)  # COLREGs loss 로그
         writer.add_scalar('Loss/Total', avg_total_loss, total_steps)
         writer.add_scalar('PPO/ClipFraction', avg_clip_fraction, total_steps)
         writer.add_scalar('PPO/ApproxKL', avg_approx_kl, total_steps)
@@ -236,7 +263,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             ])
 
         print(f"  PPO Update: policy_loss={avg_policy_loss:.4f}, value_loss={avg_value_loss:.4f}, "
-              f"entropy={entropy.item():.4f}, kl={avg_approx_kl:.4f}")
+              f"colregs_loss={avg_colregs_loss:.4f}, entropy={entropy.item():.4f}, kl={avg_approx_kl:.4f}")
 
 def main():
     print("="*80)
@@ -307,7 +334,7 @@ def main():
             # Decision steps 처리
             for agent_id in decision_steps.agent_id:
                 obs_raw = decision_steps.obs[0][agent_id]
-                state, goal, speed, neighbor_obs, neighbor_mask = parse_observation(obs_raw)
+                state, goal, speed, neighbor_obs, neighbor_mask, colregs_situations = parse_observation(obs_raw)
 
                 # Frame stack 적용
                 state_stack = frame_stack.update(agent_id, state)
@@ -316,10 +343,12 @@ def main():
                 goal_tensor = torch.FloatTensor(goal).unsqueeze(0).to(DEVICE)
                 speed_tensor = torch.FloatTensor(speed).unsqueeze(0).to(DEVICE)
                 neighbor_obs_tensor = torch.FloatTensor(neighbor_obs).unsqueeze(0).to(DEVICE)
+                colregs_tensor = torch.FloatTensor(colregs_situations).unsqueeze(0).to(DEVICE)
 
                 with torch.no_grad():
-                    value, action, logprob, _ = policy(
+                    value, action, logprob, _, colregs_pred = policy(
                         state_tensor, goal_tensor, speed_tensor,
+                        colregs_tensor,
                         neighbor_obs_tensor, neighbor_mask.unsqueeze(0)
                     )
 
@@ -332,12 +361,13 @@ def main():
                 episode_rewards[agent_id] += reward
                 episode_stats['total_reward'] += reward
 
-                # 경험 저장
+                # 경험 저장 (COLREGs 정보 포함)
                 memory.add_agent_experience(
                     agent_id,
                     state_stack,  # Frame stacked state
                     goal,
                     speed,
+                    colregs_situations,  # COLREGs 상황 추가
                     {'obs': neighbor_obs, 'mask': neighbor_mask.cpu().numpy()},
                     action.cpu().numpy()[0, 0],
                     reward,
@@ -380,12 +410,13 @@ def main():
                 # Frame stack 제거
                 frame_stack.remove_agent(agent_id)
 
-                # 종료 경험 저장
+                # 종료 경험 저장 (COLREGs 정보 포함)
                 memory.add_agent_experience(
                     agent_id,
                     np.zeros(STATE_SIZE * FRAMES),
                     np.zeros(2),
                     np.zeros(2),
+                    np.zeros(4),  # COLREGs 상황 (zeros)
                     {'obs': np.zeros((N_AGENT, NEIGHBOR_STATE_SIZE)),
                      'mask': np.zeros(N_AGENT, dtype=bool)},
                     np.zeros(CONTINUOUS_ACTION_SIZE),

@@ -19,6 +19,20 @@ public class COLREGsHandler
     private const float OVERTAKING_ANGLE = 112.5f;  // 추월 판정 각도
     private const float DETECTION_RANGE = 100f;     // 충돌 위험 감지 거리
 
+    // Rule 16: Early and Substantial Action
+    private const float EARLY_ACTION_TIME = 60f;    // Early action threshold (seconds)
+    private const float SUBSTANTIAL_ACTION_TIME = 30f; // Substantial action threshold (seconds)
+
+    // Rule 17: Stand-on Vessel Action Thresholds
+    private const float RULE_17B_TIME = 20f;        // May take action threshold (seconds)
+    private const float RULE_17B_DISTANCE = 30f;    // May take action distance (meters)
+    private const float RULE_17C_TIME = 10f;        // Shall take action threshold (seconds)
+    private const float RULE_17C_DISTANCE = 15f;    // Shall take action distance (meters)
+
+    // Safe passing distances
+    private const float SAFE_PASSING_DISTANCE = 20f; // Rule 8: Safe passing distance (meters)
+    private const float CRITICAL_CPA = 10f;         // Critical CPA for emergency action (meters)
+
     // COLREGs 우선순위 (높을수록 우선)
     private static readonly Dictionary<CollisionSituation, int> COLREGs_PRIORITY = new Dictionary<CollisionSituation, int>
     {
@@ -69,33 +83,102 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// 상황에 따른 권장 행동 계산
+    /// 상황에 따른 권장 행동 계산 (Rule 16, 17 완전 구현)
     /// </summary>
     public static (float suggestedRudder, float suggestedSpeed) GetRecommendedAction(
-        CollisionSituation situation, 
+        CollisionSituation situation,
         float currentSpeed,
-        Vector3 toOther)
+        Vector3 toOther,
+        float tcpa = float.MaxValue,
+        float dcpa = float.MaxValue,
+        bool otherVesselTakingAction = false)
     {
         float suggestedRudder = 0f;
         float suggestedSpeed = currentSpeed;
+        float distance = toOther.magnitude;
 
         switch (situation)
         {
             case CollisionSituation.HeadOn:
+                // Rule 14: Head-on situation
                 suggestedRudder = 0.5f;  // 우현 변침
+
+                // Rule 16: Early and substantial action
+                if (tcpa < SUBSTANTIAL_ACTION_TIME)
+                {
+                    suggestedRudder = 1.0f;  // Substantial action
+                    suggestedSpeed = currentSpeed * 0.5f;  // Significant speed reduction
+                }
+                else if (tcpa < EARLY_ACTION_TIME)
+                {
+                    suggestedRudder = 0.7f;  // Early action
+                }
                 break;
 
             case CollisionSituation.CrossingStandOn:
-                suggestedSpeed = currentSpeed;  // 속도 유지
+                // Rule 17(a): Stand-on vessel shall keep course and speed
+                suggestedSpeed = currentSpeed;
+                suggestedRudder = 0f;
+
+                // Rule 17(b): May take action if give-way vessel is not taking appropriate action
+                if (!otherVesselTakingAction &&
+                    (tcpa < RULE_17B_TIME || distance < RULE_17B_DISTANCE))
+                {
+                    // May take action to avoid collision by her manoeuvre alone
+                    suggestedRudder = -0.5f;  // 좌현 변침 (give-way가 우현으로 가야 하므로 반대)
+
+                    // Rule 17(c): Shall take action when collision cannot be avoided by give-way alone
+                    if (tcpa < RULE_17C_TIME || dcpa < RULE_17C_DISTANCE)
+                    {
+                        // Shall take such action as will best aid to avoid collision
+                        suggestedRudder = -1.0f;  // 최대 회피
+                        suggestedSpeed = 0f;  // 긴급 정지
+                    }
+                }
                 break;
 
             case CollisionSituation.CrossingGiveWay:
+                // Rule 15 & 16: Give-way vessel shall take early and substantial action
                 suggestedRudder = 0.5f;  // 우현 변침
                 suggestedSpeed = currentSpeed * 0.7f;  // 감속
+
+                // Rule 16: Early action
+                if (tcpa < EARLY_ACTION_TIME)
+                {
+                    suggestedRudder = 0.7f;  // 더 강한 변침
+                    suggestedSpeed = currentSpeed * 0.5f;  // 더 강한 감속
+                }
+
+                // Rule 16: Substantial action
+                if (tcpa < SUBSTANTIAL_ACTION_TIME || dcpa < SAFE_PASSING_DISTANCE)
+                {
+                    suggestedRudder = 1.0f;  // 최대 우현 변침
+                    suggestedSpeed = currentSpeed * 0.3f;  // 강력한 감속
+                }
+
+                // Critical situation
+                if (dcpa < CRITICAL_CPA)
+                {
+                    suggestedRudder = 1.0f;
+                    suggestedSpeed = 0f;  // 긴급 정지
+                }
                 break;
 
             case CollisionSituation.Overtaking:
+                // Rule 13: Overtaking vessel shall keep out of the way
                 suggestedRudder = 0.3f;  // 우현 변침
+
+                // Rule 16: Early and substantial action for overtaking
+                if (tcpa < EARLY_ACTION_TIME)
+                {
+                    suggestedRudder = 0.5f;
+                }
+
+                if (tcpa < SUBSTANTIAL_ACTION_TIME || dcpa < SAFE_PASSING_DISTANCE)
+                {
+                    suggestedRudder = 0.8f;
+                    suggestedSpeed = currentSpeed * 0.8f;  // 추월 중 감속
+                }
                 break;
         }
 
@@ -103,25 +186,103 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// COLREGs 규칙 준수 여부 평가
+    /// Give-way vessel이 회피 행동을 하고 있는지 감지 (Rule 17을 위해)
+    /// </summary>
+    public static bool IsVesselTakingAvoidanceAction(
+        Vector3 previousPosition, Vector3 currentPosition,
+        Vector3 previousForward, Vector3 currentForward,
+        float previousSpeed, float currentSpeed,
+        float deltaTime)
+    {
+        if (deltaTime <= 0) return false;
+
+        // 진행 방향 변화 감지 (도/초)
+        float headingChange = Vector3.Angle(previousForward, currentForward) / deltaTime;
+
+        // 속도 변화 감지 (감속)
+        float speedChangeRate = (previousSpeed - currentSpeed) / deltaTime;
+
+        // 경로 변화 감지
+        Vector3 expectedPosition = previousPosition + previousForward * previousSpeed * deltaTime;
+        float pathDeviation = Vector3.Distance(currentPosition, expectedPosition);
+
+        // 회피 행동 판정 기준
+        const float MIN_HEADING_CHANGE_RATE = 2.0f;  // 초당 2도 이상 변침
+        const float MIN_SPEED_REDUCTION_RATE = 0.5f;  // 초당 0.5m/s 이상 감속
+        const float MIN_PATH_DEVIATION = 2.0f;  // 예상 경로에서 2m 이상 이탈
+
+        return (headingChange > MIN_HEADING_CHANGE_RATE) ||
+               (speedChangeRate > MIN_SPEED_REDUCTION_RATE) ||
+               (pathDeviation > MIN_PATH_DEVIATION);
+    }
+
+    /// <summary>
+    /// COLREGs 규칙 준수 여부 평가 (개선된 버전)
     /// </summary>
     public static float EvaluateCompliance(
         CollisionSituation situation,
         float actualRudder,
-        float recommendedRudder)
+        float recommendedRudder,
+        float actualSpeed = -1f,
+        float recommendedSpeed = -1f,
+        float tcpa = float.MaxValue,
+        float dcpa = float.MaxValue)
     {
         if (situation == CollisionSituation.None) return 0f;
 
         float reward = 0f;
 
-        // 우현 변침 규칙 준수 평가
-        if (situation != CollisionSituation.CrossingStandOn)
+        // Rule 16: Early and Substantial Action 평가
+        if (situation == CollisionSituation.CrossingGiveWay ||
+            situation == CollisionSituation.HeadOn ||
+            situation == CollisionSituation.Overtaking)
         {
-            if (actualRudder > 0) // 우현 변침
+            // 우현 변침 준수
+            if (actualRudder > 0)
+            {
                 reward += 1.0f;
-            else if (actualRudder < 0) // 좌현 변침 (패널티)
-                reward -= 2.0f;
+
+                // Early action bonus
+                if (tcpa > EARLY_ACTION_TIME)
+                    reward += 0.5f;
+
+                // Substantial action bonus
+                if (Mathf.Abs(actualRudder) > 0.7f && tcpa < SUBSTANTIAL_ACTION_TIME)
+                    reward += 0.5f;
+            }
+            else if (actualRudder < 0)
+            {
+                reward -= 2.0f;  // 좌현 변침 패널티
+            }
+
+            // 속도 감소 평가 (Give-way의 경우)
+            if (actualSpeed >= 0 && recommendedSpeed >= 0)
+            {
+                if (actualSpeed < recommendedSpeed)
+                    reward += 0.3f;  // 감속 보상
+            }
         }
+
+        // Rule 17: Stand-on vessel 평가
+        if (situation == CollisionSituation.CrossingStandOn)
+        {
+            // Rule 17(a): 초기에는 침로/속도 유지
+            if (tcpa > RULE_17B_TIME)
+            {
+                if (Mathf.Abs(actualRudder) < 0.1f)
+                    reward += 1.0f;  // 침로 유지 보상
+            }
+            // Rule 17(b,c): 필요시 회피
+            else
+            {
+                if (Mathf.Abs(actualRudder) > 0.3f)
+                    reward += 0.5f;  // 적절한 회피 보상
+            }
+        }
+
+        // Safe passing distance 보너스
+        if (dcpa > SAFE_PASSING_DISTANCE)
+            reward += 0.5f;
 
         return reward;
     }
@@ -305,13 +466,14 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// 우선순위 기반 통합 행동 결정
+    /// 우선순위 기반 통합 행동 결정 (Rule 16, 17 완전 구현)
     /// </summary>
-    public static (float suggestedRudder, float suggestedSpeed, string reasoning) 
-    GetPriorityBasedAction(VesselAgent agent, List<GameObject> detectedVessels)
+    public static (float suggestedRudder, float suggestedSpeed, string reasoning)
+    GetPriorityBasedAction(VesselAgent agent, List<GameObject> detectedVessels,
+        Dictionary<GameObject, bool> vesselsTakingAction = null)
     {
         var allSituations = AnalyzeAllCOLREGsSituations(agent, detectedVessels);
-        
+
         if (allSituations.Count == 0)
         {
             return (0f, agent.vesselDynamics.CurrentSpeed, "No COLREGs situations");
@@ -319,38 +481,61 @@ public class COLREGsHandler
 
         float totalRudder = 0f;
         float totalSpeed = 0f;
-        int actionCount = 0;
+        float totalWeight = 0f;
         string reasoning = "";
 
         // 상위 3개 상황만 고려 (너무 많은 상황을 동시에 처리하면 혼란)
         int maxSituations = Mathf.Min(3, allSituations.Count);
-        
+
         for (int i = 0; i < maxSituations; i++)
         {
             var situation = allSituations[i].Item1;
             var risk = allSituations[i].Item2;
-            var vessel = allSituations[i].Item3;
+            var vesselObj = allSituations[i].Item3;
             var priority = allSituations[i].Item4;
-            
+
+            VesselAgent otherAgent = vesselObj.GetComponent<VesselAgent>();
+            if (otherAgent == null) continue;
+
+            // TCPA/DCPA 계산
+            Vector3 myVelocity = agent.transform.forward * agent.vesselDynamics.CurrentSpeed;
+            Vector3 otherVelocity = otherAgent.transform.forward * otherAgent.vesselDynamics.CurrentSpeed;
+            float tcpa = CalculateTCPA(agent.transform.position, myVelocity,
+                otherAgent.transform.position, otherVelocity);
+            float dcpa = CalculateDCPA(agent.transform.position, myVelocity,
+                otherAgent.transform.position, otherVelocity);
+
+            // 상대 선박의 회피 행동 여부 확인
+            bool otherVesselTakingAction = false;
+            if (vesselsTakingAction != null && vesselsTakingAction.ContainsKey(vesselObj))
+            {
+                otherVesselTakingAction = vesselsTakingAction[vesselObj];
+            }
+
             // 위험도에 따른 가중치 계산
             float weight = risk * (priority / 5.0f); // 우선순위와 위험도를 모두 고려
-            
-            // 개별 행동 계산
-            var (rudder, speed) = GetRecommendedAction(situation, agent.vesselDynamics.CurrentSpeed, 
-                vessel.transform.position - agent.transform.position);
-            
+
+            // 개별 행동 계산 (TCPA/DCPA 포함)
+            var (rudder, speed) = GetRecommendedAction(
+                situation,
+                agent.vesselDynamics.CurrentSpeed,
+                vesselObj.transform.position - agent.transform.position,
+                tcpa,
+                dcpa,
+                otherVesselTakingAction);
+
             // 가중 평균으로 통합
             totalRudder += rudder * weight;
             totalSpeed += speed * weight;
-            actionCount++;
-            
-            reasoning += $"{situation}({risk:F2}) ";
+            totalWeight += weight;
+
+            reasoning += $"{situation}(R:{risk:F2},T:{tcpa:F1},D:{dcpa:F1}) ";
         }
 
-        // 평균 계산
-        float finalRudder = actionCount > 0 ? totalRudder / actionCount : 0f;
-        float finalSpeed = actionCount > 0 ? totalSpeed / actionCount : agent.vesselDynamics.CurrentSpeed;
-        
+        // 가중 평균 계산
+        float finalRudder = totalWeight > 0 ? totalRudder / totalWeight : 0f;
+        float finalSpeed = totalWeight > 0 ? totalSpeed / totalWeight : agent.vesselDynamics.CurrentSpeed;
+
         // 타각 제한
         finalRudder = Mathf.Clamp(finalRudder, -1f, 1f);
         finalSpeed = Mathf.Clamp(finalSpeed, 0f, agent.vesselDynamics.maxSpeed);

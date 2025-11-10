@@ -5,7 +5,13 @@ using System.Linq;
 
 public class VesselManager : MonoBehaviour
 {
+    [Header("Spawn Settings")]
     public List<Transform> spawnPoints = new List<Transform>();
+
+    [Header("Goal Settings")]
+    public List<Transform> goalPoints = new List<Transform>();  // 별도의 목표 지점들
+
+    [Header("Vessel Settings")]
     public GameObject vesselPrefab;
     public int vesselCount = 4;
     public float minGoalDistance = 50f;
@@ -40,7 +46,16 @@ public class VesselManager : MonoBehaviour
         vesselGoals.Clear();
         vesselSpawnIndices.Clear();
 
-        if (spawnPoints.Count < vesselCount) return;
+        if (spawnPoints.Count < vesselCount)
+        {
+            Debug.LogWarning($"Not enough spawn points! Need {vesselCount}, have {spawnPoints.Count}");
+            return;
+        }
+
+        if (goalPoints.Count == 0)
+        {
+            Debug.LogWarning("No goal points set! Will use spawn points as goals (not recommended)");
+        }
 
         for (int i = 0; i < vesselCount; i++)
         {
@@ -88,19 +103,24 @@ public class VesselManager : MonoBehaviour
 
     private void AssignGoalForVessel(GameObject vessel, Transform spawnPoint)
     {
+        // goalPoints가 설정되어 있으면 사용, 없으면 spawnPoints 사용 (호환성)
+        List<Transform> availableGoals = goalPoints.Count > 0 ? goalPoints : spawnPoints;
         List<Transform> validGoalPoints = new List<Transform>();
 
-        foreach (Transform point in spawnPoints)
+        // 스폰 위치에서 충분히 먼 목표점들만 선택
+        foreach (Transform point in availableGoals)
         {
             float distance = Vector3.Distance(spawnPoint.position, point.position);
             if (distance >= minGoalDistance) validGoalPoints.Add(point);
         }
 
+        // 거리 조건을 만족하는 목표점이 없으면 모든 목표점 사용
         if (validGoalPoints.Count == 0)
         {
-            validGoalPoints = new List<Transform>(spawnPoints);
+            validGoalPoints = new List<Transform>(availableGoals);
         }
 
+        // 랜덤하게 목표점 선택
         int goalIndex = Random.Range(0, validGoalPoints.Count);
         Transform goalPoint = validGoalPoints[goalIndex];
 

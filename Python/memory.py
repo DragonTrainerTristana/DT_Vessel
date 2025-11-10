@@ -5,13 +5,14 @@ import numpy as np
 
 
 class AgentMemory:
-    """개별 에이전트의 경험을 저장하는 메모리"""
+    """개별 에이전트의 경험을 저장하는 메모리 (COLREGs 정보 포함)"""
 
     def __init__(self):
         """메모리 초기화"""
         self.states = []
         self.goals = []
         self.speeds = []
+        self.colregs_situations = []  # COLREGs 상황 정보 [4]
         self.neighbor_infos = []  # {' obs': [...], 'mask': [...]} 형태
         self.actions = []
         self.rewards = []
@@ -22,16 +23,31 @@ class AgentMemory:
 
     def clear(self):
         """모든 저장된 경험 삭제"""
-        self.__init__()
+        self.states.clear()
+        self.goals.clear()
+        self.speeds.clear()
+        self.colregs_situations.clear()
+        self.neighbor_infos.clear()
+        self.actions.clear()
+        self.rewards.clear()
+        self.dones.clear()
+        self.values.clear()
+        self.logprobs.clear()
+        self.episode_done = False
 
-    def add(self, state, goal, speed, neighbor_info, action, reward, done, value, logprob):
+        # 강제 가비지 컬렉션
+        import gc
+        gc.collect()
+
+    def add(self, state, goal, speed, colregs_situations, neighbor_info, action, reward, done, value, logprob):
         """
-        새로운 경험 추가
+        새로운 경험 추가 (COLREGs 정보 포함)
 
         Args:
             state: Frame-stacked state [STATE_SIZE * FRAMES]
             goal: Goal information [2]
             speed: Speed information [2]
+            colregs_situations: COLREGs 상황 [4]
             neighbor_info: 이웃 정보 dict {'obs': [...], 'mask': [...]}
             action: 행동 [CONTINUOUS_ACTION_SIZE]
             reward: 보상 (scalar)
@@ -43,6 +59,7 @@ class AgentMemory:
             self.states.append(state)
             self.goals.append(goal)
             self.speeds.append(speed)
+            self.colregs_situations.append(colregs_situations)
             self.neighbor_infos.append(neighbor_info)
             self.actions.append(action)
             self.rewards.append(reward)
@@ -63,18 +80,25 @@ class Memory:
 
     def clear(self):
         """모든 에이전트 메모리 삭제"""
-        self.__init__()
+        for agent_memory in self.agent_memories.values():
+            agent_memory.clear()
+        self.agent_memories.clear()
 
-    def add_agent_experience(self, agent_id, state, goal, speed, neighbor_info,
+        # 강제 가비지 컬렉션
+        import gc
+        gc.collect()
+
+    def add_agent_experience(self, agent_id, state, goal, speed, colregs_situations, neighbor_info,
                             action, reward, done, value, logprob):
         """
-        특정 에이전트의 경험 추가
+        특정 에이전트의 경험 추가 (COLREGs 정보 포함)
 
         Args:
             agent_id: 에이전트 ID
             state: Frame-stacked state [STATE_SIZE * FRAMES]
             goal: Goal information [2]
             speed: Speed information [2]
+            colregs_situations: COLREGs 상황 [4]
             neighbor_info: 이웃 정보 dict {'obs': [...], 'mask': [...]}
             action: 행동 [CONTINUOUS_ACTION_SIZE]
             reward: 보상 (scalar)
@@ -86,7 +110,7 @@ class Memory:
             self.agent_memories[agent_id] = AgentMemory()
 
         self.agent_memories[agent_id].add(
-            state, goal, speed, neighbor_info, action, reward, done, value, logprob)
+            state, goal, speed, colregs_situations, neighbor_info, action, reward, done, value, logprob)
 
     def get_active_agents(self):
         """
@@ -100,13 +124,14 @@ class Memory:
 
     def get_all_experiences(self):
         """
-        모든 에이전트의 경험을 하나의 배치로 통합
+        모든 에이전트의 경험을 하나의 배치로 통합 (COLREGs 정보 포함)
 
         Returns:
             dict: 통합된 경험 데이터
                 - states: [N, STATE_SIZE * FRAMES]
                 - goals: [N, 2]
                 - speeds: [N, 2]
+                - colregs_situations: [N, 4]
                 - neighbor_infos: [N, {'obs': [...], 'mask': [...]}]
                 - actions: [N, CONTINUOUS_ACTION_SIZE]
                 - rewards: [N]
@@ -114,13 +139,14 @@ class Memory:
                 - values: [N]
                 - logprobs: [N]
         """
-        states, goals, speeds, neighbor_infos = [], [], [], []
+        states, goals, speeds, colregs_situations, neighbor_infos = [], [], [], [], []
         actions, rewards, dones, values, logprobs = [], [], [], [], []
 
         for agent_memory in self.agent_memories.values():
             states.extend(agent_memory.states)
             goals.extend(agent_memory.goals)
             speeds.extend(agent_memory.speeds)
+            colregs_situations.extend(agent_memory.colregs_situations)
             neighbor_infos.extend(agent_memory.neighbor_infos)
             actions.extend(agent_memory.actions)
             rewards.extend(agent_memory.rewards)
@@ -132,6 +158,7 @@ class Memory:
             'states': np.array(states) if states else np.array([]),
             'goals': np.array(goals) if goals else np.array([]),
             'speeds': np.array(speeds) if speeds else np.array([]),
+            'colregs_situations': np.array(colregs_situations) if colregs_situations else np.array([]),
             'neighbor_infos': neighbor_infos,  # list of dicts
             'actions': np.array(actions) if actions else np.array([]),
             'rewards': np.array(rewards) if rewards else np.array([]),

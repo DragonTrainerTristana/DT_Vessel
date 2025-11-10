@@ -45,6 +45,16 @@ public class VesselAgent : Agent
     [Header("Coordinate Settings")]
     public Vector3 originReference = Vector3.zero;
 
+    [Header("COLREGs Tracking (Rule 17)")]
+    private Dictionary<GameObject, Vector3> previousVesselPositions;
+    private Dictionary<GameObject, Vector3> previousVesselForwards;
+    private Dictionary<GameObject, float> previousVesselSpeeds;
+    private float lastTrackingTime;
+
+    [Header("COLREGs Caching")]
+    private Dictionary<GameObject, COLREGsHandler.CollisionSituation> cachedSituations;
+    private int cacheFrame = -1;
+
     public override void Initialize()
     {
         rb = GetComponent<Rigidbody>();
@@ -84,6 +94,15 @@ public class VesselAgent : Agent
 
         AudioListener audioListener = GetComponent<AudioListener>();
         if (audioListener != null) Destroy(audioListener);
+
+        // Rule 17 추적을 위한 딕셔너리 초기화
+        previousVesselPositions = new Dictionary<GameObject, Vector3>();
+        previousVesselForwards = new Dictionary<GameObject, Vector3>();
+        previousVesselSpeeds = new Dictionary<GameObject, float>();
+        lastTrackingTime = Time.time;
+
+        // COLREGs 캐싱 초기화
+        cachedSituations = new Dictionary<GameObject, COLREGsHandler.CollisionSituation>();
     }
 
     public override void OnEpisodeBegin()
@@ -106,6 +125,12 @@ public class VesselAgent : Agent
         }
 
         if (hasGoal) previousDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
+
+        // Rule 17 추적 초기화
+        previousVesselPositions.Clear();
+        previousVesselForwards.Clear();
+        previousVesselSpeeds.Clear();
+        lastTrackingTime = Time.time;
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -148,38 +173,93 @@ public class VesselAgent : Agent
             AddReward(rotationPenalty * angularVelocity);
         }
 
-        // 3. COLREGs compliance (averaged)
+        // 3. COLREGs compliance (Rule 13-17 완전 구현)
         float totalCompliance = 0f;
         int complianceCount = 0;
 
         if (cachedVessels != null)
         {
+            // 선박별 회피 행동 추적을 위한 딕셔너리
+            Dictionary<GameObject, bool> vesselsTakingAction = new Dictionary<GameObject, bool>();
+
             foreach (var otherVessel in cachedVessels)
             {
                 if (otherVessel == this) continue;
 
-            var situation = COLREGsHandler.AnalyzeSituation(
-                transform.position, transform.forward, vesselDynamics.CurrentSpeed,
-                otherVessel.transform.position, otherVessel.transform.forward, otherVessel.vesselDynamics.CurrentSpeed
-            );
+                // 캐싱된 상황 사용 또는 새로 계산
+                var situation = GetCachedSituation(otherVessel);
 
-            if (situation != COLREGsHandler.CollisionSituation.None)
-            {
-                var (recommendedRudder, recommendedSpeed) = COLREGsHandler.GetRecommendedAction(
-                    situation,
-                    vesselDynamics.CurrentSpeed,
-                    otherVessel.transform.position - transform.position
-                );
+                if (situation != COLREGsHandler.CollisionSituation.None)
+                {
+                    // TCPA/DCPA 계산
+                    Vector3 myVelocity = transform.forward * vesselDynamics.CurrentSpeed;
+                    Vector3 otherVelocity = otherVessel.transform.forward * otherVessel.vesselDynamics.CurrentSpeed;
+                    float tcpa = COLREGsHandler.CalculateTCPA(
+                        transform.position, myVelocity,
+                        otherVessel.transform.position, otherVelocity
+                    );
+                    float dcpa = COLREGsHandler.CalculateDCPA(
+                        transform.position, myVelocity,
+                        otherVessel.transform.position, otherVelocity
+                    );
 
-                float compliance = COLREGsHandler.EvaluateCompliance(
-                    situation,
-                    vesselDynamics.RudderAngle,
-                    recommendedRudder
-                );
+                    // 상대 선박의 회피 행동 감지 (Rule 17을 위해)
+                    bool otherVesselTakingAction = false;
+                    GameObject otherVesselObj = otherVessel.gameObject;
+                    float deltaTime = Time.time - lastTrackingTime;
 
-                totalCompliance += compliance;
-                complianceCount++;
-            }
+                    if (deltaTime > 0.1f && previousVesselPositions.ContainsKey(otherVesselObj))
+                    {
+                        // IsVesselTakingAvoidanceAction 함수 사용
+                        otherVesselTakingAction = COLREGsHandler.IsVesselTakingAvoidanceAction(
+                            previousVesselPositions[otherVesselObj],
+                            otherVessel.transform.position,
+                            previousVesselForwards[otherVesselObj],
+                            otherVessel.transform.forward,
+                            previousVesselSpeeds[otherVesselObj],
+                            otherVessel.vesselDynamics.CurrentSpeed,
+                            deltaTime
+                        );
+                    }
+                    else if (otherVessel.vesselDynamics != null)
+                    {
+                        // 초기 상태나 데이터 부족 시 간단한 감지
+                        otherVesselTakingAction =
+                            Mathf.Abs(otherVessel.vesselDynamics.RudderAngle) > 0.3f ||
+                            otherVessel.vesselDynamics.CurrentSpeed < otherVessel.vesselDynamics.maxSpeed * 0.7f;
+                    }
+
+                    // 현재 상태 저장 (다음 프레임용)
+                    previousVesselPositions[otherVesselObj] = otherVessel.transform.position;
+                    previousVesselForwards[otherVesselObj] = otherVessel.transform.forward;
+                    previousVesselSpeeds[otherVesselObj] = otherVessel.vesselDynamics.CurrentSpeed;
+
+                    vesselsTakingAction[otherVesselObj] = otherVesselTakingAction;
+
+                    // 권장 행동 계산 (TCPA/DCPA 포함)
+                    var (recommendedRudder, recommendedSpeed) = COLREGsHandler.GetRecommendedAction(
+                        situation,
+                        vesselDynamics.CurrentSpeed,
+                        otherVessel.transform.position - transform.position,
+                        tcpa,
+                        dcpa,
+                        otherVesselTakingAction
+                    );
+
+                    // COLREGs 준수도 평가 (개선된 버전)
+                    float compliance = COLREGsHandler.EvaluateCompliance(
+                        situation,
+                        vesselDynamics.RudderAngle,
+                        recommendedRudder,
+                        vesselDynamics.CurrentSpeed,
+                        recommendedSpeed,
+                        tcpa,
+                        dcpa
+                    );
+
+                    totalCompliance += compliance;
+                    complianceCount++;
+                }
             }
         }
 
@@ -188,6 +268,9 @@ public class VesselAgent : Agent
             float avgCompliance = totalCompliance / complianceCount;
             AddReward(avgCompliance * colregsRewardCoef);
         }
+
+        // 추적 시간 업데이트
+        lastTrackingTime = Time.time;
     }
 
     void OnCollisionEnter(Collision collision)
@@ -328,5 +411,30 @@ public class VesselAgent : Agent
     {
         radarDetectionLayers = layers;
         if (radar != null) radar.detectionLayers = layers;
+    }
+
+    private COLREGsHandler.CollisionSituation GetCachedSituation(VesselAgent otherVessel)
+    {
+        // 새 프레임이면 캐시 초기화
+        if (Time.frameCount != cacheFrame)
+        {
+            cachedSituations.Clear();
+            cacheFrame = Time.frameCount;
+        }
+
+        GameObject otherVesselObj = otherVessel.gameObject;
+
+        // 캐시에 없으면 계산 후 저장
+        if (!cachedSituations.ContainsKey(otherVesselObj))
+        {
+            var situation = COLREGsHandler.AnalyzeSituation(
+                transform.position, transform.forward, vesselDynamics.CurrentSpeed,
+                otherVessel.transform.position, otherVessel.transform.forward,
+                otherVessel.vesselDynamics.CurrentSpeed
+            );
+            cachedSituations[otherVesselObj] = situation;
+        }
+
+        return cachedSituations[otherVesselObj];
     }
 }
