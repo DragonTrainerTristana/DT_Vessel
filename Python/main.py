@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import csv
 import datetime
+import math
 from mlagents_envs.environment import UnityEnvironment, ActionTuple
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from torch.utils.tensorboard import SummaryWriter
@@ -10,34 +11,74 @@ import torch.nn.functional as F
 from config import *
 from networks import CNNPolicy
 from memory import Memory
-from functions import calculate_returns
+from functions import calculate_returns, log_normal_density
 from frame_stack import MultiAgentFrameStack
 
 def save_onnx_model(policy, save_path):
-    policy.eval()
+    """
+    Export policy network to ONNX format for Unity Barracuda inference.
 
-    dummy_state = torch.randn(1, STATE_SIZE * FRAMES).to(DEVICE)
-    dummy_goal = torch.randn(1, 2).to(DEVICE)
-    dummy_speed = torch.randn(1, 2).to(DEVICE)
-    dummy_neighbor_obs = torch.randn(1, N_AGENT, NEIGHBOR_STATE_SIZE).to(DEVICE)
-    dummy_neighbor_mask = torch.ones(1, N_AGENT, dtype=torch.bool).to(DEVICE)
+    Unity ML-Agents Barracuda requires ONNX format to run models without Python.
+    This exports the full forward pass including message generation.
+    """
+    try:
+        import torch.onnx
 
-    torch.onnx.export(
-        policy,
-        (dummy_state, dummy_goal, dummy_speed, dummy_neighbor_obs, dummy_neighbor_mask),
-        save_path,
-        input_names=['state', 'goal', 'speed', 'neighbor_obs', 'neighbor_mask'],
-        output_names=['action'],
-        dynamic_axes={
-            'state': {0: 'batch_size'},
-            'goal': {0: 'batch_size'},
-            'speed': {0: 'batch_size'},
-            'neighbor_obs': {0: 'batch_size'},
-            'neighbor_mask': {0: 'batch_size'},
-            'action': {0: 'batch_size'}
-        },
-        opset_version=11
-    )
+        policy.eval()  # Evaluation mode
+
+        # Create dummy inputs matching observation space
+        dummy_state = torch.randn(1, STATE_SIZE * FRAMES).to(DEVICE)  # [1, 360*3=1080]
+        dummy_goal = torch.randn(1, 2).to(DEVICE)                      # [1, 2]
+        dummy_speed = torch.randn(1, 2).to(DEVICE)                     # [1, 2]
+        dummy_colregs = torch.randn(1, 5).to(DEVICE)                   # [1, 5]
+        dummy_neighbor_obs = torch.randn(1, MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE).to(DEVICE)  # [1, 4, 371]
+        dummy_neighbor_mask = torch.ones(1, MAX_NEIGHBORS, dtype=torch.bool).to(DEVICE)   # [1, 4]
+
+        # Export to ONNX
+        torch.onnx.export(
+            policy,
+            (dummy_state, dummy_goal, dummy_speed, dummy_colregs, dummy_neighbor_obs, dummy_neighbor_mask),
+            save_path,
+            input_names=[
+                'state',           # [1, 1080]
+                'goal',            # [1, 2]
+                'speed',           # [1, 2]
+                'colregs',         # [1, 5]
+                'neighbor_obs',    # [1, 4, 371]
+                'neighbor_mask'    # [1, 4]
+            ],
+            output_names=[
+                'value',           # [1, 1, 1]
+                'action',          # [1, 1, 2]
+                'logprob',         # [1, 1]
+                'action_mean',     # [1, 1, 2]
+                'colregs_pred'     # [1, 5]
+            ],
+            dynamic_axes={
+                'state': {0: 'batch'},
+                'goal': {0: 'batch'},
+                'speed': {0: 'batch'},
+                'colregs': {0: 'batch'},
+                'neighbor_obs': {0: 'batch'},
+                'neighbor_mask': {0: 'batch'},
+                'value': {0: 'batch'},
+                'action': {0: 'batch'},
+                'logprob': {0: 'batch'},
+                'action_mean': {0: 'batch'},
+                'colregs_pred': {0: 'batch'}
+            },
+            opset_version=11,  # Unity Barracuda supports opset 11
+            do_constant_folding=True
+        )
+
+        print(f"  [OK] ONNX model exported: {save_path}")
+        print(f"  [INFO] Use this .onnx file in Unity Inspector → Model")
+
+        policy.train()  # Back to training mode
+
+    except Exception as e:
+        print(f"  [ERROR] ONNX export failed: {e}")
+        print(f"  [INFO] Continuing with PyTorch .pth only")
 
 def setup_logging():
     csv_dir = os.path.join(SAVE_PATH, 'csv_logs')
@@ -92,39 +133,49 @@ def setup_logging():
 
 def parse_observation(obs_raw):
     """
-    Parse 324D observation into components (MDPI 2024):
-    [0:180] self state (30 regions × 6)
-    [180:184] message passing (goal=2, speed=2)
-    [184:324] neighbors (4 × 35D)
-
-    Neighbor 35D = compressed_radar(24) + vessel(4) + goal(3) + fuzzy_colregs(4)
+    Parse 1855D observation (GitHub + COLREGs + Full Neighbor Obs):
+    [0:360]      Self radar state (360 rays)
+    [360:362]    goal (distance, angle)
+    [362:364]    velocity (speed, yaw_rate)
+    [364]        heading
+    [365]        rudder
+    [366:1850]   neighbor observations (4 × 371D each):
+                   - Each neighbor: [360 radar + 2 goal + 2 speed + 5 colregs + 1 heading + 1 rudder] = 371D
+    [1850:1855]  Self COLREGs situation (one-hot 5D)
     """
-    state = obs_raw[:STATE_SIZE]  # [0:180]
-    goal = obs_raw[STATE_SIZE:STATE_SIZE+2]  # [180:182]
-    speed = obs_raw[STATE_SIZE+2:STATE_SIZE+4]  # [182:184]
-    neighbor_obs_raw = obs_raw[STATE_SIZE+4:]  # [184:324] = 140D
+    # Self Radar
+    state = obs_raw[:STATE_SIZE]  # [0:360]
 
-    neighbor_obs = neighbor_obs_raw.reshape(N_AGENT, NEIGHBOR_STATE_SIZE)  # (4, 35)
-    neighbor_mask = torch.tensor(
-        [bool(np.any(neighbor_obs[i] != 0)) for i in range(N_AGENT)],
-        dtype=torch.bool
-    ).to(DEVICE)
+    # Self state
+    goal_distance = obs_raw[360]
+    goal_angle = obs_raw[361]
+    speed = obs_raw[362]
+    yaw_rate = obs_raw[363]
+    heading = obs_raw[364]
+    rudder = obs_raw[365]
 
-    # COLREGs 정보 추출 (각 이웃의 마지막 4D: fuzzy weights for 4 situations)
-    # [None, HeadOn, CrossingGiveWay, CrossingStandOn, Overtaking]
-    colregs_situations = np.zeros(4)  # 집계된 COLREGs 상황
+    goal = np.array([goal_distance, goal_angle])
+    self_speed = np.array([speed, yaw_rate])
 
-    for i in range(N_AGENT):
-        if neighbor_mask[i]:  # 유효한 이웃만
-            # 각 이웃의 fuzzy COLREGs는 마지막 4차원
-            fuzzy_colregs = neighbor_obs[i, -4:]
-            colregs_situations += fuzzy_colregs  # 모든 이웃의 COLREGs 상황 집계
+    # Neighbor observations (4 × 371D = 1484D)
+    neighbor_obs = np.zeros((MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE))
+    neighbor_mask = np.zeros(MAX_NEIGHBORS, dtype=bool)
 
-    # 정규화 (0-1 범위)
-    if np.sum(colregs_situations) > 0:
-        colregs_situations = colregs_situations / np.sum(colregs_situations)
+    start_idx = 366
+    for i in range(MAX_NEIGHBORS):
+        neighbor_start = start_idx + i * NEIGHBOR_OBS_SIZE
+        neighbor_end = neighbor_start + NEIGHBOR_OBS_SIZE
+        neighbor_data = obs_raw[neighbor_start:neighbor_end]
 
-    return state, goal, speed, neighbor_obs, neighbor_mask, colregs_situations
+        # Check if this neighbor slot is valid (non-zero observation)
+        if np.any(neighbor_data != 0):
+            neighbor_obs[i] = neighbor_data
+            neighbor_mask[i] = True
+
+    # Self COLREGs situation (one-hot 5D)
+    colregs_situation = obs_raw[1850:1855]
+
+    return state, goal, self_speed, neighbor_obs, neighbor_mask, colregs_situation
 
 def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file):
     """PPO 학습 업데이트 (COLREGs 학습 포함)"""
@@ -139,28 +190,21 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     dones = experiences['dones']
     values = experiences['values']
 
-    returns = calculate_returns(rewards, dones, 0, values, DISCOUNT_FACTOR)
+    returns = calculate_returns(rewards, dones, 0, values, DISCOUNT_FACTOR, GAE_LAMBDA)
     advantages = returns - values
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-    # Tensor로 변환
+    # Tensor로 변환 (GitHub 방식 + Neighbor Obs)
     states_tensor = torch.FloatTensor(states).to(DEVICE)
     goals_tensor = torch.FloatTensor(experiences['goals']).to(DEVICE)
     speeds_tensor = torch.FloatTensor(experiences['speeds']).to(DEVICE)
     colregs_tensor = torch.FloatTensor(experiences['colregs_situations']).to(DEVICE)  # COLREGs 추가
+    neighbor_obs_tensor = torch.FloatTensor(experiences['neighbor_obs']).to(DEVICE)  # Neighbor observations
+    neighbor_mask_tensor = torch.BoolTensor(experiences['neighbor_mask']).to(DEVICE)  # Neighbor mask
     actions_tensor = torch.FloatTensor(experiences['actions']).to(DEVICE)
     old_logprobs_tensor = torch.FloatTensor(experiences['logprobs']).to(DEVICE)
     returns_tensor = torch.FloatTensor(returns).to(DEVICE)
     advantages_tensor = torch.FloatTensor(advantages).to(DEVICE)
-
-    # Neighbor 정보 처리
-    neighbor_obs_list = []
-    neighbor_mask_list = []
-    for neighbor_info in experiences['neighbor_infos']:
-        neighbor_obs_list.append(neighbor_info['obs'])
-        neighbor_mask_list.append(neighbor_info['mask'])
-    neighbor_obs_tensor = torch.FloatTensor(np.array(neighbor_obs_list)).to(DEVICE)
-    neighbor_mask_tensor = torch.BoolTensor(np.array(neighbor_mask_list)).to(DEVICE)
 
     # PPO 에폭 루프
     total_policy_loss = 0
@@ -180,30 +224,39 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             end = min(start + BATCH_SIZE, len(indices))
             batch_indices = indices[start:end]
 
-            # Batch 데이터 준비
+            # Batch 데이터 준비 (GitHub 방식 + Neighbor Obs)
             batch_states = states_tensor[batch_indices]
             batch_goals = goals_tensor[batch_indices]
             batch_speeds = speeds_tensor[batch_indices]
             batch_colregs = colregs_tensor[batch_indices]  # COLREGs 추가
+            batch_neighbor_obs = neighbor_obs_tensor[batch_indices]  # Neighbor observations
+            batch_neighbor_mask = neighbor_mask_tensor[batch_indices]  # Neighbor mask
             batch_actions = actions_tensor[batch_indices]
             batch_old_logprobs = old_logprobs_tensor[batch_indices]
             batch_returns = returns_tensor[batch_indices]
             batch_advantages = advantages_tensor[batch_indices]
-            batch_neighbor_obs = neighbor_obs_tensor[batch_indices]
-            batch_neighbor_mask = neighbor_mask_tensor[batch_indices]
 
-            # Forward pass (COLREGs 정보 포함)
-            values, _, new_logprobs, _, colregs_pred = policy(
-                batch_states, batch_goals, batch_speeds,
-                batch_colregs,
+            # Evaluate actions (COLREGs + Neighbor 정보 포함)
+            # Note: evaluate_actions는 내부적으로 forward()를 호출하므로
+            # neighbor_obs와 neighbor_mask를 전달해야 함
+            # 하지만 현재 evaluate_actions는 neighbor 파라미터를 받지 않음
+            # 따라서 forward()를 직접 호출하고 logprob를 재계산
+            _, _, _, mean, colregs_pred = policy.forward(
+                batch_states, batch_goals, batch_speeds, batch_colregs,
                 batch_neighbor_obs, batch_neighbor_mask
             )
 
-            # Evaluate actions for correct logprobs
-            values, new_logprobs, dist_entropy, colregs_pred = policy.evaluate_actions(
-                batch_states, batch_goals, batch_speeds,
-                batch_actions, batch_colregs
-            )
+            # logprob 재계산
+            logstd = policy.logstd.expand_as(mean)
+            std = torch.exp(logstd)
+            new_logprobs = log_normal_density(batch_actions, mean, std=std, log_std=logstd)
+
+            # Critic forward로 value 계산
+            values = policy.critic_forward(batch_states, batch_goals, batch_speeds, batch_colregs)
+
+            # Entropy 계산
+            dist_entropy = 0.5 + 0.5 * torch.log(2 * torch.tensor(math.pi)) + logstd
+            dist_entropy = dist_entropy.sum(-1).mean()
 
             # PPO Loss 계산
             ratio = torch.exp(new_logprobs - batch_old_logprobs)
@@ -273,7 +326,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
 
 def main():
     print("="*80)
-    print("🚢 Vessel ML-Agent Training Start")
+    print("[START] Vessel ML-Agent Training Start")
     print("="*80)
     print(f"Device: {DEVICE}")
     print(f"Learning Rate: {LEARNING_RATE}")
@@ -294,9 +347,30 @@ def main():
     channel.set_configuration_parameters(time_scale=TIME_SCALE)
 
     policy = CNNPolicy(MSG_ACTION_SPACE, CONTINUOUS_ACTION_SIZE, FRAMES, N_AGENT).to(DEVICE)
+
+    # 모델 로드
+    if LOAD_MODEL:
+        if MODEL_PATH is None:
+            print("[ERROR] LOAD_MODEL=True but MODEL_PATH is None!")
+            print("[ERROR] Please set MODEL_PATH in config.py")
+            exit(1)
+
+        if not os.path.exists(MODEL_PATH):
+            print(f"[ERROR] Model file not found: {MODEL_PATH}")
+            exit(1)
+
+        try:
+            policy.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+            print(f"\n[OK] Model loaded from: {MODEL_PATH}")
+        except Exception as e:
+            print(f"[ERROR] Failed to load model: {e}")
+            exit(1)
+
     optimizer = torch.optim.Adam(policy.parameters(), lr=LEARNING_RATE)
 
-    print(f"\n✅ Policy Network Loaded: {sum(p.numel() for p in policy.parameters())} parameters")
+    print(f"[OK] Policy Network Ready: {sum(p.numel() for p in policy.parameters())} parameters")
+    print(f"[INFO] Training Mode: {TRAIN_MODE}")
+    print(f"[INFO] Model Load: {LOAD_MODEL}")
 
     writer = SummaryWriter(log_dir=os.path.join(SAVE_PATH, 'logs'))
     episode_log_file, step_log_file, reward_log_file, training_log_file, policy_log_file = setup_logging()
@@ -313,7 +387,7 @@ def main():
 
     for episode in range(NUM_EPISODES):
         print(f"\n{'='*80}")
-        print(f"📋 Episode {episode}/{NUM_EPISODES} Start (Total Steps: {total_steps})")
+        print(f"[EPISODE] Episode {episode}/{NUM_EPISODES} Start (Total Steps: {total_steps})")
         print(f"{'='*80}")
 
         env.reset()
@@ -337,48 +411,67 @@ def main():
             decision_steps, terminal_steps = env.get_steps(behavior_name)
             agent_actions = {}
 
-            # Decision steps 처리
+            # ========== GitHub 방식 + Full Neighbor Obs: Message Exchange ==========
+            # 1단계: 모든 에이전트의 observation 수집 및 파싱
+            agent_data = {}  # {agent_id: {state_stack, goal, speed, neighbor_obs, neighbor_mask, colregs}}
+
             for agent_id in decision_steps.agent_id:
-                obs_raw = decision_steps.obs[0][agent_id]
-                state, goal, speed, neighbor_obs, neighbor_mask, colregs_situations = parse_observation(obs_raw)
+                obs_raw = decision_steps.obs[0][decision_steps.agent_id.tolist().index(agent_id)]
+                state, goal, speed, neighbor_obs, neighbor_mask, colregs_situation = parse_observation(obs_raw)
 
                 # Frame stack 적용
                 state_stack = frame_stack.update(agent_id, state)
 
-                state_tensor = torch.FloatTensor(state_stack).unsqueeze(0).to(DEVICE)
-                goal_tensor = torch.FloatTensor(goal).unsqueeze(0).to(DEVICE)
-                speed_tensor = torch.FloatTensor(speed).unsqueeze(0).to(DEVICE)
-                neighbor_obs_tensor = torch.FloatTensor(neighbor_obs).unsqueeze(0).to(DEVICE)
-                colregs_tensor = torch.FloatTensor(colregs_situations).unsqueeze(0).to(DEVICE)
-
-                with torch.no_grad():
-                    value, action, logprob, _, colregs_pred = policy(
-                        state_tensor, goal_tensor, speed_tensor,
-                        colregs_tensor,
-                        neighbor_obs_tensor, neighbor_mask.unsqueeze(0)
-                    )
-
-                agent_actions[agent_id] = action.cpu().numpy()[0, 0]
+                agent_data[agent_id] = {
+                    'state_stack': state_stack,
+                    'goal': goal,
+                    'speed': speed,
+                    'neighbor_obs': neighbor_obs,
+                    'neighbor_mask': neighbor_mask,
+                    'colregs': colregs_situation
+                }
 
                 if agent_id not in episode_rewards:
                     episode_rewards[agent_id] = 0
 
-                reward = decision_steps.reward[agent_id]
+            # 2단계: 행동 생성 (GitHub 방식 + Neighbor Obs)
+            # policy.forward()를 사용하여 neighbor_obs와 neighbor_mask를 함께 전달
+            for agent_id, data in agent_data.items():
+                state_tensor = torch.FloatTensor(data['state_stack']).unsqueeze(0).to(DEVICE)
+                goal_tensor = torch.FloatTensor(data['goal']).unsqueeze(0).to(DEVICE)
+                speed_tensor = torch.FloatTensor(data['speed']).unsqueeze(0).to(DEVICE)
+                colregs_tensor = torch.FloatTensor(data['colregs']).unsqueeze(0).to(DEVICE)
+                neighbor_obs_tensor = torch.FloatTensor(data['neighbor_obs']).unsqueeze(0).to(DEVICE)
+                neighbor_mask_tensor = torch.BoolTensor(data['neighbor_mask']).unsqueeze(0).to(DEVICE)
+
+                with torch.no_grad():
+                    # policy.forward()가 neighbor_obs와 neighbor_mask를 받아서
+                    # 내부적으로 메시지를 생성하고 행동을 결정
+                    value, action, logprob, mean, colregs_pred = policy.forward(
+                        state_tensor, goal_tensor, speed_tensor, colregs_tensor,
+                        neighbor_obs_tensor, neighbor_mask_tensor
+                    )
+
+                agent_actions[agent_id] = action.cpu().numpy()[0, 0]
+
+                # Reward 처리
+                reward = decision_steps.reward[decision_steps.agent_id.tolist().index(agent_id)]
                 episode_rewards[agent_id] += reward
                 episode_stats['total_reward'] += reward
 
-                # 경험 저장 (COLREGs 정보 포함)
+                # 경험 저장 (GitHub 방식 + Neighbor Obs)
                 memory.add_agent_experience(
                     agent_id,
-                    state_stack,  # Frame stacked state
-                    goal,
-                    speed,
-                    colregs_situations,  # COLREGs 상황 추가
-                    {'obs': neighbor_obs, 'mask': neighbor_mask.cpu().numpy()},
+                    data['state_stack'],  # Frame stacked state
+                    data['goal'],
+                    data['speed'],
+                    data['colregs'],  # COLREGs 상황
+                    data['neighbor_obs'],  # Neighbor observations [4, 371]
+                    data['neighbor_mask'],  # Neighbor mask [4]
                     action.cpu().numpy()[0, 0],
                     reward,
                     False,
-                    value.cpu().numpy()[0, 0],
+                    value.cpu().numpy()[0, 0, 0],
                     logprob.cpu().numpy()[0, 0]
                 )
 
@@ -389,7 +482,7 @@ def main():
                     csv_writer.writerow([
                         episode, step, total_steps, reward,
                         action_np[0], action_np[1],
-                        value.cpu().numpy()[0, 0], logprob.cpu().numpy()[0, 0],
+                        value.cpu().numpy()[0, 0, 0], logprob.cpu().numpy()[0, 0],
                         agent_id, False
                     ])
 
@@ -416,15 +509,15 @@ def main():
                 # Frame stack 제거
                 frame_stack.remove_agent(agent_id)
 
-                # 종료 경험 저장 (COLREGs 정보 포함)
+                # 종료 경험 저장 (GitHub 방식 + Neighbor Obs)
                 memory.add_agent_experience(
                     agent_id,
                     np.zeros(STATE_SIZE * FRAMES),
                     np.zeros(2),
                     np.zeros(2),
-                    np.zeros(4),  # COLREGs 상황 (zeros)
-                    {'obs': np.zeros((N_AGENT, NEIGHBOR_STATE_SIZE)),
-                     'mask': np.zeros(N_AGENT, dtype=bool)},
+                    np.zeros(5),  # COLREGs 상황 (5D zeros)
+                    np.zeros((MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE)),  # Neighbor obs (zeros)
+                    np.zeros(MAX_NEIGHBORS, dtype=bool),  # Neighbor mask (zeros)
                     np.zeros(CONTINUOUS_ACTION_SIZE),
                     reward,
                     True,
@@ -450,8 +543,8 @@ def main():
                 env.set_actions(behavior_name, action_tuple)
                 env.step()
             except Exception as e:
-                print(f"  ⚠️  Unity connection lost: {e}")
-                print(f"  ⚠️  Attempting to save model and exit gracefully...")
+                print(f"  [WARNING] Unity connection lost: {e}")
+                print(f"  [WARNING] Attempting to save model and exit gracefully...")
 
                 # 모델 저장
                 if episode > 0:
@@ -474,15 +567,15 @@ def main():
                       f"Success: {episode_stats['success_count']}")
                 last_print_step = step
 
-            # PPO 업데이트
-            if total_steps % UPDATE_INTERVAL == 0 and total_steps > 0:
-                print(f"\n  🔄 Running PPO update at step {total_steps}...")
+            # PPO 업데이트 (학습 모드에서만)
+            if TRAIN_MODE and total_steps % UPDATE_INTERVAL == 0 and total_steps > 0:
+                print(f"\n  [UPDATE] Running PPO update at step {total_steps}...")
                 ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file)
                 memory.clear()  # 업데이트 후 메모리 클리어
 
             # 모든 에이전트가 종료되면 에피소드 종료
             if len(memory.get_active_agents()) == 0:
-                print(f"  ⚠️  All agents terminated at step {step}")
+                print(f"  [WARNING] All agents terminated at step {step}")
                 break
 
         # 에피소드 종료
@@ -515,7 +608,7 @@ def main():
 
         # 에피소드 결과 출력
         print(f"\n{'─'*80}")
-        print(f"📊 Episode {episode} Summary:")
+        print(f"[SUMMARY] Episode {episode} Summary:")
         print(f"{'─'*80}")
         print(f"  Agents: {len(episode_rewards)}")
         print(f"  Total Steps: {episode_stats['step_count']}")
@@ -526,7 +619,7 @@ def main():
 
         # 최근 N 에피소드 평균
         if len(recent_rewards) >= 3:
-            print(f"\n  📈 Last {len(recent_rewards)} Episodes Average:")
+            print(f"\n  [STATS] Last {len(recent_rewards)} Episodes Average:")
             print(f"    Reward: {np.mean(recent_rewards):.3f} (±{np.std(recent_rewards):.3f})")
             print(f"    Collision Rate: {np.mean(recent_collision_rates):.2%}")
             print(f"    Success Rate: {np.mean(recent_success_rates):.2%}")
@@ -535,16 +628,16 @@ def main():
             if len(recent_rewards) >= 5:
                 recent_trend = np.mean(recent_rewards[-3:]) - np.mean(recent_rewards[-6:-3]) if len(recent_rewards) >= 6 else 0
                 if recent_trend > 0.1:
-                    print(f"    ✅ Trend: Improving (+{recent_trend:.3f})")
+                    print(f"    [GOOD] Trend: Improving (+{recent_trend:.3f})")
                 elif recent_trend < -0.1:
-                    print(f"    ⚠️  Trend: Declining ({recent_trend:.3f})")
+                    print(f"    [WARNING] Trend: Declining ({recent_trend:.3f})")
                 else:
-                    print(f"    ➡️  Trend: Stable ({recent_trend:+.3f})")
+                    print(f"    [STABLE] Trend: Stable ({recent_trend:+.3f})")
 
         print(f"{'─'*80}")
 
-        # 모델 저장
-        if episode % SAVE_INTERVAL == 0 and episode > 0:
+        # 모델 저장 (학습 모드에서만)
+        if TRAIN_MODE and episode % SAVE_INTERVAL == 0 and episode > 0:
             torch.save(policy.state_dict(),
                       os.path.join(SAVE_PATH, f'policy_episode_{episode}.pth'))
 

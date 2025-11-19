@@ -5,7 +5,7 @@ import numpy as np
 
 
 class AgentMemory:
-    """개별 에이전트의 경험을 저장하는 메모리 (COLREGs 정보 포함)"""
+    """개별 에이전트의 경험을 저장하는 메모리 (GitHub 방식 + Full Neighbor Obs)"""
 
     def __init__(self):
         """메모리 초기화"""
@@ -13,7 +13,8 @@ class AgentMemory:
         self.goals = []
         self.speeds = []
         self.colregs_situations = []  # COLREGs 상황 정보 [4]
-        self.neighbor_infos = []  # {' obs': [...], 'mask': [...]} 형태
+        self.neighbor_obs = []  # Neighbor observations [MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE]
+        self.neighbor_mask = []  # Neighbor mask [MAX_NEIGHBORS]
         self.actions = []
         self.rewards = []
         self.dones = []
@@ -27,7 +28,8 @@ class AgentMemory:
         self.goals.clear()
         self.speeds.clear()
         self.colregs_situations.clear()
-        self.neighbor_infos.clear()
+        self.neighbor_obs.clear()
+        self.neighbor_mask.clear()
         self.actions.clear()
         self.rewards.clear()
         self.dones.clear()
@@ -39,16 +41,18 @@ class AgentMemory:
         import gc
         gc.collect()
 
-    def add(self, state, goal, speed, colregs_situations, neighbor_info, action, reward, done, value, logprob):
+    def add(self, state, goal, speed, colregs_situations, neighbor_obs, neighbor_mask,
+            action, reward, done, value, logprob):
         """
-        새로운 경험 추가 (COLREGs 정보 포함)
+        새로운 경험 추가 (GitHub 방식 + Full Neighbor Obs)
 
         Args:
             state: Frame-stacked state [STATE_SIZE * FRAMES]
             goal: Goal information [2]
             speed: Speed information [2]
             colregs_situations: COLREGs 상황 [4]
-            neighbor_info: 이웃 정보 dict {'obs': [...], 'mask': [...]}
+            neighbor_obs: Neighbor observations [MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE]
+            neighbor_mask: Neighbor mask [MAX_NEIGHBORS]
             action: 행동 [CONTINUOUS_ACTION_SIZE]
             reward: 보상 (scalar)
             done: 종료 여부 (bool)
@@ -60,7 +64,8 @@ class AgentMemory:
             self.goals.append(goal)
             self.speeds.append(speed)
             self.colregs_situations.append(colregs_situations)
-            self.neighbor_infos.append(neighbor_info)
+            self.neighbor_obs.append(neighbor_obs)
+            self.neighbor_mask.append(neighbor_mask)
             self.actions.append(action)
             self.rewards.append(reward)
             self.dones.append(done)
@@ -88,10 +93,10 @@ class Memory:
         import gc
         gc.collect()
 
-    def add_agent_experience(self, agent_id, state, goal, speed, colregs_situations, neighbor_info,
-                            action, reward, done, value, logprob):
+    def add_agent_experience(self, agent_id, state, goal, speed, colregs_situations,
+                            neighbor_obs, neighbor_mask, action, reward, done, value, logprob):
         """
-        특정 에이전트의 경험 추가 (COLREGs 정보 포함)
+        특정 에이전트의 경험 추가 (GitHub 방식 + Full Neighbor Obs)
 
         Args:
             agent_id: 에이전트 ID
@@ -99,7 +104,8 @@ class Memory:
             goal: Goal information [2]
             speed: Speed information [2]
             colregs_situations: COLREGs 상황 [4]
-            neighbor_info: 이웃 정보 dict {'obs': [...], 'mask': [...]}
+            neighbor_obs: Neighbor observations [MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE]
+            neighbor_mask: Neighbor mask [MAX_NEIGHBORS]
             action: 행동 [CONTINUOUS_ACTION_SIZE]
             reward: 보상 (scalar)
             done: 종료 여부 (bool)
@@ -110,7 +116,8 @@ class Memory:
             self.agent_memories[agent_id] = AgentMemory()
 
         self.agent_memories[agent_id].add(
-            state, goal, speed, colregs_situations, neighbor_info, action, reward, done, value, logprob)
+            state, goal, speed, colregs_situations, neighbor_obs, neighbor_mask,
+            action, reward, done, value, logprob)
 
     def get_active_agents(self):
         """
@@ -124,7 +131,7 @@ class Memory:
 
     def get_all_experiences(self):
         """
-        모든 에이전트의 경험을 하나의 배치로 통합 (COLREGs 정보 포함)
+        모든 에이전트의 경험을 하나의 배치로 통합 (GitHub 방식 + Full Neighbor Obs)
 
         Returns:
             dict: 통합된 경험 데이터
@@ -132,14 +139,16 @@ class Memory:
                 - goals: [N, 2]
                 - speeds: [N, 2]
                 - colregs_situations: [N, 4]
-                - neighbor_infos: [N, {'obs': [...], 'mask': [...]}]
+                - neighbor_obs: [N, MAX_NEIGHBORS, NEIGHBOR_OBS_SIZE]
+                - neighbor_mask: [N, MAX_NEIGHBORS]
                 - actions: [N, CONTINUOUS_ACTION_SIZE]
                 - rewards: [N]
                 - dones: [N]
                 - values: [N]
                 - logprobs: [N]
         """
-        states, goals, speeds, colregs_situations, neighbor_infos = [], [], [], [], []
+        states, goals, speeds, colregs_situations = [], [], [], []
+        neighbor_obs, neighbor_mask = [], []
         actions, rewards, dones, values, logprobs = [], [], [], [], []
 
         for agent_memory in self.agent_memories.values():
@@ -147,7 +156,8 @@ class Memory:
             goals.extend(agent_memory.goals)
             speeds.extend(agent_memory.speeds)
             colregs_situations.extend(agent_memory.colregs_situations)
-            neighbor_infos.extend(agent_memory.neighbor_infos)
+            neighbor_obs.extend(agent_memory.neighbor_obs)
+            neighbor_mask.extend(agent_memory.neighbor_mask)
             actions.extend(agent_memory.actions)
             rewards.extend(agent_memory.rewards)
             dones.extend(agent_memory.dones)
@@ -159,7 +169,8 @@ class Memory:
             'goals': np.array(goals) if goals else np.array([]),
             'speeds': np.array(speeds) if speeds else np.array([]),
             'colregs_situations': np.array(colregs_situations) if colregs_situations else np.array([]),
-            'neighbor_infos': neighbor_infos,  # list of dicts
+            'neighbor_obs': np.array(neighbor_obs) if neighbor_obs else np.array([]),
+            'neighbor_mask': np.array(neighbor_mask) if neighbor_mask else np.array([]),
             'actions': np.array(actions) if actions else np.array([]),
             'rewards': np.array(rewards) if rewards else np.array([]),
             'dones': np.array(dones) if dones else np.array([]),

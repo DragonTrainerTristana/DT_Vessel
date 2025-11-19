@@ -1,0 +1,42 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1762776632",
+        "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+        "command_line_arguments": "C:\\Users\\sengh\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\mlagents\\trainers\\learn.py trainer_config.yaml --run-id=vessel_training_001 --base-port=5004",
+        "mlagents_version": "1.1.0",
+        "mlagents_envs_version": "1.1.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.9.0+cpu",
+        "numpy_version": "1.23.5",
+        "end_time_seconds": "1762776694"
+    },
+    "total": 62.632055799942464,
+    "count": 1,
+    "self": 0.014061599969863892,
+    "children": {
+        "run_training.setup": {
+            "total": 0.1329389000311494,
+            "count": 1,
+            "self": 0.1329389000311494
+        },
+        "TrainerController.start_learning": {
+            "total": 62.48505529994145,
+            "count": 1,
+            "self": 9.009987115859985e-05,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 62.4849458001554,
+                    "count": 1,
+                    "self": 62.4849458001554
+                },
+                "TrainerController._save_models": {
+                    "total": 1.9399914890527725e-05,
+                    "count": 1,
+                    "self": 1.9399914890527725e-05
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,20 @@
+# Vessel ML-Agent Training Requirements
+# Python 3.7-3.10 required
+
+# ML-Agents
+mlagents==0.30.0
+
+# PyTorch (CPU version)
+torch
+torchvision
+torchaudio
+
+# TensorBoard (for logging)
+tensorboard
+
+# Dependencies
+numpy
+protobuf==3.20.3
+
+# Installation command:
+# pip install -r requirements.txt

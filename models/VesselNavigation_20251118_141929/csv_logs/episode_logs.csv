@@ -1,0 +1,2 @@
+episode,total_steps,avg_reward,total_reward,collision_count,collision_rate,success_count,success_rate,episode_length,active_agents,learning_rate
+0,220,314.4009689797337,3772.8116277568042,0,0.0,0,0.0,220,12,0.0001

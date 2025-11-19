@@ -10,13 +10,21 @@ public class VesselAgent : Agent
 {
     public VesselDynamics vesselDynamics;
 
-    public float arrivalReward = 15.0f;
-    public float goalDistanceCoef = 2.5f;
-    public float collisionPenalty = -15.0f;
-    public float rotationPenalty = -0.1f;
-    public float maxAngularVelocity = 10.0f;
+    // ===== 수정된 보상 파라미터 (2025-11-13) =====
+    public float arrivalReward = 50.0f;           // 15 → 50 (도착 보상 강화)
+    public float goalDistanceCoef = 0.5f;         // 2.5 → 0.5 (progress 보상 약화)
+    public float collisionPenalty = -50.0f;       // -15 → -50 (충돌 패널티 강화)
+    public float colregsRewardCoef = 2.0f;        // 0.3 → 2.0 (COLREGs 준수 보상 강화)
+
+    // Time penalty 추가 (빨리 끝내도록)
+    public float timePenalty = -0.01f;            // 매 스텝마다 작은 패널티
+
+    // Rotation penalty (조건부)
+    public float rotationPenalty = -0.05f;        // -0.1 → -0.05 (약화)
+    public float maxAngularVelocity = 20.0f;      // 10 → 20 (기준 완화)
+    public bool enableRotationPenalty = false;    // 기본적으로 비활성화
+
     public float goalReachedDistance = 5.0f;
-    public float colregsRewardCoef = 0.3f;
 
     public Vector3 goalPosition;
     public bool hasGoal = false;
@@ -77,7 +85,7 @@ public class VesselAgent : Agent
         }
         vesselDynamics.Initialize(rb);
 
-        vesselManager = FindObjectOfType<VesselManager>();
+        vesselManager = FindFirstObjectByType<VesselManager>();
         if (vesselManager != null)
         {
             cachedVessels = vesselManager.GetAllVesselAgents();
@@ -147,6 +155,9 @@ public class VesselAgent : Agent
 
     private void CalculateReward()
     {
+        // 0. Time penalty (빨리 끝내도록 유도)
+        AddReward(timePenalty);
+
         // 1. Goal reward (arrival + progress)
         if (hasGoal)
         {
@@ -166,11 +177,34 @@ public class VesselAgent : Agent
             previousDistanceToGoal = currentDistanceToGoal;
         }
 
-        // 2. Rotation penalty (only if exceeds threshold)
-        float angularVelocity = Mathf.Abs(vesselDynamics.YawRate);
-        if (angularVelocity > maxAngularVelocity)
+        // 2. Rotation penalty (조건부 - COLREGs 상황이 아닐 때만)
+        if (enableRotationPenalty)
         {
-            AddReward(rotationPenalty * angularVelocity);
+            // COLREGs 상황이 있는지 체크
+            bool hasCollisionRisk = false;
+            if (cachedVessels != null)
+            {
+                foreach (var otherVessel in cachedVessels)
+                {
+                    if (otherVessel == this) continue;
+                    var situation = GetCachedSituation(otherVessel);
+                    if (situation != COLREGsHandler.CollisionSituation.None)
+                    {
+                        hasCollisionRisk = true;
+                        break;
+                    }
+                }
+            }
+
+            // 충돌 위험이 없을 때만 과도한 회전 패널티
+            if (!hasCollisionRisk)
+            {
+                float angularVelocity = Mathf.Abs(vesselDynamics.YawRate);
+                if (angularVelocity > maxAngularVelocity)
+                {
+                    AddReward(rotationPenalty * angularVelocity);
+                }
+            }
         }
 
         // 3. COLREGs compliance (Rule 13-17 완전 구현)
@@ -301,66 +335,170 @@ public class VesselAgent : Agent
 
         if (!hasGoal)
         {
-            // 324D (180 + 4 + 140) 전부 0으로 채움
-            for (int i = 0; i < 324; i++) sensor.AddObservation(0f);
+            // Self: 360 radar + 6 self state = 366D
+            // Neighbors: 4 × 371D = 1484D
+            // COLREGs: 5D
+            // Total: 366 + 1484 + 5 = 1855D
+            for (int i = 0; i < 1855; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // ========== Self Observation (180D): 30 regions × 6 params ==========
-        for (int region = 0; region < 30; region++)
+        // ========== Radar Observation (360D): 360 rays × 1 param (거리만) ==========
+        float[] rayDistances = radar.GetAllRayDistances();
+        for (int i = 0; i < 360; i++)
         {
-            var regionData = radar.GetRegionData(region);
-            sensor.AddObservation(regionData.closestDistance);
-            sensor.AddObservation(regionData.relativeBearing);
-            sensor.AddObservation(regionData.speedRatio);
-            sensor.AddObservation(regionData.tcpa);
-            sensor.AddObservation(regionData.dcpa);
-            sensor.AddObservation(regionData.phase);
+            sensor.AddObservation(rayDistances[i]);
+            // ray 인덱스 = 각도 (0=0°, 90=90°, 180=180°, 270=270°)
         }
 
-        // ========== Message Passing Info (4D) ==========
-        Vector3 directionToGoal = (goalPosition - transform.position).normalized;
-        sensor.AddObservation(directionToGoal.x);
-        sensor.AddObservation(directionToGoal.z);
-        sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);
-        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate);
+        // ========== Self State (6D) - GitHub 방식 ==========
+        Vector3 toGoal = goalPosition - transform.position;
+        float goalDistance = toGoal.magnitude;
+        float goalAngle = Vector3.SignedAngle(transform.forward, toGoal, Vector3.up);
 
-        // ========== Neighbor Observations (140D = 4 neighbors × 35D each) ==========
-        var communication = GetComponent<VesselCommunication>();
-        if (communication != null)
+        sensor.AddObservation(goalDistance / radarRange);                              // Goal distance
+        sensor.AddObservation(goalAngle / 180f);                                       // Goal angle
+        sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);  // Linear velocity
+        sensor.AddObservation(vesselDynamics.YawRate / vesselDynamics.maxTurnRate);    // Angular velocity
+
+        float heading = transform.eulerAngles.y;
+        sensor.AddObservation(heading / 180f - 1f);                                    // Heading
+        sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate); // Rudder angle
+
+        // ========== Neighbor Observations (GitHub 방식) ==========
+        // 각 이웃의 완전한 observation 전달: radar(360) + goal(2) + speed(2) + colregs(5) + heading(1) + rudder(1) = 371D per neighbor
+        // 최대 4 neighbors × 371D = 1484D
+        List<VesselAgent> neighbors = new List<VesselAgent>();
+        if (cachedVessels != null)
         {
-            var commData = communication.GetCommunicationData();
-
-            for (int i = 0; i < maxCommunicationPartners; i++)
+            foreach (var otherVessel in cachedVessels)
             {
-                if (i < commData.Count)
-                {
-                    var data = commData.Values.ElementAt(i);
+                if (otherVessel == this) continue;
 
-                    // Compressed neighbor data (35D)
-                    // 8 regions × 3 params (24D) + vessel (4D) + goal (3D) + fuzzy COLREGs (4D)
-                    if (data.compressedRadarData != null && data.compressedRadarData.Length == 24)
-                    {
-                        for (int j = 0; j < 24; j++) sensor.AddObservation(data.compressedRadarData[j]);
-                        for (int j = 0; j < 4; j++) sensor.AddObservation(data.vesselState[j]);
-                        for (int j = 0; j < 3; j++) sensor.AddObservation(data.goalInfo[j]);
-                        for (int j = 0; j < 4; j++) sensor.AddObservation(data.fuzzyCOLREGs[j]);
-                    }
-                    else
-                    {
-                        for (int j = 0; j < 35; j++) sensor.AddObservation(0f);
-                    }
-                }
-                else
+                float distance = Vector3.Distance(transform.position, otherVessel.transform.position);
+                if (distance <= radarRange && neighbors.Count < maxCommunicationPartners)
                 {
-                    for (int j = 0; j < 35; j++) sensor.AddObservation(0f);
+                    neighbors.Add(otherVessel);
                 }
             }
         }
-        else
+
+        for (int i = 0; i < maxCommunicationPartners; i++)
         {
-            for (int i = 0; i < maxCommunicationPartners * 35; i++) sensor.AddObservation(0f);
+            if (i < neighbors.Count)
+            {
+                VesselAgent neighbor = neighbors[i];
+
+                // Neighbor radar data (360D)
+                float[] neighborRadar = neighbor.radar.GetAllRayDistances();
+                for (int j = 0; j < 360; j++)
+                {
+                    sensor.AddObservation(neighborRadar[j]);
+                }
+
+                // Neighbor goal (2D)
+                Vector3 neighborToGoal = neighbor.goalPosition - neighbor.transform.position;
+                float neighborGoalDistance = neighborToGoal.magnitude;
+                float neighborGoalAngle = Vector3.SignedAngle(neighbor.transform.forward, neighborToGoal, Vector3.up);
+                sensor.AddObservation(neighborGoalDistance / radarRange);
+                sensor.AddObservation(neighborGoalAngle / 180f);
+
+                // Neighbor speed (2D)
+                sensor.AddObservation(neighbor.vesselDynamics.CurrentSpeed / neighbor.vesselDynamics.maxSpeed);
+                sensor.AddObservation(neighbor.vesselDynamics.YawRate / neighbor.vesselDynamics.maxTurnRate);
+
+                // Neighbor COLREGs situation (4D) - from neighbor's perspective
+                COLREGsHandler.CollisionSituation neighborSituation = COLREGsHandler.CollisionSituation.None;
+                VesselAgent neighborMostDangerous = null;
+                float neighborMinDist = float.MaxValue;
+
+                foreach (var otherVessel in cachedVessels)
+                {
+                    if (otherVessel == neighbor) continue;
+                    float dist = Vector3.Distance(neighbor.transform.position, otherVessel.transform.position);
+                    if (dist < neighborMinDist)
+                    {
+                        neighborMinDist = dist;
+                        neighborMostDangerous = otherVessel;
+                    }
+                }
+
+                if (neighborMostDangerous != null)
+                {
+                    neighborSituation = COLREGsHandler.AnalyzeSituation(
+                        neighbor.transform.position, neighbor.transform.forward, neighbor.vesselDynamics.CurrentSpeed,
+                        neighborMostDangerous.transform.position, neighborMostDangerous.transform.forward,
+                        neighborMostDangerous.vesselDynamics.CurrentSpeed
+                    );
+                }
+
+                sensor.AddObservation(neighborSituation == COLREGsHandler.CollisionSituation.None ? 1f : 0f);
+                sensor.AddObservation(neighborSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1f : 0f);
+                sensor.AddObservation(neighborSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1f : 0f);
+                sensor.AddObservation(neighborSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1f : 0f);
+                sensor.AddObservation(neighborSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1f : 0f);
+
+                // Neighbor heading (1D)
+                float neighborHeading = neighbor.transform.eulerAngles.y;
+                sensor.AddObservation(neighborHeading / 180f - 1f);
+
+                // Neighbor rudder (1D)
+                sensor.AddObservation(neighbor.vesselDynamics.RudderAngle / neighbor.vesselDynamics.maxTurnRate);
+            }
+            else
+            {
+                // No neighbor: 371D 전부 0으로 채움 (radar 360 + goal 2 + speed 2 + colregs 5 + heading 1 + rudder 1)
+                for (int j = 0; j < 371; j++)
+                {
+                    sensor.AddObservation(0f);
+                }
+            }
         }
+
+        // ========== COLREGs Situation (4D) - One-hot encoding ==========
+        COLREGsHandler.CollisionSituation currentSituation = COLREGsHandler.CollisionSituation.None;
+
+        if (cachedVessels != null)
+        {
+            // 가장 가까운 선박 찾기
+            VesselAgent mostDangerous = null;
+            float minDistance = float.MaxValue;
+
+            foreach (var otherVessel in cachedVessels)
+            {
+                if (otherVessel == this) continue;
+
+                float distance = Vector3.Distance(transform.position, otherVessel.transform.position);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    mostDangerous = otherVessel;
+                }
+            }
+
+            // 가장 위험한 선박에 대한 COLREGs 상황 분석
+            if (mostDangerous != null)
+            {
+                currentSituation = COLREGsHandler.AnalyzeSituation(
+                    transform.position, transform.forward, vesselDynamics.CurrentSpeed,
+                    mostDangerous.transform.position, mostDangerous.transform.forward,
+                    mostDangerous.vesselDynamics.CurrentSpeed
+                );
+            }
+        }
+
+        // One-hot encoding (5D)
+        sensor.AddObservation(currentSituation == COLREGsHandler.CollisionSituation.None ? 1f : 0f);
+        sensor.AddObservation(currentSituation == COLREGsHandler.CollisionSituation.HeadOn ? 1f : 0f);
+        sensor.AddObservation(currentSituation == COLREGsHandler.CollisionSituation.CrossingStandOn ? 1f : 0f);
+        sensor.AddObservation(currentSituation == COLREGsHandler.CollisionSituation.CrossingGiveWay ? 1f : 0f);
+        sensor.AddObservation(currentSituation == COLREGsHandler.CollisionSituation.Overtaking ? 1f : 0f);
+
+        // 총 관측 차원:
+        // Self: 360D (radar) + 6D (self state) = 366D
+        // Neighbors: 4 × [360D (radar) + 2D (goal) + 2D (speed) + 5D (colregs) + 1D (heading) + 1D (rudder)] = 4 × 371D = 1484D
+        // COLREGs: 5D (self situation)
+        // Total: 366 + 1484 + 5 = 1855D
     }
 
     public Vector3 WorldToLocalPosition(Vector3 worldPos)

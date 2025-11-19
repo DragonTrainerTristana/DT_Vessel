@@ -44,7 +44,7 @@ public class COLREGsHandler
     };
 
     /// <summary>
-    /// 두 선박 간의 상황을 판단
+    /// 두 선박 간의 상황을 판단 (수정됨 2025-11-13)
     /// </summary>
     public static CollisionSituation AnalyzeSituation(
         Vector3 myPosition, Vector3 myForward, float mySpeed,
@@ -52,30 +52,33 @@ public class COLREGsHandler
     {
         Vector3 toOther = otherPosition - myPosition;
         float distance = toOther.magnitude;
-        
+
         // 감지 범위 밖이면 무시
         if (distance > DETECTION_RANGE) return CollisionSituation.None;
 
         // 상대 방향 각도 계산
         float bearingAngle = Vector3.SignedAngle(myForward, toOther, Vector3.up);
         float otherBearingAngle = Vector3.SignedAngle(otherForward, -toOther, Vector3.up);
+        float absBearingAngle = Mathf.Abs(bearingAngle);
 
-        // Head-on 상황 체크
-        if (Mathf.Abs(bearingAngle) < HEAD_ON_ANGLE && Mathf.Abs(otherBearingAngle) < HEAD_ON_ANGLE)
+        // 1. Head-on 상황 체크 (±15° 이내)
+        if (absBearingAngle < HEAD_ON_ANGLE && Mathf.Abs(otherBearingAngle) < HEAD_ON_ANGLE)
         {
             return CollisionSituation.HeadOn;
         }
 
-        // Overtaking 상황 체크
-        if (Mathf.Abs(otherBearingAngle) < OVERTAKING_ANGLE && mySpeed > otherSpeed)
+        // 2. Overtaking 상황 체크 (수정됨)
+        // 상대방이 내 정후방 112.5~247.5° 위치 AND 내가 더 빠름
+        if (absBearingAngle > 112.5f && absBearingAngle < 247.5f && mySpeed > otherSpeed * 1.1f)
         {
             return CollisionSituation.Overtaking;
         }
 
-        // Crossing 상황 체크
-        if (Mathf.Abs(bearingAngle) < CROSSING_ANGLE && Mathf.Abs(otherBearingAngle) < CROSSING_ANGLE)
+        // 3. Crossing 상황 체크 (수정됨: 5~112.5° 범위만)
+        if (absBearingAngle > 5f && absBearingAngle < 112.5f)
         {
-            // 우측에서 접근하는 선박이 Stand-on
+            // 우측(+)에서 접근하는 선박 = Give-way
+            // 좌측(-)에서 접근하는 선박 = Stand-on
             return bearingAngle > 0 ? CollisionSituation.CrossingGiveWay : CollisionSituation.CrossingStandOn;
         }
 
@@ -288,7 +291,7 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// TCPA (Time to Closest Point of Approach) 계산
+    /// TCPA (Time to Closest Point of Approach) 계산 (수정됨 2025-11-13)
     /// </summary>
     public static float CalculateTCPA(
         Vector3 myPosition, Vector3 myVelocity,
@@ -299,8 +302,14 @@ public class COLREGsHandler
 
         float relativeSpeed = relativeVelocity.magnitude;
 
-        // 상대 속도가 0이면 TCPA 계산 불가 (평행 이동)
-        if (relativeSpeed < 0.01f) return float.MaxValue;
+        // 상대 속도가 거의 0 (평행 이동 또는 정지)
+        if (relativeSpeed < 0.01f)
+        {
+            // 현재 거리를 0.5m/s로 나눈 값으로 추정
+            // (float.MaxValue는 정규화 시 문제 발생)
+            float currentDistance = relativePosition.magnitude;
+            return currentDistance / 0.5f;
+        }
 
         // TCPA = -(relative_position · relative_velocity) / |relative_velocity|^2
         float tcpa = -Vector3.Dot(relativePosition, relativeVelocity) / (relativeSpeed * relativeSpeed);

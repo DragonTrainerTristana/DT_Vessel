@@ -7,25 +7,33 @@ import os
 import datetime
 
 # ============================================================================
-# Network Architecture (Updated to MDPI 2024)
+# Network Architecture (GitHub + COLREGs + Full Neighbor Obs)
 # ============================================================================
-STATE_SIZE = 180                # 단일 에이전트 state 크기 (30 regions × 6 params)
-MSG_ACTION_SPACE = 6            # 메시지 공간 차원
+STATE_SIZE = 360                # Radar state 크기 (360 rays)
+SELF_STATE_SIZE = 6             # Self state (goal_dist, goal_angle, speed, yaw_rate, heading, rudder)
+NEIGHBOR_OBS_SIZE = 371         # Neighbor observation (360 radar + 2 goal + 2 speed + 5 colregs + 1 heading + 1 rudder)
+MAX_NEIGHBORS = 4               # 최대 이웃 에이전트 수
+COLREGS_SIZE = 5                # COLREGs one-hot (None, HeadOn, CrossingStandOn, CrossingGiveWay, Overtaking)
+MSG_ACTION_SPACE = 6            # 메시지 공간 차원 (sigmoid: 6D, tanh: 6D → total 12D)
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
 FRAMES = 3                      # Frame stacking 개수
-N_AGENT = 4                     # 최대 이웃 에이전트 수
-NEIGHBOR_STATE_SIZE = 35        # 이웃 state 크기 (compressed radar=24, vessel=4, goal=3, fuzzy_colregs=4)
+N_AGENT = MAX_NEIGHBORS         # 최대 이웃 에이전트 수 (호환성)
+
+# Total observation: 360 (self radar) + 6 (self state) + 4×371 (neighbors) + 5 (colregs) = 1855D
+OBSERVATION_SIZE = STATE_SIZE + SELF_STATE_SIZE + (MAX_NEIGHBORS * NEIGHBOR_OBS_SIZE) + COLREGS_SIZE
 
 # ============================================================================
 # Training Mode
 # ============================================================================
 LOAD_MODEL = False              # 저장된 모델 로드 여부
 TRAIN_MODE = True               # 학습 모드 (False: 평가 모드)
+MODEL_PATH = None               # 로드할 모델 경로 (예: "./models/VesselNavigation_20251117_123456/policy_episode_1000.pth")
 
 # ============================================================================
 # PPO Hyperparameters
 # ============================================================================
 DISCOUNT_FACTOR = 0.95          # Gamma: 할인율
+GAE_LAMBDA = 0.95               # GAE lambda: advantage estimation 파라미터
 LEARNING_RATE = 1e-4            # Adam optimizer learning rate
 BATCH_SIZE = 2048               # Mini-batch 크기
 N_EPOCH = 4                     # PPO epoch 수
@@ -83,6 +91,7 @@ def get_config_dict():
         'n_agent': N_AGENT,
         'learning_rate': LEARNING_RATE,
         'discount_factor': DISCOUNT_FACTOR,
+        'gae_lambda': GAE_LAMBDA,
         'batch_size': BATCH_SIZE,
         'n_epoch': N_EPOCH,
         'epsilon': EPSILON,
