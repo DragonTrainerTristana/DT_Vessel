@@ -57,13 +57,12 @@ public class VesselDynamics : MonoBehaviour
         effectiveRudderAngle = 0f;
         yawRate = 0f;
         isBraking = false;
-        
+
         if (rb != null)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
-            rb.gameObject.transform.position = initialPosition;
-            rb.gameObject.transform.rotation = initialRotation;
+            // 위치/회전은 VesselManager.RespawnVessel()에서 설정하므로 여기서 덮어쓰지 않음
         }
     }
 

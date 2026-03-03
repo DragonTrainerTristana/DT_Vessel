@@ -17,7 +17,7 @@ public class COLREGsHandler
     private const float HEAD_ON_ANGLE = 15f;        // 정면 조우 판정 각도
     private const float CROSSING_ANGLE = 112.5f;    // 횡단 상황@ 판정 각도
     private const float OVERTAKING_ANGLE = 112.5f;  // 추월 판정 각도
-    private const float DETECTION_RANGE = 100f;     // 충돌 위험 감지 거리
+    private const float DETECTION_RANGE = 60f;      // 충돌 위험 감지 거리 (radar range와 동일)
 
     // Rule 16: Early and Substantial Action
     private const float EARLY_ACTION_TIME = 60f;    // Early action threshold (seconds)
@@ -34,7 +34,7 @@ public class COLREGsHandler
     private const float CRITICAL_CPA = 10f;         // Critical CPA for emergency action (meters)
 
     /// <summary>
-    /// 두 선박 간의 상황을 판단 (수정됨 2025-11-13)
+    /// 두 선박 간의 상황을 판단 (수정됨 2025-01-12: TCPA 체크 추가)
     /// </summary>
     public static CollisionSituation AnalyzeSituation(
         Vector3 myPosition, Vector3 myForward, float mySpeed,
@@ -46,9 +46,40 @@ public class COLREGsHandler
         // 감지 범위 밖이면 무시
         if (distance > DETECTION_RANGE) return CollisionSituation.None;
 
-        // 상대 방향 각도 계산
+        // 상대 방향 각도 계산 (Clear 판정을 위해 먼저 계산)
         float bearingAngle = Vector3.SignedAngle(myForward, toOther, Vector3.up);
+
+        // ★ Clear 조건 1: 상대가 내 뒤쪽 반구에 있으면 이미 지나친 것 ★
+        // |bearing| > 100° 면 뒤에 있음 → 회피 불필요 (마진 10° 포함)
+        if (Mathf.Abs(bearingAngle) > 100f)
+        {
+            return CollisionSituation.None;
+        }
+
+        // ★ Clear 조건 2: Port-to-port passing 완료 체크 ★
+        // 상대가 내 port side(왼쪽)에 있고, 내가 상대의 port side에 있으면 → 회피 완료
         float otherBearingAngle = Vector3.SignedAngle(otherForward, -toOther, Vector3.up);
+        if (bearingAngle < -10f && otherBearingAngle < -10f)
+        {
+            return CollisionSituation.None;  // Port-to-port로 안전하게 지나가는 중
+        }
+
+        // ★ Clear 조건 3: Starboard-to-starboard passing 체크 ★
+        // 서로 오른쪽(starboard)에 있으면 이미 안전하게 지나가는 중 → 회피 불필요
+        if (bearingAngle > 10f && otherBearingAngle > 10f)
+        {
+            return CollisionSituation.None;  // Starboard-to-starboard로 안전하게 지나가는 중
+        }
+
+        // ★ TCPA 체크: 이미 지나친 상황이면 None 반환 ★
+        Vector3 myVelocity = myForward.normalized * mySpeed;
+        Vector3 otherVelocity = otherForward.normalized * otherSpeed;
+        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+
+        if (rawTCPA < 0f)  // 이미 최근접점을 지났음 → 회피 불필요
+        {
+            return CollisionSituation.None;
+        }
         float absBearingAngle = Mathf.Abs(bearingAngle);
 
         // 1. Head-on 상황 체크 (±15° 이내)
@@ -57,9 +88,12 @@ public class COLREGsHandler
             return CollisionSituation.HeadOn;
         }
 
-        // 2. Overtaking 상황 체크 (수정됨)
-        // 상대방이 내 정후방 112.5~247.5° 위치 AND 내가 더 빠름
-        if (absBearingAngle > 112.5f && absBearingAngle < 247.5f && mySpeed > otherSpeed * 1.1f)
+        // 2. Overtaking 상황 체크 (수정됨 2025-12-27)
+        // COLREGs Rule 13: 내가 상대방의 stern sector(정후방 ±67.5°, 즉 112.5°~247.5°)에서 접근
+        // otherBearingAngle: 상대방 기준으로 내가 어느 방향에 있는지
+        // Mathf.Abs(otherBearingAngle) > 112.5f 이면 내가 상대방 뒤에 있음
+        float absOtherBearing = Mathf.Abs(otherBearingAngle);
+        if (absOtherBearing > 112.5f && mySpeed > otherSpeed * 1.1f)
         {
             return CollisionSituation.Overtaking;
         }
@@ -228,33 +262,15 @@ public class COLREGsHandler
         float reward = 0f;
 
         // Rule 16: Early and Substantial Action 평가
+        // 우현 변침 보상 제거 - 좌현 패널티만 유지 (무한 회전 방지)
         if (situation == CollisionSituation.CrossingGiveWay ||
             situation == CollisionSituation.HeadOn ||
             situation == CollisionSituation.Overtaking)
         {
-            // 우현 변침 준수
-            if (actualRudder > 0)
-            {
-                reward += 1.0f;
-
-                // Early action bonus
-                if (tcpa > EARLY_ACTION_TIME)
-                    reward += 0.5f;
-
-                // Substantial action bonus
-                if (Mathf.Abs(actualRudder) > 0.7f && tcpa < SUBSTANTIAL_ACTION_TIME)
-                    reward += 0.5f;
-            }
-            else if (actualRudder < 0)
+            // 좌현 변침 패널티만 (우현 보상 제거)
+            if (actualRudder < 0)
             {
                 reward -= 2.0f;  // 좌현 변침 패널티
-            }
-
-            // 속도 감소 평가 (Give-way의 경우)
-            if (actualSpeed >= 0 && recommendedSpeed >= 0)
-            {
-                if (actualSpeed < recommendedSpeed)
-                    reward += 0.3f;  // 감속 보상
             }
         }
 
@@ -266,6 +282,18 @@ public class COLREGsHandler
             {
                 if (Mathf.Abs(actualRudder) < 0.1f)
                     reward += 1.0f;  // 침로 유지 보상
+
+                // 속도 유지 보상/패널티 추가 (Stand-on은 속도 유지 필수)
+                if (actualSpeed >= 0 && recommendedSpeed > 0)
+                {
+                    float speedRatio = actualSpeed / recommendedSpeed;
+                    if (speedRatio >= 0.9f)
+                        reward += 1.0f;   // 속도 유지 보상
+                    else if (speedRatio < 0.5f)
+                        reward -= 2.0f;   // 멈춤 패널티
+                    else
+                        reward -= 1.0f;   // 감속 패널티
+                }
             }
             // Rule 17(b,c): 필요시 회피
             else
@@ -283,9 +311,9 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// TCPA (Time to Closest Point of Approach) 계산 (수정됨 2025-11-13)
+    /// Raw TCPA 계산 (음수 허용 - 이미 지나친 경우 음수 반환)
     /// </summary>
-    public static float CalculateTCPA(
+    public static float CalculateRawTCPA(
         Vector3 myPosition, Vector3 myVelocity,
         Vector3 otherPosition, Vector3 otherVelocity)
     {
@@ -297,17 +325,25 @@ public class COLREGsHandler
         // 상대 속도가 거의 0 (평행 이동 또는 정지)
         if (relativeSpeed < 0.01f)
         {
-            // 현재 거리를 0.5m/s로 나눈 값으로 추정
-            // (float.MaxValue는 정규화 시 문제 발생)
             float currentDistance = relativePosition.magnitude;
             return currentDistance / 0.5f;
         }
 
         // TCPA = -(relative_position · relative_velocity) / |relative_velocity|^2
-        float tcpa = -Vector3.Dot(relativePosition, relativeVelocity) / (relativeSpeed * relativeSpeed);
+        // 음수면 이미 지나침, 양수면 아직 접근 중
+        return -Vector3.Dot(relativePosition, relativeVelocity) / (relativeSpeed * relativeSpeed);
+    }
 
-        // TCPA가 음수면 이미 최근접점을 지났음
-        return Mathf.Max(0f, tcpa);
+    /// <summary>
+    /// TCPA (Time to Closest Point of Approach) 계산 (수정됨 2025-11-13)
+    /// </summary>
+    public static float CalculateTCPA(
+        Vector3 myPosition, Vector3 myVelocity,
+        Vector3 otherPosition, Vector3 otherVelocity)
+    {
+        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        // TCPA가 음수면 이미 최근접점을 지났음 → 0 반환
+        return Mathf.Max(0f, rawTCPA);
     }
 
     /// <summary>
@@ -333,7 +369,7 @@ public class COLREGsHandler
     }
 
     /// <summary>
-    /// COLREGs 위험도 계산 (TCPA, DCPA 기반 개선)
+    /// COLREGs 위험도 계산 (TCPA, DCPA 기반 개선, 2025-01-12 수정)
     /// </summary>
     public static float CalculateRisk(
         Vector3 myPosition, Vector3 myForward, float mySpeed,
@@ -349,8 +385,12 @@ public class COLREGsHandler
         Vector3 myVelocity = myForward.normalized * mySpeed;
         Vector3 otherVelocity = otherForward.normalized * otherSpeed;
 
+        // ★ Raw TCPA 체크: 이미 지나쳤으면 위험도 0 ★
+        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        if (rawTCPA < 0f) return 0f;  // 이미 지나침 → 위험 없음
+
         // TCPA와 DCPA 계산
-        float tcpa = CalculateTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        float tcpa = Mathf.Max(0f, rawTCPA);
         float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);
 
         // 거리 기반 위험도
@@ -386,4 +426,4 @@ public class COLREGsHandler
         return Mathf.Clamp01(risk);  // 0~1 사이로 정규화
     }
 
-} 
+}

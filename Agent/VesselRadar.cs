@@ -5,7 +5,7 @@ using System.Linq;
 public class VesselRadar : MonoBehaviour
 {
 
-    public float radarRange = 100f;           // 레이더 Range
+    public float radarRange = 60f;           // 레이더 Range
     public int rayCount = 360;                // 360개 ray (1도 간격)
     public float rayHeight = 1f;              // 레이 높이 (수면 위)
 
@@ -13,7 +13,7 @@ public class VesselRadar : MonoBehaviour
     public bool showDebugRays = true;         // 디버그 레이 표시 여부
 
     [Header("레이어 설정")]
-    public LayerMask detectionLayers;         // 감지할 레이어 -> 감지할 레이어가 아니라 그냥 Collider 있으면 다 감지하면 좋을 것 같은데?
+    public LayerMask detectionLayers = ~0;    // 감지할 레이어 (기본값: 모든 레이어)
 
     // 레이더 감지 결과 저장
     private Dictionary<int, RaycastHit> radarHits = new Dictionary<int, RaycastHit>();
@@ -40,8 +40,8 @@ public class VesselRadar : MonoBehaviour
             {
                 radarHits[i] = hit;
 
-                // 선박 감지 시 목록에 추가
-                if (hit.collider.CompareTag("Vessel") && !detectedVessels.Contains(hit.collider.gameObject))
+                // 선박 감지 시 목록에 추가 (VesselAgent 컴포넌트로 확인)
+                if (hit.collider.GetComponent<VesselAgent>() != null && !detectedVessels.Contains(hit.collider.gameObject))
                 {
                     detectedVessels.Add(hit.collider.gameObject);
                 }
@@ -104,29 +104,13 @@ public class VesselRadar : MonoBehaviour
         if (!showDebugRays || !Application.isPlaying)
             return;
 
-        // 레이더 범위 원 표시
-        Gizmos.color = Color.cyan;
-        Gizmos.DrawWireSphere(transform.position, radarRange);
-
-        // 감지된 레이 표시
+        // 감지된 레이만 표시 (원 제거)
         foreach (var hit in radarHits)
         {
             float angle = hit.Key * (360f / rayCount);
             Vector3 direction = Quaternion.Euler(0, angle, 0) * transform.forward;
 
-            // 감지된 물체의 종류에 따라 색상 변경
-            if (hit.Value.collider.CompareTag("Vessel"))
-            {
-                Gizmos.color = Color.red;  // 다른 선박
-            }
-            else if (hit.Value.collider.CompareTag("Obstacle"))
-            {
-                Gizmos.color = Color.yellow;  // 장애물
-            }
-            else
-            {
-                Gizmos.color = Color.green;  // 기타 물체
-            }
+            Gizmos.color = Color.red;
 
             // 레이 그리기
             Gizmos.DrawLine(transform.position + Vector3.up * rayHeight,
@@ -137,16 +121,4 @@ public class VesselRadar : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 에디터에서 레이더 범위 시각화
-    /// </summary>
-    private void OnDrawGizmosSelected()
-    {
-        if (Application.isPlaying)
-            return;
-
-        // 레이더 최대 범위 표시
-        Gizmos.color = new Color(0, 1, 1, 0.2f);
-        Gizmos.DrawWireSphere(transform.position, radarRange);
-    }
 }
