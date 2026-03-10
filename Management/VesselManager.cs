@@ -17,6 +17,10 @@ public class VesselManager : MonoBehaviour
     public float minGoalDistance = 50f;
     public GameObject vesselParent;
 
+    [Header("NavMesh Pathfinding")]
+    public WaypointPathFinder pathFinder;       // Inspector에서 할당
+    public bool useNavMeshPathfinding = true;   // NavMesh 경로탐색 사용 여부
+
     private List<GameObject> vessels = new List<GameObject>();
     private List<VesselAgent> vesselAgents = new List<VesselAgent>();
     private HashSet<int> usedSpawnIndices = new HashSet<int>();
@@ -136,9 +140,20 @@ public class VesselManager : MonoBehaviour
         VesselAgent agent = vessel.GetComponent<VesselAgent>();
         if (agent != null)
         {
-            agent.SetGoal(goalPoint.position);
             agent.goalPointName = goalPoint.name;
             agent.goalPointIndex = goalIndex;
+
+            if (useNavMeshPathfinding && pathFinder != null)
+            {
+                // NavMesh 경로 계산 → 웨이포인트 순차 목표
+                List<Vector3> waypoints = pathFinder.CalculatePath(vessel.transform.position, goalPoint.position);
+                agent.SetWaypoints(waypoints);
+            }
+            else
+            {
+                // 폴백: 단일 목표 (기존 방식)
+                agent.SetGoal(goalPoint.position);
+            }
         }
     }
 
@@ -146,8 +161,10 @@ public class VesselManager : MonoBehaviour
     {
         if (!vesselGoals.ContainsKey(vessel)) return;
 
-        Transform goal = vesselGoals[vessel];
-        Vector3 direction = (goal.position - vessel.transform.position).normalized;
+        // 웨이포인트 모드: 첫 번째 웨이포인트 방향으로 회전
+        VesselAgent agent = vessel.GetComponent<VesselAgent>();
+        Vector3 targetPos = (agent != null && agent.hasGoal) ? agent.goalPosition : vesselGoals[vessel].position;
+        Vector3 direction = (targetPos - vessel.transform.position).normalized;
 
         // Y축 회전만 적용 (선박은 수평면에서만 회전)
         direction.y = 0;
@@ -167,19 +184,7 @@ public class VesselManager : MonoBehaviour
 
     void OnDrawGizmos()
     {
-        if (!Application.isPlaying) return;
-
-        foreach (var vessel in vessels)
-        {
-            if (vessel != null && vesselGoals.ContainsKey(vessel))
-            {
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(vessel.transform.position, vesselGoals[vessel].position);
-
-                Gizmos.color = Color.red;
-                Gizmos.DrawSphere(vesselGoals[vessel].position, 1.5f);
-            }
-        }
+        // Gizmos 비활성화
     }
 
     public void ChangeVesselCount(int newCount)

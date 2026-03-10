@@ -261,16 +261,24 @@ public class COLREGsHandler
 
         float reward = 0f;
 
+        // maxTurnRate 기본값으로 러더 정규화 (도 단위 → [-1, 1] 범위)
+        float maxTurnRate = 30f;  // VesselDynamics 기본값
+        float normalizedRudder = actualRudder / maxTurnRate;
+
         // Rule 16: Early and Substantial Action 평가
-        // 우현 변침 보상 제거 - 좌현 패널티만 유지 (무한 회전 방지)
         if (situation == CollisionSituation.CrossingGiveWay ||
             situation == CollisionSituation.HeadOn ||
             situation == CollisionSituation.Overtaking)
         {
-            // 좌현 변침 패널티만 (우현 보상 제거)
-            if (actualRudder < 0)
+            // 좌현 변침 패널티 (정규화된 러더 사용)
+            if (normalizedRudder < -0.1f)
             {
                 reward -= 2.0f;  // 좌현 변침 패널티
+            }
+            // 우현 변침 보상 (적극적 회피 유도)
+            else if (normalizedRudder > 0.2f)
+            {
+                reward += 0.5f;  // 우현 변침 보상
             }
         }
 
@@ -280,7 +288,8 @@ public class COLREGsHandler
             // Rule 17(a): 초기에는 침로/속도 유지
             if (tcpa > RULE_17B_TIME)
             {
-                if (Mathf.Abs(actualRudder) < 0.1f)
+                // 정규화된 러더로 침로 유지 판정 (|normalized| < 0.1 = 3도 이내)
+                if (Mathf.Abs(normalizedRudder) < 0.1f)
                     reward += 1.0f;  // 침로 유지 보상
 
                 // 속도 유지 보상/패널티 추가 (Stand-on은 속도 유지 필수)
@@ -295,10 +304,10 @@ public class COLREGsHandler
                         reward -= 1.0f;   // 감속 패널티
                 }
             }
-            // Rule 17(b,c): 필요시 회피
+            // Rule 17(b,c): 필요시 회피 (정규화된 러더로 판정)
             else
             {
-                if (Mathf.Abs(actualRudder) > 0.3f)
+                if (Mathf.Abs(normalizedRudder) > 0.3f)
                     reward += 0.5f;  // 적절한 회피 보상
             }
         }

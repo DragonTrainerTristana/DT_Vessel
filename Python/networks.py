@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-from config import STATE_SIZE, USE_COMMUNICATION
+from config import STATE_SIZE, USE_COMMUNICATION, MSG_ANNEAL_STEPS
 
 
 class MessageActor(nn.Module):
@@ -218,9 +218,9 @@ class ControlActor(nn.Module):
 
 class Critic(nn.Module):
     """
-    Value function estimator
+    Value function estimator (Phase 2: others_msg 포함)
     """
-    def __init__(self, frames):
+    def __init__(self, frames, msg_dim):
         super(Critic, self).__init__()
         self.frames = frames
 
@@ -231,17 +231,18 @@ class Critic(nn.Module):
                                kernel_size=3, stride=2, padding=1)
 
         self.fc1 = nn.Linear(90 * 32, 256)
-        # 256 + goal(2) + self_state(4) + colregs(5) = 267
-        self.fc2 = nn.Linear(256 + 2 + 4 + 5, 128)
+        # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(6) = 273
+        self.fc2 = nn.Linear(256 + 2 + 4 + 5 + msg_dim, 128)
         self.value_out = nn.Linear(128, 1)
 
-    def forward(self, x, goal, self_state, colregs):
+    def forward(self, x, goal, self_state, colregs, others_msg):
         """
         Args:
             x: [batch, n_agent, frames * STATE_SIZE]
             goal: [batch, n_agent, 2]
             self_state: [batch, n_agent, 4]
             colregs: [batch, n_agent, 5]
+            others_msg: [batch, n_agent, msg_dim]
         Returns:
             value: [batch, n_agent, 1]
         """
@@ -252,6 +253,7 @@ class Critic(nn.Module):
         goal_flat = goal.view(batch_size * n_agent, -1)
         self_state_flat = self_state.view(batch_size * n_agent, -1)
         colregs_flat = colregs.view(batch_size * n_agent, -1)
+        others_msg_flat = others_msg.view(batch_size * n_agent, -1)
 
         # Conv
         v = F.relu(self.conv1(x_flat))
@@ -259,8 +261,8 @@ class Critic(nn.Module):
         v = v.view(v.shape[0], -1)
         v = F.relu(self.fc1(v))
 
-        # Concat and output
-        v = torch.cat((v, goal_flat, self_state_flat, colregs_flat), dim=-1)
+        # Concat and output (others_msg 포함)
+        v = torch.cat((v, goal_flat, self_state_flat, colregs_flat, others_msg_flat), dim=-1)
         v = F.relu(self.fc2(v))
         v = self.value_out(v)
 
@@ -321,20 +323,24 @@ class CNNPolicy(nn.Module):
         self.frames = frames
         self.msg_dim = msg_dim
         self.action_size = action_size
+        self.msg_anneal_step = 0  # 현재 annealing 진행 스텝
 
         # Sub-networks
         self.msg_actor = MessageActor(frames, msg_dim)
         self.ctr_actor = ControlActor(frames, msg_dim, action_size)
-        self.critic = Critic(frames)
+        self.critic = Critic(frames, msg_dim)
         self.colregs_classifier = COLREGsClassifier(frames)
 
     def _get_others_msg(self, msg, comm_partners=None, agent_id_list=None):
-        """메시지 교환 로직"""
+        """메시지 교환 로직 (annealing 포함)"""
         batch_size, n_agent, _ = msg.shape
 
         if not USE_COMMUNICATION:
             # Phase 1: 통신 비활성화
             return torch.zeros_like(msg)
+
+        # Message annealing: 0→1로 점진적 증가 (Phase 2 전환 안정화)
+        anneal_coef = min(1.0, self.msg_anneal_step / max(MSG_ANNEAL_STEPS, 1))
 
         if comm_partners is not None and agent_id_list is not None:
             # 통신 범위 기반 메시지 교환
@@ -347,11 +353,11 @@ class CNNPolicy(nn.Module):
                     partner_indices = [id_to_idx[p] for p in partners if p in id_to_idx]
                     if partner_indices:
                         others_msg[0, i, :] = msg[0, partner_indices, :].sum(dim=0)
-            return others_msg
+            return others_msg * anneal_coef
 
         # 기본: 모든 에이전트와 통신
         msg_sum = msg.sum(dim=1, keepdim=True).repeat(1, n_agent, 1)
-        return msg_sum - msg
+        return (msg_sum - msg) * anneal_coef
 
     def forward(self, x, goal, self_state, colregs,
                 return_msg=False, comm_partners=None, agent_id_list=None):
@@ -383,8 +389,8 @@ class CNNPolicy(nn.Module):
         # 3. Get action
         action, logprob, mean = self.ctr_actor(x, goal, self_state, colregs, others_msg)
 
-        # 4. Get value
-        value = self.critic(x, goal, self_state, colregs)
+        # 4. Get value (others_msg 포함 - Phase 2 정확한 value estimation)
+        value = self.critic(x, goal, self_state, colregs, others_msg)
 
         # 5. COLREGs prediction (auxiliary)
         colregs_pred = self.colregs_classifier(x)
@@ -397,7 +403,8 @@ class CNNPolicy(nn.Module):
     def evaluate_actions(self, x, goal, self_state, colregs, others_msg, action):
         """
         PPO 업데이트용: 주어진 action의 가치와 확률 평가
-        ★ others_msg를 직접 받아서 사용 (forward와 일치) ★
+        ★ MessageActor를 재실행하여 gradient 흐름 보장 ★
+        others_msg는 Phase 1이거나 재생성 불가 시 fallback으로 사용
         """
         # Handle 2D input
         if len(x.shape) == 2:
@@ -408,13 +415,29 @@ class CNNPolicy(nn.Module):
             others_msg = others_msg.unsqueeze(1)
             action = action.unsqueeze(1)
 
-        # 1. Get logprob and entropy (저장된 others_msg 직접 사용)
+        if USE_COMMUNICATION:
+            # ★ 핵심 수정: MessageActor 재실행으로 gradient 흐름 복구 ★
+            # 메시지 재생성 (gradient가 MessageActor까지 역전파됨)
+            msg = self.msg_actor(x, goal, self_state, colregs)
+            # 배치 내 모든 에이전트 메시지 합산 후 자기꺼 빼기 (mean-field)
+            batch_size, n_agent, _ = msg.shape
+            if n_agent > 1:
+                msg_sum = msg.sum(dim=1, keepdim=True).repeat(1, n_agent, 1)
+                regenerated_msg = msg_sum - msg
+            else:
+                regenerated_msg = torch.zeros_like(msg)
+            # Annealing 적용
+            anneal_coef = min(1.0, self.msg_anneal_step / max(MSG_ANNEAL_STEPS, 1))
+            others_msg = regenerated_msg * anneal_coef
+        # Phase 1: others_msg = zeros (저장된 값 그대로 사용)
+
+        # 1. Get logprob and entropy
         logprob, entropy, mean = self.ctr_actor.get_logprob_entropy(
             x, goal, self_state, colregs, others_msg, action
         )
 
-        # 2. Get value
-        value = self.critic(x, goal, self_state, colregs)
+        # 2. Get value (others_msg 포함)
+        value = self.critic(x, goal, self_state, colregs, others_msg)
 
         # 3. COLREGs prediction
         colregs_pred = self.colregs_classifier(x)

@@ -35,21 +35,24 @@ OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POS
 # ============================================================================
 COMM_RANGE = 90                 # 통신 범위 (미터) - radar(60m)보다 넓게
 MAX_COMM_PARTNERS = 4           # 최대 통신 파트너 수
+MSG_ANNEAL_STEPS = 500000       # 메시지 기여도 0→1 선형 증가 스텝 수 (Phase 2 전환 안정화)
+MSG_LR_SCALE = 3.0              # MessageActor 학습률 배수 (untrained → 빠르게 학습)
+COLREGS_LOSS_COEF = 0.1         # COLREGs classifier auxiliary loss 계수
 
 # ============================================================================
 # Training Phase (2-Phase Learning)
 # ============================================================================
 # Phase 1: USE_COMMUNICATION = False (자기 obs만으로 기본 navigation 학습)
 # Phase 2: USE_COMMUNICATION = True (msg 통신 추가해서 fine-tune)
-USE_COMMUNICATION = True        # Phase 2: 통신 ON + COLREGs 1.5배
+USE_COMMUNICATION = True        # 통신 ON
 
 # ============================================================================
 # Training Mode
 # ============================================================================
-LOAD_MODEL = True               # COMM_NON 407만 모델 로드 (통신 + COLREGs 1.5배 학습)
-TRAIN_MODE = True               # 학습 모드 (False: 평가 모드)
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260114_183130", "policy_step_4070000.pth")
-START_STEP = 4070000            # Phase 2: 407만부터 이어서
+LOAD_MODEL = True
+TRAIN_MODE = False              # 평가 모드
+MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_YES_COLREGS15", "VesselNavigation_20260213_201053", "policy_step_27320000.pth")
+START_STEP = 27320000
 
 # ============================================================================
 # PPO Hyperparameters
@@ -71,7 +74,7 @@ RUN_STEP = 30000000 if TRAIN_MODE else 0  # 전체 학습 스텝
 MAX_STEPS = RUN_STEP            # 전체 학습 스텝 (30,000,000)
 UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격 (N_STEP)
 SAVE_INTERVAL = 100             # 모델 저장 간격 (에피소드)
-NUM_EPISODES = RUN_STEP // MAX_STEPS  # 총 에피소드 수
+NUM_EPISODES = RUN_STEP // MAX_STEPS if MAX_STEPS > 0 else 0  # 총 에피소드 수
 
 # ============================================================================
 # Unity Environment
@@ -88,10 +91,10 @@ ENV_NAME = "VesselNavigation"
 DATE_TIME = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # 이어서 학습할 폴더 (None이면 새 폴더 생성)
-RESUME_FOLDER = None  # 새 폴더 생성 (COMM_YES_COLREGS15)
+RESUME_FOLDER = None  # 새 폴더 생성
 
 # 통신 모드에 따라 저장 경로 분리
-COMM_FOLDER = "COMM_YES_COLREGS15"  # 3번째 실험: 통신 ON + COLREGs 보상 1.5배
+COMM_FOLDER = "COMM_YES_PHASE3"  # Phase 3: COMM_YES step 10M 기반, COLREGs 1.5x (0.45)
 
 if RESUME_FOLDER and LOAD_MODEL:
     SAVE_PATH = os.path.join(PROJECT_ROOT, "models", COMM_FOLDER, RESUME_FOLDER)

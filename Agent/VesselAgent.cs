@@ -13,7 +13,7 @@ public class VesselAgent : Agent
     public float arrivalReward = 100.0f;          // 도착 보상 강화
     public float goalDistanceCoef = 1.0f;         // 0.5 → 1.0 (progress 보상 강화)
     public float collisionPenalty = -100.0f;       // 충돌 패널티 유지
-    public float colregsRewardCoef = 0.45f;       // 0.3 → 0.45 (1.5배 강화, COMM_YES_COLREGS15 실험)
+    public float colregsRewardCoef = 0.45f;       // COLREGs 보상 계수 (1.5x = Phase 3)
     public bool enableColregsReward = true;       // COLREGs 활성화 (우현 보상 제거됨, 좌현 패널티만)
     public float angleRewardCoef = 0.5f;          // 목적지 방향 보상 계수 (강화: 0.2 → 0.5)
     public float forwardSpeedBonus = 0.1f;        // 전진 보상 (강화: 0.05 → 0.1)
@@ -32,6 +32,14 @@ public class VesselAgent : Agent
     public string goalPointName;
     public int goalPointIndex;
     private float previousDistanceToGoal;
+
+    [Header("Waypoint Navigation")]
+    private List<Vector3> waypoints;
+    private int currentWaypointIndex = 0;
+    public float waypointReachedDistance = 20f;      // 중간 웨이포인트 도달 거리 (최종 목표보다 넓게)
+    public float intermediateWaypointReward = 15f;   // 중간 도착 보상
+    private bool useWaypoints = false;
+    private Vector3 finalGoalPosition;               // 최종 목적지 (웨이포인트 리스트의 마지막)
 
     private bool isCollided = false;
 
@@ -73,6 +81,11 @@ public class VesselAgent : Agent
     private float previousHeading = 0f;             // 이전 heading
     public float spinningThreshold = 180f;          // 한 방향으로 180도 이상 회전하면 패널티 (반바퀴)
     public float spinningPenalty = -80f;             // 빙글빙글 패널티 (충돌과 구분: -80)
+
+    [Header("Smoothness Reward (Phase 2 전용)")]
+    public bool enableSmoothnessReward = false;     // Phase 2에서만 활성화 (통신 있을 때 부드러운 회피 유도)
+    public float smoothnessCoef = -0.05f;           // 타각 변화량에 대한 패널티 계수
+    private float previousRudderAngle = 0f;         // 이전 프레임의 타각
 
     public override void Initialize()
     {
@@ -136,6 +149,11 @@ public class VesselAgent : Agent
         vesselDynamics.ResetState();
         isCollided = false;
 
+        // 웨이포인트 초기화
+        currentWaypointIndex = 0;
+        useWaypoints = false;
+        waypoints = null;
+
         float initialSpeed = Random.Range(0.2f, 0.5f) * vesselDynamics.maxSpeed;
         vesselDynamics.SetTargetSpeed(initialSpeed);
 
@@ -160,6 +178,9 @@ public class VesselAgent : Agent
         // Spinning detection 초기화
         netRotation = 0f;
         previousHeading = transform.eulerAngles.y;
+
+        // Smoothness reward 초기화
+        previousRudderAngle = 0f;
     }
 
     public override void OnActionReceived(ActionBuffers actions)
@@ -222,11 +243,26 @@ public class VesselAgent : Agent
         {
             float currentDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
 
-            if (currentDistanceToGoal < goalReachedDistance)
+            // 도착 판정: 웨이포인트 모드에서는 중간/최종 구분
+            bool isLastWaypoint = !useWaypoints || currentWaypointIndex >= waypoints.Count - 1;
+            float reachDistance = isLastWaypoint ? goalReachedDistance : waypointReachedDistance;
+
+            if (currentDistanceToGoal < reachDistance)
             {
-                AddReward(arrivalReward);
-                EndEpisode();
-                return;
+                if (isLastWaypoint)
+                {
+                    // 최종 목표 도착 → 에피소드 종료
+                    AddReward(arrivalReward);
+                    EndEpisode();
+                    return;
+                }
+                else
+                {
+                    // 중간 웨이포인트 도착 → 다음 웨이포인트로 전환
+                    AddReward(intermediateWaypointReward);
+                    AdvanceToNextWaypoint();
+                    // previousDistanceToGoal은 AdvanceToNextWaypoint에서 갱신됨
+                }
             }
 
             float distanceChange = previousDistanceToGoal - currentDistanceToGoal;
@@ -334,6 +370,16 @@ public class VesselAgent : Agent
             }
         }
 
+        // 3. Smoothness reward (Phase 2 전용 - 부드러운 회피 유도)
+        // 타각 변화가 클수록 패널티 → 통신으로 미리 회피하면 보상↑
+        if (enableSmoothnessReward)
+        {
+            float rudderChange = Mathf.Abs(vesselDynamics.RudderAngle - previousRudderAngle);
+            float normalizedChange = rudderChange / vesselDynamics.maxTurnRate;  // 0~2 → 정규화
+            AddReward(smoothnessCoef * normalizedChange);
+        }
+        previousRudderAngle = vesselDynamics.RudderAngle;
+
         // 추적 시간 업데이트
         lastTrackingTime = Time.time;
     }
@@ -430,6 +476,43 @@ public class VesselAgent : Agent
         previousDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
     }
 
+    /// <summary>
+    /// 웨이포인트 리스트 설정. 첫 웨이포인트를 현재 목표로 설정.
+    /// </summary>
+    public void SetWaypoints(List<Vector3> newWaypoints)
+    {
+        if (newWaypoints == null || newWaypoints.Count == 0)
+        {
+            useWaypoints = false;
+            return;
+        }
+
+        waypoints = new List<Vector3>(newWaypoints);
+        currentWaypointIndex = 0;
+        useWaypoints = true;
+        finalGoalPosition = waypoints[waypoints.Count - 1];
+
+        // 첫 웨이포인트를 목표로 설정
+        SetGoal(waypoints[0]);
+    }
+
+    /// <summary>
+    /// 다음 웨이포인트로 전환. goalPosition을 갱신하고 previousDistanceToGoal 재계산.
+    /// </summary>
+    private void AdvanceToNextWaypoint()
+    {
+        currentWaypointIndex++;
+        if (currentWaypointIndex < waypoints.Count)
+        {
+            goalPosition = waypoints[currentWaypointIndex];
+            previousDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
+
+            // spinning detection 리셋 (새 웨이포인트 향해 방향 전환 허용)
+            netRotation = 0f;
+            previousHeading = transform.eulerAngles.y;
+        }
+    }
+
     private void FixedUpdate()
     {
         vesselDynamics.UpdateDynamics(Time.fixedDeltaTime);
@@ -437,12 +520,7 @@ public class VesselAgent : Agent
 
     void OnDrawGizmos()
     {
-        if (hasGoal)
-        {
-            Gizmos.color = Color.green;
-            Gizmos.DrawLine(transform.position, goalPosition);
-            Gizmos.DrawSphere(goalPosition, 1f);
-        }
+        // Gizmos 비활성화 (Scene 뷰에서 Gizmos 토글로 제어)
     }
 
     public void SetRadarRange(float range)
