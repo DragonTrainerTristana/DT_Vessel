@@ -339,36 +339,39 @@ def main():
         behavior_names.append(behavior_name)
         print(f"  Environment {i}: port {BASE_PORT + i} - OK", flush=True)
 
-    # Reward normalization (실험 간 비교를 위해 reward를 running std로 정규화)
+    # Reward normalization
     reward_rms = RunningMeanStd()
-    reward_buffer = []  # 배치 업데이트용 버퍼
+    reward_buffer = []
 
     # 정책 네트워크
     policy = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
 
     if LOAD_MODEL and MODEL_PATH and os.path.exists(MODEL_PATH):
-        checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
-        # state_dict 직접 또는 체크포인트 dict 지원
-        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-            policy.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        else:
-            policy.load_state_dict(checkpoint, strict=False)
-        print(f"[OK] Model loaded: {MODEL_PATH}")
+        saved_state = torch.load(MODEL_PATH, map_location=DEVICE)
+        model_state = policy.state_dict()
+        filtered = {k: v for k, v in saved_state.items()
+                    if k in model_state and v.shape == model_state[k].shape}
+        skipped = [k for k in saved_state if k not in filtered]
+        model_state.update(filtered)
+        policy.load_state_dict(model_state)
+        if skipped:
+            print(f"[WARN] Skipped (shape mismatch): {skipped}")
+        print(f"[OK] Model loaded: {MODEL_PATH} ({len(filtered)}/{len(saved_state)} layers)")
 
-        # reward_rms 복원 (Phase 간 보상 정규화 연속성 유지)
+        # reward_rms 복원
         rms_path = MODEL_PATH.replace('.pth', '_reward_rms.npz')
         if os.path.exists(rms_path):
             rms_data = np.load(rms_path)
             reward_rms.mean = rms_data['mean']
             reward_rms.var = rms_data['var']
             reward_rms.count = float(rms_data['count'])
-            print(f"[OK] Reward RMS loaded: mean={reward_rms.mean:.4f}, std={np.sqrt(reward_rms.var):.4f}")
+            print(f"[OK] Reward RMS loaded: std={np.sqrt(reward_rms.var):.4f}")
 
-    # Phase 2: MessageActor에 더 높은 학습률 적용 (untrained → 빠르게 수렴)
+    # Phase 2: MessageActor에 높은 학습률
     if USE_COMMUNICATION:
         msg_params = list(policy.msg_actor.parameters())
-        msg_param_ids = set(id(p) for p in msg_params)
-        other_params = [p for p in policy.parameters() if id(p) not in msg_param_ids]
+        msg_ids = set(id(p) for p in msg_params)
+        other_params = [p for p in policy.parameters() if id(p) not in msg_ids]
         optimizer = torch.optim.Adam([
             {'params': other_params, 'lr': LEARNING_RATE},
             {'params': msg_params, 'lr': LEARNING_RATE * MSG_LR_SCALE}
@@ -392,7 +395,7 @@ def main():
         'total_reward': 0,
     }
     agent_rewards = {}
-    agent_episode_steps = {}  # 에피소드별 스텝 카운트
+    agent_episode_steps = {}
 
     interval_stats = {
         'reward_sum': 0,
@@ -458,21 +461,7 @@ def main():
             env_values = np.asarray(values.squeeze(0).cpu().detach())
             env_logprobs = np.asarray(logprobs.squeeze(0).cpu().detach())
             env_others_msgs = np.asarray(others_msg.squeeze(0).cpu().detach())
-            env_msgs = np.asarray(msg.squeeze(0).cpu().detach())
             last_env_actions = env_actions  # 로깅용
-
-            # 메시지 로그 기록 (10000 스텝마다)
-            if step % 10000 == 0:
-                with open(message_log_file, 'a', newline='') as f:
-                    csv_writer = csv.writer(f)
-                    for i in range(n):
-                        colregs_idx = int(np.argmax(env_data['batch_colregs'][i]))
-                        csv_writer.writerow([
-                            step, env_data['global_id_list'][i],
-                            *env_msgs[i].tolist(),
-                            *env_others_msgs[i].tolist(),
-                            n, colregs_idx
-                        ])
 
             # agent_id -> index 매핑 (O(1) 검색용)
             agent_id_to_idx = {aid: i for i, aid in enumerate(env_data['agent_id_list'])}
@@ -482,14 +471,13 @@ def main():
                 global_id = env_data['global_id_list'][i]
                 raw_reward = env_data['rewards'][i]
 
-                # Reward normalization (running std로 정규화)
                 reward_buffer.append(raw_reward)
                 normalized_reward = raw_reward / (np.sqrt(reward_rms.var) + 1e-8)
 
                 if global_id not in agent_rewards:
                     agent_rewards[global_id] = 0
                     agent_episode_steps[global_id] = 0
-                agent_rewards[global_id] += raw_reward  # 원본 reward로 통계
+                agent_rewards[global_id] += raw_reward
                 agent_episode_steps[global_id] += 1
                 stats['total_reward'] += raw_reward
                 interval_stats['reward_sum'] += raw_reward
@@ -501,9 +489,9 @@ def main():
                     env_data['batch_goals'][i],
                     env_data['batch_self_states'][i],
                     env_data['batch_colregs'][i],
-                    env_others_msgs[i],  # ★ others_msg 저장 ★
+                    env_others_msgs[i],
                     env_actions[i],
-                    normalized_reward,  # 정규화된 reward로 학습
+                    normalized_reward,
                     False,
                     env_values[i, 0],
                     env_logprobs[i, 0]
@@ -522,16 +510,14 @@ def main():
                 raw_reward = env_data['terminal_steps'].reward[t_idx]
                 global_id = f"env{env_idx}_{agent_id}"
 
-                # Reward normalization
                 reward_buffer.append(raw_reward)
                 normalized_reward = raw_reward / (np.sqrt(reward_rms.var) + 1e-8)
 
-                # 마지막 경험에 정규화된 최종 보상 추가 + done=True
                 if global_id in memory.agent_memories:
                     memory.agent_memories[global_id].mark_done(normalized_reward)
 
                 if global_id in agent_rewards:
-                    agent_rewards[global_id] += raw_reward  # 원본 reward로 통계
+                    agent_rewards[global_id] += raw_reward
                 else:
                     agent_rewards[global_id] = raw_reward
 
@@ -539,32 +525,17 @@ def main():
                 interval_stats['reward_sum'] += raw_reward
                 interval_stats['reward_count'] += 1
 
-                # 성공/충돌/스피닝 분류 (spinningPenalty=-80, collisionPenalty=-100)
                 if raw_reward > 0:
                     stats['success_count'] += 1
                     interval_stats['success_count'] += 1
-                elif raw_reward < -90:  # collisionPenalty = -100
+                elif raw_reward < -90:
                     stats['collision_count'] += 1
                     interval_stats['collision_count'] += 1
-                elif raw_reward < -50:  # spinningPenalty = -80
+                elif raw_reward < -50:
                     stats['spinning_count'] += 1
                     interval_stats['spinning_count'] += 1
 
-                # Episode 로그 기록
-                ep_steps = agent_episode_steps.get(global_id, 0)
-                ep_reward = agent_rewards.get(global_id, 0)
-                with open(episode_log_file, 'a', newline='') as f:
-                    csv_writer = csv.writer(f)
-                    csv_writer.writerow([
-                        0, step, ep_reward / max(ep_steps, 1), ep_reward,
-                        1 if raw_reward < -90 else 0,
-                        1.0 if raw_reward < -90 else 0.0,
-                        1 if raw_reward > 0 else 0,
-                        1.0 if raw_reward > 0 else 0.0,
-                        ep_steps, n, LEARNING_RATE
-                    ])
-
-                # 에피소드 종료된 에이전트 카운터 리셋
+                # 에피소드 카운터 리셋
                 if global_id in agent_rewards:
                     del agent_rewards[global_id]
                 if global_id in agent_episode_steps:
@@ -592,12 +563,12 @@ def main():
         step_time = time.time() - step_start
         step_times.append(step_time)
 
-        # Reward RMS 업데이트 (버퍼가 쌓이면 running stats 갱신)
+        # Reward RMS 업데이트
         if len(reward_buffer) >= 100:
             reward_rms.update(np.array(reward_buffer))
             reward_buffer = []
 
-        # Message annealing 스텝 증가 (Phase 2에서만 유효)
+        # Message annealing
         if USE_COMMUNICATION:
             policy.msg_anneal_step = step - start_step
 
@@ -629,14 +600,12 @@ def main():
                   f"Success: {interval_stats['success_count']} (total: {stats['success_count']}), "
                   f"Avg Reward: {avg_reward:.4f}")
 
-            avg_normalized_reward = avg_reward / (np.sqrt(reward_rms.var) + 1e-8)
+            avg_normalized = avg_reward / (np.sqrt(reward_rms.var) + 1e-8)
             writer.add_scalar('Reward/Step_Raw', avg_reward, step)
-            writer.add_scalar('Reward/Step_Normalized', float(avg_normalized_reward), step)
+            writer.add_scalar('Reward/Step_Normalized', float(avg_normalized), step)
             writer.add_scalar('Reward/RMS_Std', float(np.sqrt(reward_rms.var)), step)
             writer.add_scalar('Collision/Interval', interval_stats['collision_count'], step)
             writer.add_scalar('Collision/Total', stats['collision_count'], step)
-            writer.add_scalar('Spinning/Interval', interval_stats['spinning_count'], step)
-            writer.add_scalar('Spinning/Total', stats['spinning_count'], step)
             writer.add_scalar('Success/Interval', interval_stats['success_count'], step)
             writer.add_scalar('Success/Total', stats['success_count'], step)
             writer.add_scalar('Agents/Total', total_agents, step)
@@ -647,12 +616,12 @@ def main():
             interval_stats['spinning_count'] = 0
             interval_stats['success_count'] = 0
 
-        # 모델 저장 (reward_rms도 함께 저장 - Phase 간 연속성)
+        # 모델 저장 (reward_rms 포함)
         if TRAIN_MODE and step > 0 and step % 10000 == 0:
             save_path = os.path.join(SAVE_PATH, f'policy_step_{step}.pth')
             torch.save(policy.state_dict(), save_path)
-            rms_save_path = save_path.replace('.pth', '_reward_rms.npz')
-            np.savez(rms_save_path, mean=reward_rms.mean, var=reward_rms.var, count=reward_rms.count)
+            rms_save = save_path.replace('.pth', '_reward_rms.npz')
+            np.savez(rms_save, mean=reward_rms.mean, var=reward_rms.var, count=reward_rms.count)
             print(f"  Model saved: {save_path}")
 
     # 최종 통계
@@ -661,12 +630,11 @@ def main():
     print(f"  Total Steps: {MAX_STEPS}")
     print(f"  Total Environments: {NUM_ENVS}")
     print(f"  Total Collisions: {stats['collision_count']}")
-    print(f"  Total Spinning: {stats['spinning_count']}")
     print(f"  Total Success: {stats['success_count']}")
     print(f"  Avg Reward: {stats['total_reward'] / max(len(agent_rewards), 1):.2f}")
     print(f"{'=' * 80}")
 
-    # 환경 종료ㅇ
+    # 환경 종료
     for env in envs:
         env.close()
     writer.close()

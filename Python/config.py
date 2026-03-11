@@ -50,9 +50,9 @@ USE_COMMUNICATION = True        # 통신 ON
 # Training Mode
 # ============================================================================
 LOAD_MODEL = True
-TRAIN_MODE = False              # 평가 모드
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_YES_COLREGS15", "VesselNavigation_20260213_201053", "policy_step_27320000.pth")
-START_STEP = 27320000
+TRAIN_MODE = True               # 학습 모드
+MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260114_183130", "policy_step_4070000.pth")
+START_STEP = 4070000            # Phase 1 407만에서 Phase 2 시작
 
 # ============================================================================
 # PPO Hyperparameters
@@ -94,7 +94,7 @@ DATE_TIME = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 RESUME_FOLDER = None  # 새 폴더 생성
 
 # 통신 모드에 따라 저장 경로 분리
-COMM_FOLDER = "COMM_YES_PHASE3"  # Phase 3: COMM_YES step 10M 기반, COLREGs 1.5x (0.45)
+COMM_FOLDER = "COMM_YES_PHASE2_v2"  # Phase 2 재학습: COMM_NON 1599만 기반, gradient fix
 
 if RESUME_FOLDER and LOAD_MODEL:
     SAVE_PATH = os.path.join(PROJECT_ROOT, "models", COMM_FOLDER, RESUME_FOLDER)
