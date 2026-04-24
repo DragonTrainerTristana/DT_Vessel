@@ -21,6 +21,7 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 from config import *
 from networks import CNNPolicy
 from frame_stack import MultiAgentFrameStack
+from obs_utils import parse_observation, get_comm_partners
 
 # ============================================================================
 # Test Configuration
@@ -31,50 +32,23 @@ TEST_TIME_SCALE = 20.0          # 테스트 시 시뮬레이션 속도 (main.py�
 COLLECT_INTERVAL = 10           # 메시지 수집 간격 (매 N step마다)
 
 # Trajectory 수집용 설정
-TRAJECTORY_STEPS = 10000        # trajectory 수집 스텝 수
+TRAJECTORY_STEPS = 20000        # trajectory 수집 스텝 수
 TRAJECTORY_TIME_SCALE = 20.0    # trajectory 수집 시 시뮬레이션 속도 (20배속)
 
 # Observation 크기 (frame stacking 전)
-OBS_SIZE = STATE_SIZE + SELF_STATE_SIZE + COLREGS_SIZE  # 360 + 6 + 5 = 371D
+OBS_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE  # 360 + 2 + 4 + 5 = 371D
 
 # 모델 경로 설정
-MODEL_PATH_COMM_OFF = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260114_183130", "policy_step_4070000.pth")
-MODEL_PATH_COMM_ON = os.path.join(PROJECT_ROOT, "models", "COMM_YES", "VesselNavigation_20260119_151615", "policy_step_16050000.pth")
+MODEL_PATH_COMM_OFF = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
+# 통신 모델: Phase 2 v2 16.67M 스텝 (narrow/coastal 실험 메인 모델)
+MODEL_PATH_COMM_ON = os.path.join(PROJECT_ROOT, "models", "COMM_YES_PHASE2_v2", "VesselNavigation_20260310_171041", "policy_step_16670000.pth")
 
 # USE_COMMUNICATION에 따라 자동 선택
 TEST_MODEL_PATH = MODEL_PATH_COMM_ON if USE_COMMUNICATION else MODEL_PATH_COMM_OFF
 
 
-def parse_observation(obs_raw):
-    """
-    373D observation 파싱 (360 rays 기준):
-    [0:360]      Radar (360 rays, 1도 간격)
-    [360:362]    Goal (distance, angle)
-    [362:364]    Speed (linear, angular)
-    [364]        Heading
-    [365]        Rudder
-    [366:371]    COLREGs (5D one-hot)
-    [371:373]    Position (x, z) - 통신용
-    """
-    idx = STATE_SIZE  # 360
-    state = obs_raw[:idx]  # [0:360]
 
-    goal_distance = obs_raw[idx]
-    goal_angle = obs_raw[idx + 1]
-    speed = obs_raw[idx + 2]
-    yaw_rate = obs_raw[idx + 3]
-    heading = obs_raw[idx + 4]
-    rudder = obs_raw[idx + 5]
-
-    goal = np.array([goal_distance, goal_angle])
-    self_state = np.array([speed, yaw_rate, heading, rudder])  # 4D
-    colregs = obs_raw[idx + 6:idx + 11]  # 5D one-hot
-
-    # 전체 observation (position 제외) = 371D
-    obs_full = np.concatenate([state, [goal_distance, goal_angle, speed, yaw_rate,
-                                        heading, rudder], colregs])
-
-    return state, goal, self_state, colregs, obs_full
+# parse_observation → obs_utils.py로 이동
 
 
 def analyze_tsne_with_observation(csv_path, save_dir=None):
@@ -346,8 +320,14 @@ def analyze_tsne_with_observation(csv_path, save_dir=None):
     return [fig1_path, fig2_path, fig3_path, fig4_path, fig5_path, fig6_path]
 
 
-def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect_interval):
+
+# get_comm_partners → obs_utils.py로 이동
+
+
+def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect_interval, use_comm=False):
     """단일 테스트 실행 (1 run)"""
+
+    colregs_labels = ['None', 'HeadOn', 'CrossStandOn', 'CrossGiveWay', 'Overtaking']
 
     stats = {
         'collision_count': 0,
@@ -356,6 +336,7 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
     }
     agent_rewards = {}
     collected_data = []
+    trajectory_data = []
 
     # 환경 리셋
     env.reset()
@@ -376,12 +357,12 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
         batch_self_states = []
         batch_colregs = []
         batch_obs_full = []
+        batch_positions = {}
         agent_id_list = []
 
-        for agent_id in agent_ids:
-            idx = decision_steps.agent_id.tolist().index(agent_id)
+        for idx, agent_id in enumerate(agent_ids):
             obs_raw = decision_steps.obs[0][idx]
-            state, goal, self_state, colregs, obs_full = parse_observation(obs_raw)
+            state, goal, self_state, colregs, obs_full, position = parse_observation(obs_raw)
 
             state_stacked = frame_stack.update(agent_id, state)
 
@@ -390,10 +371,17 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
             batch_self_states.append(self_state)
             batch_colregs.append(colregs)
             batch_obs_full.append(obs_full)
+            batch_positions[agent_id] = position
             agent_id_list.append(agent_id)
 
             if agent_id not in agent_rewards:
                 agent_rewards[agent_id] = 0
+
+        # 통신 파트너 계산
+        comm_partners = {}
+        if use_comm:
+            for agent_id in agent_id_list:
+                comm_partners[agent_id] = get_comm_partners(agent_id, batch_positions[agent_id], batch_positions)
 
         # Tensor 변환
         states_tensor = torch.FloatTensor(np.array(batch_states)).unsqueeze(0).to(DEVICE)
@@ -405,9 +393,12 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
         collect_msg = (step % collect_interval == 0)
 
         with torch.no_grad():
-            if collect_msg:
+            if collect_msg and use_comm:
                 values, actions, logprobs, means, _, msg, others_msg = policy.forward(
-                    states_tensor, goals_tensor, self_states_tensor, colregs_tensor, return_msg=True
+                    states_tensor, goals_tensor, self_states_tensor, colregs_tensor,
+                    return_msg=True,
+                    comm_partners=comm_partners,
+                    agent_id_list=agent_id_list
                 )
                 msg_np = msg.squeeze(0).cpu().numpy()
                 others_msg_np = others_msg.squeeze(0).cpu().numpy()
@@ -424,12 +415,36 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
                         'action': actions.squeeze(0)[i].cpu().numpy().tolist(),
                         'n_agents': n_agents
                     })
+            elif use_comm:
+                values, actions, logprobs, means, _ = policy.forward(
+                    states_tensor, goals_tensor, self_states_tensor, colregs_tensor,
+                    comm_partners=comm_partners,
+                    agent_id_list=agent_id_list
+                )
             else:
                 values, actions, logprobs, means, _ = policy.forward(
                     states_tensor, goals_tensor, self_states_tensor, colregs_tensor
                 )
 
         actions_np = actions.squeeze(0).cpu().numpy()
+
+        # Trajectory 데이터 수집 (매 스텝)
+        for i, agent_id in enumerate(agent_id_list):
+            colregs_idx = int(np.argmax(batch_colregs[i]))
+            pos = batch_positions[agent_id]
+            trajectory_data.append({
+                'step': step,
+                'agent_id': agent_id,
+                'colregs': colregs_idx,
+                'colregs_name': colregs_labels[colregs_idx],
+                'x': float(pos[0]),
+                'z': float(pos[1]),
+                'speed': float(batch_self_states[i][0]),
+                'heading': float(batch_self_states[i][2]),
+                'rudder': float(batch_self_states[i][3]),
+                'goal_dist': float(batch_goals[i][0]),
+                'goal_angle': float(batch_goals[i][1]),
+            })
 
         # reward 누적
         for i, agent_id in enumerate(agent_id_list):
@@ -476,7 +491,7 @@ def run_single_test(env, policy, frame_stack, behavior_name, test_steps, collect
     avg_reward = stats['total_reward'] / max(len(agent_rewards), 1)
     stats['avg_reward'] = avg_reward
 
-    return stats, collected_data
+    return stats, collected_data, trajectory_data
 
 
 def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TEST_TIME_SCALE):
@@ -536,7 +551,7 @@ def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, ti
         for run in range(num_runs):
             frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
 
-            stats, collected_data = run_single_test(
+            stats, collected_data, _ = run_single_test(
                 env, policy, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL
             )
 
@@ -610,9 +625,6 @@ def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, ti
                 f.write(f"  Run {i+1}: Collision={s['collision_count']}, Success={s['success_count']}, Reward={s['avg_reward']:.2f}\n")
         print(f"[SAVED] Summary saved to: {summary_path}")
 
-        # t-SNE 분석 실행
-        analyze_tsne_with_observation(csv_path, save_dir)
-
         return csv_path
 
     return None
@@ -661,7 +673,11 @@ def collect_trajectory(model_path=None, test_steps=TRAJECTORY_STEPS, time_scale=
     # 모델 로드
     print(f"\n[INFO] Loading model from: {model_path}")
     policy = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
-    policy.load_state_dict(torch.load(model_path, map_location=DEVICE))
+    checkpoint = torch.load(model_path, map_location=DEVICE)
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        policy.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        policy.load_state_dict(checkpoint)
     policy.eval()
     print(f"[OK] Model loaded")
     frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
@@ -692,11 +708,9 @@ def collect_trajectory(model_path=None, test_steps=TRAJECTORY_STEPS, time_scale=
 
             for idx, agent_id in enumerate(agent_ids):
                 obs_raw = decision_steps.obs[0][idx]
-                state, goal, self_state, colregs, obs_full = parse_observation(obs_raw)
+                state, goal, self_state, colregs, obs_full, position = parse_observation(obs_raw)
 
-                # x, z 위치 추출 (obs_raw[371:373])
-                x_pos = obs_raw[STATE_SIZE + 11]  # 371
-                z_pos = obs_raw[STATE_SIZE + 12]  # 372
+                x_pos, z_pos = position[0], position[1]
 
                 # COLREGs 상황 (one-hot → index)
                 colregs_idx = np.argmax(colregs)
@@ -711,6 +725,13 @@ def collect_trajectory(model_path=None, test_steps=TRAJECTORY_STEPS, time_scale=
                 batch_self_states.append(self_state)
                 batch_colregs.append(colregs)
 
+            # 통신 파트너 계산
+            positions_dict = {agent_ids[i]: batch_positions[i] for i in range(n_agents)}
+            comm_partners = {}
+            if USE_COMMUNICATION:
+                for agent_id in agent_ids:
+                    comm_partners[agent_id] = get_comm_partners(agent_id, positions_dict[agent_id], positions_dict)
+
             # 행동 결정
             states_tensor = torch.FloatTensor(np.array(batch_states)).unsqueeze(0).to(DEVICE)
             goals_tensor = torch.FloatTensor(np.array(batch_goals)).unsqueeze(0).to(DEVICE)
@@ -719,9 +740,11 @@ def collect_trajectory(model_path=None, test_steps=TRAJECTORY_STEPS, time_scale=
 
             with torch.no_grad():
                 if USE_COMMUNICATION:
-                    # 통신 모드: 메시지도 수집
                     values, actions, logprobs, means, _, self_msg, others_msg = policy.forward(
-                        states_tensor, goals_tensor, self_states_tensor, colregs_tensor, return_msg=True
+                        states_tensor, goals_tensor, self_states_tensor, colregs_tensor,
+                        return_msg=True,
+                        comm_partners=comm_partners,
+                        agent_id_list=list(agent_ids)
                     )
                     self_msg_np = self_msg.squeeze(0).cpu().numpy()
                     others_msg_np = others_msg.squeeze(0).cpu().numpy()
@@ -835,50 +858,54 @@ def detect_encounters(df, min_steps=5):
     """
     에이전트별 COLREGs 조우(encounter) 시퀀스 감지.
     연속된 스텝에서 COLREGs 상황이 유지되면 하나의 encounter로 묶음.
+    run_id로 run 경계 구분.
     """
+    df = _add_run_id(df)
     encounters = []
     colregs_names = {0: 'None', 1: 'HeadOn', 2: 'CrossStandOn', 3: 'CrossGiveWay', 4: 'Overtaking'}
 
-    for agent_id in df['agent_id'].unique():
-        agent_data = df[df['agent_id'] == agent_id].sort_values('step').reset_index(drop=True)
+    for run_id in df['run_id'].unique():
+        run_df = df[df['run_id'] == run_id]
+        for agent_id in run_df['agent_id'].unique():
+            agent_data = run_df[run_df['agent_id'] == agent_id].sort_values('step').reset_index(drop=True)
 
-        current_enc = None
-        prev_step = -999
+            current_enc = None
+            prev_step = -999
 
-        for _, row in agent_data.iterrows():
-            step = int(row['step'])
-            colregs = int(row['colregs'])
+            for _, row in agent_data.iterrows():
+                step = int(row['step'])
+                colregs = int(row['colregs'])
 
-            # 에피소드 경계 감지 (step 갭 > 5면 새 에피소드)
-            if prev_step >= 0 and step - prev_step > 5:
-                if current_enc is not None:
-                    encounters.append(current_enc)
-                    current_enc = None
-            prev_step = step
-
-            if colregs != 0:
-                if current_enc is None or current_enc['colregs'] != colregs:
+                # 에피소드 경계 감지 (step 갭 > 5면 새 에피소드)
+                if prev_step >= 0 and step - prev_step > 5:
                     if current_enc is not None:
                         encounters.append(current_enc)
-                    current_enc = {
-                        'agent_id': agent_id,
-                        'colregs': colregs,
-                        'colregs_name': colregs_names.get(colregs, f'Unknown_{colregs}'),
-                        'start_step': step,
-                        'rudders': [],
-                        'speeds': [],
-                        'positions': [],
-                    }
-                current_enc['rudders'].append(float(row['rudder']))
-                current_enc['speeds'].append(float(row['speed']))
-                current_enc['positions'].append((float(row['x']), float(row['z'])))
-            else:
-                if current_enc is not None:
-                    encounters.append(current_enc)
-                    current_enc = None
+                        current_enc = None
+                prev_step = step
 
-        if current_enc is not None:
-            encounters.append(current_enc)
+                if colregs != 0:
+                    if current_enc is None or current_enc['colregs'] != colregs:
+                        if current_enc is not None:
+                            encounters.append(current_enc)
+                        current_enc = {
+                            'agent_id': agent_id,
+                            'colregs': colregs,
+                            'colregs_name': colregs_names.get(colregs, f'Unknown_{colregs}'),
+                            'start_step': step,
+                            'rudders': [],
+                            'speeds': [],
+                            'positions': [],
+                        }
+                    current_enc['rudders'].append(float(row['rudder']))
+                    current_enc['speeds'].append(float(row['speed']))
+                    current_enc['positions'].append((float(row['x']), float(row['z'])))
+                else:
+                    if current_enc is not None:
+                        encounters.append(current_enc)
+                        current_enc = None
+
+            if current_enc is not None:
+                encounters.append(current_enc)
 
     # 짧은 조우 필터링 (노이즈 제거)
     encounters = [e for e in encounters if len(e['rudders']) >= min_steps]
@@ -887,13 +914,13 @@ def detect_encounters(df, min_steps=5):
 
 def evaluate_encounters(encounters):
     """
-    각 encounter에 대해 COLREGs 준수 여부 평가.
+    COLREGs 준수 평가 (encounter 전체 의도 기반).
 
-    준수 기준 (정규화된 rudder 기준, [-1, 1]):
-    - HeadOn (Rule 14): 우현 변침 비율 > 50%, 좌현 변침 비율 < 20%
-    - CrossGiveWay (Rule 15/16): 우현 변침 비율 > 50%, 좌현 변침 비율 < 20%
-    - CrossStandOn (Rule 17): 침로 유지 비율 > 60% (|rudder| < 0.15)
-    - Overtaking (Rule 13): 우현 변침 비율 > 30%
+    평가 기준:
+    - HeadOn (Rule 14): mean(rudder) > 0 + 강한 좌현 < 25%
+    - CrossGiveWay (Rule 15/16): mean(rudder) > 0 + 강한 좌현 < 25%
+    - CrossStandOn (Rule 17): |mean(rudder)| < 0.2
+    - Overtaking (Rule 13): mean(rudder) > -0.05
     """
     results = {
         'HeadOn': {'total': 0, 'compliant': 0, 'details': []},
@@ -910,45 +937,37 @@ def evaluate_encounters(encounters):
         rudders = np.array(enc['rudders'])
         speeds = np.array(enc['speeds'])
         n_steps = len(rudders)
+        mean_rudder = float(np.mean(rudders))
 
         compliant = False
         detail = {
             'n_steps': n_steps,
             'agent_id': enc['agent_id'],
-            'avg_rudder': float(np.mean(rudders)),
+            'avg_rudder': mean_rudder,
         }
 
         if name == 'HeadOn':
-            # Rule 14: 양 선박 우현 변침 (starboard turn)
-            starboard_rate = float(np.mean(rudders > 0.05))
-            port_violation_rate = float(np.mean(rudders < -0.1))
-            compliant = starboard_rate > 0.5 and port_violation_rate < 0.2
-            detail['starboard_rate'] = starboard_rate
-            detail['port_violation_rate'] = port_violation_rate
+            strong_port_rate = float(np.mean(rudders < -0.2))
+            compliant = mean_rudder > 0 and strong_port_rate < 0.25
+            detail['strong_port_rate'] = strong_port_rate
 
         elif name == 'CrossGiveWay':
-            # Rule 15/16: 우현 변침 + 좌현 변침 금지
-            starboard_rate = float(np.mean(rudders > 0.05))
-            port_violation_rate = float(np.mean(rudders < -0.1))
+            strong_port_rate = float(np.mean(rudders < -0.2))
             speed_reduction = float(speeds[0] - np.min(speeds)) if len(speeds) > 1 else 0
-            compliant = starboard_rate > 0.5 and port_violation_rate < 0.2
-            detail['starboard_rate'] = starboard_rate
-            detail['port_violation_rate'] = port_violation_rate
+            compliant = mean_rudder > 0 and strong_port_rate < 0.25
+            detail['strong_port_rate'] = strong_port_rate
             detail['speed_reduction'] = speed_reduction
 
         elif name == 'CrossStandOn':
-            # Rule 17: 침로/속도 유지
             course_keeping_rate = float(np.mean(np.abs(rudders) < 0.15))
             speed_keeping_rate = float(np.mean(speeds > 0.5))
-            compliant = course_keeping_rate > 0.6
+            compliant = abs(mean_rudder) < 0.2
             detail['course_keeping_rate'] = course_keeping_rate
             detail['speed_keeping_rate'] = speed_keeping_rate
 
         elif name == 'Overtaking':
-            # Rule 13: 안전하게 추월 (우현 선호)
-            starboard_rate = float(np.mean(rudders > 0.05))
-            compliant = starboard_rate > 0.3
-            detail['starboard_rate'] = starboard_rate
+            compliant = mean_rudder > -0.05
+            detail['mean_rudder'] = mean_rudder
 
         detail['compliant'] = compliant
         results[name]['total'] += 1
@@ -958,32 +977,85 @@ def evaluate_encounters(encounters):
     return results
 
 
-def compute_encounter_dcpa(df):
-    """COLREGs 조우 중 에이전트 쌍 간 최소 거리 (DCPA 근사)"""
-    encounter_steps = set(df[df['colregs'] != 0]['step'].unique())
+def _add_run_id(df):
+    """step 번호가 감소하는 지점을 run 경계로 감지하여 run_id 추가"""
+    if 'run_id' in df.columns:
+        return df
+    run_id = 0
+    run_ids = []
+    prev_step = -1
+    for step in df['step'].values:
+        if step < prev_step:
+            run_id += 1
+        run_ids.append(run_id)
+        prev_step = step
+    df = df.copy()
+    df['run_id'] = run_ids
+    return df
 
-    if len(encounter_steps) == 0:
-        return {'avg_min_distance': 0, 'min_distances': [], 'n_pairs': 0}
 
-    min_distances = {}
+def compute_encounter_dcpa(df, proximity_range=60.0, gap_tolerance=5):
+    """에이전트 쌍별 encounter를 추적하여 각 encounter의 DCPA(최소 거리)를 계산.
 
-    for step in encounter_steps:
-        step_data = df[df['step'] == step][['agent_id', 'x', 'z']].values
-        n = len(step_data)
+    encounter 정의: 특정 쌍이 proximity_range 이내로 진입한 시점부터
+    gap_tolerance step 연속으로 범위 밖이 될 때까지를 하나의 encounter로 봄.
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                pair = tuple(sorted([int(step_data[i][0]), int(step_data[j][0])]))
-                dist = np.sqrt((step_data[i][1] - step_data[j][1]) ** 2 +
-                               (step_data[i][2] - step_data[j][2]) ** 2)
-                if pair not in min_distances or dist < min_distances[pair]:
-                    min_distances[pair] = dist
+    Returns: dict with avg_min_distance, min_distances (list), n_pairs
+    """
+    df = _add_run_id(df)
+    all_dcpa = []
 
-    dists = list(min_distances.values())
+    for run_id, run_df in df.groupby('run_id'):
+        steps_sorted = sorted(run_df['step'].unique())
+
+        # 매 step 쌍별 거리 계산
+        pair_steps = {}  # {(a1,a2): [(step, dist), ...]}
+        for step in steps_sorted:
+            step_data = run_df[run_df['step'] == step][['agent_id', 'x', 'z']].values
+            n = len(step_data)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    a1, a2 = int(step_data[i][0]), int(step_data[j][0])
+                    pair_key = tuple(sorted([a1, a2]))
+                    dist = np.sqrt((step_data[i][1] - step_data[j][1]) ** 2 +
+                                   (step_data[i][2] - step_data[j][2]) ** 2)
+                    if pair_key not in pair_steps:
+                        pair_steps[pair_key] = []
+                    pair_steps[pair_key].append((step, dist))
+
+        # 쌍별로 encounter 분리 후 DCPA 추출
+        for pair_key, step_dists in pair_steps.items():
+            step_dists.sort(key=lambda x: x[0])
+            in_encounter = False
+            encounter_min = float('inf')
+            gap_count = 0
+
+            for step, dist in step_dists:
+                if dist <= proximity_range:
+                    if not in_encounter:
+                        in_encounter = True
+                        encounter_min = dist
+                        gap_count = 0
+                    else:
+                        encounter_min = min(encounter_min, dist)
+                        gap_count = 0
+                else:
+                    if in_encounter:
+                        gap_count += 1
+                        if gap_count >= gap_tolerance:
+                            all_dcpa.append(encounter_min)
+                            in_encounter = False
+                            encounter_min = float('inf')
+                            gap_count = 0
+
+            # 마지막 encounter 처리
+            if in_encounter:
+                all_dcpa.append(encounter_min)
+
     return {
-        'avg_min_distance': float(np.mean(dists)) if dists else 0,
-        'min_distances': dists,
-        'n_pairs': len(min_distances)
+        'avg_min_distance': float(np.mean(all_dcpa)) if all_dcpa else 0,
+        'min_distances': all_dcpa,
+        'n_pairs': len(all_dcpa)
     }
 
 
@@ -1043,14 +1115,16 @@ def evaluate_colregs_compliance(csv_path):
         if data['total'] == 0:
             continue
         details = data['details']
-        if situation in ('HeadOn', 'CrossGiveWay', 'Overtaking'):
-            avg_stb = np.mean([d['starboard_rate'] for d in details])
-            avg_port = np.mean([d.get('port_violation_rate', 0) for d in details])
-            print(f"  {situation}: Avg Starboard Rate={avg_stb:.2f}, Avg Port Violation={avg_port:.2f}")
+        avg_rudder = np.mean([d['avg_rudder'] for d in details])
+        if situation in ('HeadOn', 'CrossGiveWay'):
+            avg_port = np.mean([d.get('strong_port_rate', 0) for d in details])
+            print(f"  {situation}: Avg Rudder={avg_rudder:.3f}, Avg Strong Port Rate={avg_port:.2f}")
         elif situation == 'CrossStandOn':
             avg_ck = np.mean([d['course_keeping_rate'] for d in details])
             avg_sk = np.mean([d['speed_keeping_rate'] for d in details])
-            print(f"  {situation}: Avg Course Keeping={avg_ck:.2f}, Avg Speed Keeping={avg_sk:.2f}")
+            print(f"  {situation}: Avg Rudder={avg_rudder:.3f}, Course Keeping={avg_ck:.2f}, Speed Keeping={avg_sk:.2f}")
+        elif situation == 'Overtaking':
+            print(f"  {situation}: Avg Rudder={avg_rudder:.3f}")
 
     print(f"\nSafety Metrics:")
     print(f"  Avg Min Passing Distance: {dcpa['avg_min_distance']:.2f}m")
@@ -1066,6 +1140,30 @@ def evaluate_colregs_compliance(csv_path):
         'total_encounters': total_enc,
         'overall_compliance_rate': total_comp / max(total_enc, 1),
     }
+
+
+def load_model_with_padding(policy, model_path):
+    """Phase 1 모델 로드 (msg_dim 차이 자동 패딩, others_msg=0이면 영향 없음)"""
+    saved_state = torch.load(model_path, map_location=DEVICE)
+    model_state = policy.state_dict()
+    padded = []
+
+    for key, saved_param in saved_state.items():
+        if key not in model_state:
+            continue
+        model_param = model_state[key]
+        if saved_param.shape == model_param.shape:
+            model_state[key] = saved_param
+        elif saved_param.dim() == 2 and model_param.dim() == 2:
+            model_state[key] = torch.zeros_like(model_param)
+            r = min(saved_param.shape[0], model_param.shape[0])
+            c = min(saved_param.shape[1], model_param.shape[1])
+            model_state[key][:r, :c] = saved_param[:r, :c]
+            padded.append(f"{key}: {list(saved_param.shape)} -> {list(model_param.shape)}")
+
+    policy.load_state_dict(model_state)
+    if padded:
+        print(f"[INFO] Padded layers (zero-filled): {padded}")
 
 
 def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TEST_TIME_SCALE, tag=None):
@@ -1114,17 +1212,19 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
     networks.USE_COMMUNICATION = False
 
     policy_off = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
-    policy_off.load_state_dict(torch.load(MODEL_PATH_COMM_OFF, map_location=DEVICE))
+    load_model_with_padding(policy_off, MODEL_PATH_COMM_OFF)
     policy_off.eval()
     print(f"[OK] COMM_OFF model loaded")
 
     off_stats = []
     off_data = []
+    off_trajectory = []
     for run in range(num_runs):
         frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
-        stats, collected = run_single_test(env, policy_off, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL)
+        stats, collected, traj = run_single_test(env, policy_off, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL, use_comm=False)
         off_stats.append(stats)
         off_data.extend(collected)
+        off_trajectory.extend(traj)
         print(f"  [Run {run+1:2d}/{num_runs}] Collision: {stats['collision_count']:3d}, "
               f"Success: {stats['success_count']:3d}, Reward: {stats['avg_reward']:.2f}")
 
@@ -1144,11 +1244,13 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
 
     on_stats = []
     on_data = []
+    on_trajectory = []
     for run in range(num_runs):
         frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
-        stats, collected = run_single_test(env, policy_on, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL)
+        stats, collected, traj = run_single_test(env, policy_on, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL, use_comm=True)
         on_stats.append(stats)
         on_data.extend(collected)
+        on_trajectory.extend(traj)
         print(f"  [Run {run+1:2d}/{num_runs}] Collision: {stats['collision_count']:3d}, "
               f"Success: {stats['success_count']:3d}, Reward: {stats['avg_reward']:.2f}")
 
@@ -1157,7 +1259,28 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
 
     env.close()
 
-    # === 결과 비교 ===
+    # === Trajectory CSV 저장 ===
+    traj_dir = os.path.join(PROJECT_ROOT, "trajectory_data")
+    os.makedirs(traj_dir, exist_ok=True)
+
+    traj_header = ['step', 'agent_id', 'colregs', 'colregs_name', 'x', 'z',
+                   'speed', 'heading', 'rudder', 'goal_dist', 'goal_angle']
+
+    off_traj_path = os.path.join(traj_dir, f"{prefix}compare_commOFF_{num_runs}x{test_steps}_{timestamp}.csv")
+    on_traj_path = os.path.join(traj_dir, f"{prefix}compare_commON_{num_runs}x{test_steps}_{timestamp}.csv")
+
+    for traj_list, traj_path in [(off_trajectory, off_traj_path), (on_trajectory, on_traj_path)]:
+        if len(traj_list) > 0:
+            with open(traj_path, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(traj_header)
+                for d in traj_list:
+                    w.writerow([d['step'], d['agent_id'], d['colregs'], d['colregs_name'],
+                                d['x'], d['z'], d['speed'], d['heading'], d['rudder'],
+                                d['goal_dist'], d['goal_angle']])
+            print(f"[SAVED] Trajectory: {traj_path}")
+
+    # === 결과 비교 (콘솔 출력) ===
     off_c = [s['collision_count'] for s in off_stats]
     off_s = [s['success_count'] for s in off_stats]
     off_r = [s['avg_reward'] for s in off_stats]
@@ -1170,12 +1293,157 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
     print(f"{'=' * 80}")
     print(f"{'Metric':<20} {'Comm OFF':>20} {'Comm ON':>20}")
     print(f"{'-'*60}")
-    print(f"{'Collision':<20} {np.mean(off_c):>8.2f} ± {np.std(off_c):<8.2f} {np.mean(on_c):>8.2f} ± {np.std(on_c):<8.2f}")
-    print(f"{'Success':<20} {np.mean(off_s):>8.2f} ± {np.std(off_s):<8.2f} {np.mean(on_s):>8.2f} ± {np.std(on_s):<8.2f}")
-    print(f"{'Avg Reward':<20} {np.mean(off_r):>8.2f} ± {np.std(off_r):<8.2f} {np.mean(on_r):>8.2f} ± {np.std(on_r):<8.2f}")
+    print(f"{'Collision':<20} {np.mean(off_c):>8.2f} +/- {np.std(off_c):<8.2f} {np.mean(on_c):>8.2f} +/- {np.std(on_c):<8.2f}")
+    print(f"{'Success':<20} {np.mean(off_s):>8.2f} +/- {np.std(off_s):<8.2f} {np.mean(on_s):>8.2f} +/- {np.std(on_s):<8.2f}")
+    print(f"{'Avg Reward':<20} {np.mean(off_r):>8.2f} +/- {np.std(off_r):<8.2f} {np.mean(on_r):>8.2f} +/- {np.std(on_r):<8.2f}")
     print(f"{'=' * 80}")
 
-    # 결과 저장
+    # === COLREGs Compliance 평가 ===
+    compliance_off = None
+    compliance_on = None
+
+    if len(off_trajectory) > 0:
+        print(f"\n{'=' * 60}")
+        print("[EVAL] COLREGs Compliance - Communication OFF")
+        print(f"{'=' * 60}")
+        compliance_off = evaluate_colregs_compliance(off_traj_path)
+
+    if len(on_trajectory) > 0:
+        print(f"\n{'=' * 60}")
+        print("[EVAL] COLREGs Compliance - Communication ON")
+        print(f"{'=' * 60}")
+        compliance_on = evaluate_colregs_compliance(on_traj_path)
+
+    # === 비교 그래프 생성 ===
+    figures_dir = os.path.join(PROJECT_ROOT, "figures")
+    os.makedirs(figures_dir, exist_ok=True)
+
+    if compliance_off is not None and compliance_on is not None:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        C_OFF = '#4878A8'
+        C_ON = '#D4652F'
+
+        # --- Figure 1: COLREGs Compliance 비교 ---
+        fig1, axes1 = plt.subplots(1, 2, figsize=(12, 5))
+
+        # (a) Per-situation compliance rate
+        ax = axes1[0]
+        situations = ['HeadOn', 'CrossStandOn', 'CrossGiveWay', 'Overtaking']
+        labels = ['Head-on\n(Rule 14)', 'Stand-on\n(Rule 17)', 'Give-way\n(Rule 15/16)', 'Overtaking\n(Rule 13)']
+        off_rates = []
+        on_rates = []
+        for sit in situations:
+            off_d = compliance_off['compliance'].get(sit, {'total': 0, 'compliant': 0})
+            on_d = compliance_on['compliance'].get(sit, {'total': 0, 'compliant': 0})
+            off_rates.append(off_d['compliant'] / max(off_d['total'], 1) * 100)
+            on_rates.append(on_d['compliant'] / max(on_d['total'], 1) * 100)
+
+        x = np.arange(len(situations))
+        w = 0.35
+        bars1 = ax.bar(x - w/2, off_rates, w, color=C_OFF, edgecolor='black', linewidth=0.5, label='Without Comm.')
+        bars2 = ax.bar(x + w/2, on_rates, w, color=C_ON, edgecolor='black', linewidth=0.5, label='With Comm.')
+        ax.set_ylabel('Compliance Rate (%)')
+        ax.set_title('(a) COLREGs Compliance by Situation', fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=9)
+        ax.set_ylim([0, 105])
+        ax.legend(loc='lower right')
+        ax.grid(axis='y', alpha=0.3)
+        for bar in bars1:
+            if bar.get_height() > 0:
+                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 1,
+                        f'{bar.get_height():.0f}%', ha='center', va='bottom', fontsize=8)
+        for bar in bars2:
+            if bar.get_height() > 0:
+                ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 1,
+                        f'{bar.get_height():.0f}%', ha='center', va='bottom', fontsize=8)
+
+        # (b) Overall compliance + DCPA
+        ax = axes1[1]
+        off_overall = compliance_off['overall_compliance_rate'] * 100
+        on_overall = compliance_on['overall_compliance_rate'] * 100
+        off_dcpa = compliance_off['dcpa']['avg_min_distance']
+        on_dcpa = compliance_on['dcpa']['avg_min_distance']
+
+        metrics = ['Overall\nCompliance (%)', 'Avg DCPA (m)']
+        off_vals = [off_overall, off_dcpa]
+        on_vals = [on_overall, on_dcpa]
+
+        x2 = np.arange(len(metrics))
+        bars1 = ax.bar(x2 - w/2, off_vals, w, color=C_OFF, edgecolor='black', linewidth=0.5, label='Without Comm.')
+        bars2 = ax.bar(x2 + w/2, on_vals, w, color=C_ON, edgecolor='black', linewidth=0.5, label='With Comm.')
+        ax.set_title('(b) Overall Compliance & Safety Distance', fontweight='bold')
+        ax.set_xticks(x2)
+        ax.set_xticklabels(metrics, fontsize=10)
+        ax.legend(loc='lower right')
+        ax.grid(axis='y', alpha=0.3)
+        for bar in bars1:
+            ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+                    f'{bar.get_height():.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+        for bar in bars2:
+            ax.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+                    f'{bar.get_height():.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+        env_label = tag.replace('_', ' ').title() if tag else 'Test'
+        plt.suptitle(f'COLREGs Compliance Comparison: {env_label} Environment\n({num_runs} runs x {test_steps} steps)',
+                     fontsize=13, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        fig1_path = os.path.join(figures_dir, f'{prefix}colregs_comparison_{timestamp}.png')
+        plt.savefig(fig1_path, dpi=200, bbox_inches='tight')
+        print(f"[SAVED] {fig1_path}")
+
+        # --- Figure 2: DCPA 분포 + Collision 비교 ---
+        fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+
+        # (a) DCPA distribution
+        ax = axes2[0]
+        off_dists = compliance_off['dcpa']['min_distances']
+        on_dists = compliance_on['dcpa']['min_distances']
+        if off_dists and on_dists:
+            bp = ax.boxplot([off_dists, on_dists], tick_labels=['Without\nComm.', 'With\nComm.'],
+                            patch_artist=True,
+                            boxprops=dict(linewidth=1.5),
+                            whiskerprops=dict(linewidth=1.5),
+                            medianprops=dict(linewidth=2, color='black'),
+                            capprops=dict(linewidth=1.5))
+            bp['boxes'][0].set_facecolor(C_OFF)
+            bp['boxes'][1].set_facecolor(C_ON)
+            ax.scatter([1, 2], [np.mean(off_dists), np.mean(on_dists)],
+                       marker='D', color='white', edgecolors='black', s=60, zorder=5, label='Mean')
+            ax.legend(fontsize=9)
+        ax.set_ylabel('Min Passing Distance (m)')
+        ax.set_title('(a) DCPA Distribution', fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+
+        # (b) Collision per run
+        ax = axes2[1]
+        bp2 = ax.boxplot([off_c, on_c], tick_labels=['Without\nComm.', 'With\nComm.'],
+                         patch_artist=True,
+                         boxprops=dict(linewidth=1.5),
+                         whiskerprops=dict(linewidth=1.5),
+                         medianprops=dict(linewidth=2, color='black'),
+                         capprops=dict(linewidth=1.5))
+        bp2['boxes'][0].set_facecolor(C_OFF)
+        bp2['boxes'][1].set_facecolor(C_ON)
+        ax.scatter([1, 2], [np.mean(off_c), np.mean(on_c)],
+                   marker='D', color='white', edgecolors='black', s=60, zorder=5, label='Mean')
+        ax.set_ylabel('Collisions per Run')
+        ax.set_title('(b) Collision Count Distribution', fontweight='bold')
+        ax.legend(fontsize=9)
+        ax.grid(axis='y', alpha=0.3)
+
+        plt.suptitle(f'Safety Comparison: {env_label} Environment\n({num_runs} runs x {test_steps} steps)',
+                     fontsize=13, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        fig2_path = os.path.join(figures_dir, f'{prefix}safety_comparison_{timestamp}.png')
+        plt.savefig(fig2_path, dpi=200, bbox_inches='tight')
+        print(f"[SAVED] {fig2_path}")
+        plt.close('all')
+
+    # === Summary 텍스트 저장 ===
     summary_path = os.path.join(save_dir, f"{prefix}comparison_{num_runs}x{test_steps}_{timestamp}.txt")
     with open(summary_path, 'w') as f:
         f.write(f"=== Comparison Test Results ===\n")
@@ -1190,6 +1458,12 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
         f.write(f"Collision: {np.mean(on_c):.2f} +/- {np.std(on_c):.2f}\n")
         f.write(f"Success: {np.mean(on_s):.2f} +/- {np.std(on_s):.2f}\n")
         f.write(f"Avg Reward: {np.mean(on_r):.2f} +/- {np.std(on_r):.2f}\n\n")
+        if compliance_off:
+            f.write(f"--- COLREGs Compliance ---\n")
+            f.write(f"Overall OFF: {compliance_off['overall_compliance_rate']*100:.1f}%\n")
+            f.write(f"Overall ON:  {compliance_on['overall_compliance_rate']*100:.1f}%\n")
+            f.write(f"DCPA OFF: {compliance_off['dcpa']['avg_min_distance']:.2f}m\n")
+            f.write(f"DCPA ON:  {compliance_on['dcpa']['avg_min_distance']:.2f}m\n\n")
         f.write(f"Per-run details (OFF):\n")
         for i, s in enumerate(off_stats):
             f.write(f"  Run {i+1}: Collision={s['collision_count']}, Success={s['success_count']}, Reward={s['avg_reward']:.2f}\n")
@@ -1199,26 +1473,591 @@ def run_comparison_test(test_steps=TEST_STEPS, num_runs=NUM_RUNS, time_scale=TES
 
     print(f"\n[SAVED] {summary_path}")
 
-    # latent 데이터도 저장 (각각)
-    for label, data_list, comm_flag in [("commOFF", off_data, False), ("commON", on_data, True)]:
-        if len(data_list) > 0:
-            csv_path = os.path.join(save_dir, f"{prefix}compare_{label}_{num_runs}x{test_steps}_{timestamp}.csv")
-            with open(csv_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                header = ['step', 'agent_id', 'colregs', 'n_agents', 'action_0', 'action_1']
-                header += [f'obs_{i}' for i in range(OBS_SIZE)]
-                header += [f'self_msg_{i}' for i in range(MSG_DIM)]
-                header += [f'others_msg_{i}' for i in range(MSG_DIM)]
-                writer.writerow(header)
-                for d in data_list:
-                    row = [d['step'], d['agent_id'], d['colregs'], d['n_agents'], d['action'][0], d['action'][1]]
-                    row += d['obs_full']
-                    row += d['self_msg']
-                    row += d['others_msg']
-                    writer.writerow(row)
-            print(f"[SAVED] {csv_path}")
-
+    results['compliance_off'] = compliance_off
+    results['compliance_on'] = compliance_on
     return results
+
+
+# ============================================================================
+# Mixed Model Test (Radar-only + Communication 혼합)
+# ============================================================================
+
+def run_mixed_test(env, behavior_name, policy_off, policy_on, n_radar, n_comm,
+                   num_runs=10, test_steps=2000):
+    """
+    혼합 모델 테스트: radar-only 에이전트는 Phase 1 모델, comm 에이전트는 Phase 2 모델 사용.
+
+    Args:
+        env: Unity 환경
+        behavior_name: behavior spec 이름
+        policy_off: Phase 1 모델 (radar-only용)
+        policy_on: Phase 2 모델 (comm용)
+        n_radar: radar-only 에이전트 수 (agent_id 0 ~ n_radar-1)
+        n_comm: communication 에이전트 수 (agent_id n_radar ~ n_radar+n_comm-1)
+        num_runs: 반복 횟수
+        test_steps: run당 스텝 수
+    """
+    import networks
+
+    colregs_labels = ['None', 'HeadOn', 'CrossStandOn', 'CrossGiveWay', 'Overtaking']
+
+    all_stats = []
+    all_trajectory = []
+
+    for run in range(num_runs):
+        frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
+
+        stats = {
+            'collision_count': 0,
+            'success_count': 0,
+            'total_reward': 0,
+        }
+        agent_rewards = {}
+        trajectory_data = []
+
+        # 환경 리셋
+        env.reset()
+
+        for step in range(test_steps):
+            decision_steps, terminal_steps = env.get_steps(behavior_name)
+
+            agent_ids = list(decision_steps.agent_id)
+            n_agents = len(agent_ids)
+
+            if n_agents == 0:
+                env.step()
+                continue
+
+            # 전체 에이전트 관측 파싱
+            batch_states = []
+            batch_goals = []
+            batch_self_states = []
+            batch_colregs = []
+            batch_positions = {}
+            agent_id_list = []
+
+            for idx, agent_id in enumerate(agent_ids):
+                obs_raw = decision_steps.obs[0][idx]
+                state, goal, self_state, colregs_vec, obs_full, position = parse_observation(obs_raw)
+
+                state_stacked = frame_stack.update(agent_id, state)
+
+                batch_states.append(state_stacked)
+                batch_goals.append(goal)
+                batch_self_states.append(self_state)
+                batch_colregs.append(colregs_vec)
+                batch_positions[agent_id] = position
+                agent_id_list.append(agent_id)
+
+                if agent_id not in agent_rewards:
+                    agent_rewards[agent_id] = 0
+
+            # 에이전트를 radar / comm 그룹으로 분류
+            radar_indices = [i for i, aid in enumerate(agent_id_list) if aid < n_radar]
+            comm_indices = [i for i, aid in enumerate(agent_id_list) if aid >= n_radar]
+
+            # 전체 행동 배열 (나중에 merge)
+            merged_actions = np.zeros((n_agents, CONTINUOUS_ACTION_SIZE))
+
+            # --- Radar-only 그룹 추론 (Phase 1 모델, 통신 없음) ---
+            if radar_indices:
+                r_states = np.array([batch_states[i] for i in radar_indices])
+                r_goals = np.array([batch_goals[i] for i in radar_indices])
+                r_self_states = np.array([batch_self_states[i] for i in radar_indices])
+                r_colregs = np.array([batch_colregs[i] for i in radar_indices])
+
+                r_states_t = torch.FloatTensor(r_states).unsqueeze(0).to(DEVICE)
+                r_goals_t = torch.FloatTensor(r_goals).unsqueeze(0).to(DEVICE)
+                r_self_states_t = torch.FloatTensor(r_self_states).unsqueeze(0).to(DEVICE)
+                r_colregs_t = torch.FloatTensor(r_colregs).unsqueeze(0).to(DEVICE)
+
+                with torch.no_grad():
+                    # Phase 1 모델: 통신 OFF
+                    networks.USE_COMMUNICATION = False
+                    _, r_actions, _, _, _ = policy_off.forward(
+                        r_states_t, r_goals_t, r_self_states_t, r_colregs_t
+                    )
+
+                r_actions_np = r_actions.squeeze(0).cpu().numpy()
+                for local_i, global_i in enumerate(radar_indices):
+                    merged_actions[global_i] = r_actions_np[local_i]
+
+            # --- Comm 그룹 추론 (Phase 2 모델, comm 에이전트끼리만 통신) ---
+            if comm_indices:
+                c_states = np.array([batch_states[i] for i in comm_indices])
+                c_goals = np.array([batch_goals[i] for i in comm_indices])
+                c_self_states = np.array([batch_self_states[i] for i in comm_indices])
+                c_colregs = np.array([batch_colregs[i] for i in comm_indices])
+
+                c_states_t = torch.FloatTensor(c_states).unsqueeze(0).to(DEVICE)
+                c_goals_t = torch.FloatTensor(c_goals).unsqueeze(0).to(DEVICE)
+                c_self_states_t = torch.FloatTensor(c_self_states).unsqueeze(0).to(DEVICE)
+                c_colregs_t = torch.FloatTensor(c_colregs).unsqueeze(0).to(DEVICE)
+
+                # comm 에이전트끼리만 통신 파트너 계산
+                comm_agent_ids = [agent_id_list[i] for i in comm_indices]
+                comm_positions = {aid: batch_positions[aid] for aid in comm_agent_ids}
+                comm_partners = {}
+                for aid in comm_agent_ids:
+                    comm_partners[aid] = get_comm_partners(aid, comm_positions[aid], comm_positions)
+
+                with torch.no_grad():
+                    # Phase 2 모델: 통신 ON
+                    networks.USE_COMMUNICATION = True
+                    _, c_actions, _, _, _ = policy_on.forward(
+                        c_states_t, c_goals_t, c_self_states_t, c_colregs_t,
+                        comm_partners=comm_partners,
+                        agent_id_list=comm_agent_ids
+                    )
+
+                c_actions_np = c_actions.squeeze(0).cpu().numpy()
+                for local_i, global_i in enumerate(comm_indices):
+                    merged_actions[global_i] = c_actions_np[local_i]
+
+            # Trajectory 데이터 수집 (매 스텝)
+            for i, agent_id in enumerate(agent_id_list):
+                colregs_idx = int(np.argmax(batch_colregs[i]))
+                pos = batch_positions[agent_id]
+                agent_type = "radar" if agent_id < n_radar else "comm"
+                trajectory_data.append({
+                    'step': step,
+                    'agent_id': agent_id,
+                    'agent_type': agent_type,
+                    'colregs': colregs_idx,
+                    'colregs_name': colregs_labels[colregs_idx],
+                    'x': float(pos[0]),
+                    'z': float(pos[1]),
+                    'speed': float(batch_self_states[i][0]),
+                    'heading': float(batch_self_states[i][2]),
+                    'rudder': float(batch_self_states[i][3]),
+                    'goal_dist': float(batch_goals[i][0]),
+                    'goal_angle': float(batch_goals[i][1]),
+                    'action_0': float(merged_actions[i][0]),
+                    'action_1': float(merged_actions[i][1]),
+                })
+
+            # Reward 누적
+            for i, agent_id in enumerate(agent_id_list):
+                idx = decision_steps.agent_id.tolist().index(agent_id)
+                reward = decision_steps.reward[idx]
+                agent_rewards[agent_id] += reward
+                stats['total_reward'] += reward
+
+            # Terminal steps 처리
+            for t_idx, agent_id in enumerate(terminal_steps.agent_id):
+                reward = terminal_steps.reward[t_idx]
+
+                if agent_id in agent_rewards:
+                    agent_rewards[agent_id] += reward
+                else:
+                    agent_rewards[agent_id] = reward
+
+                stats['total_reward'] += reward
+
+                if reward > 0:
+                    stats['success_count'] += 1
+                elif reward < -50:
+                    stats['collision_count'] += 1
+
+                frame_stack.remove_agent(agent_id)
+
+            # Unity에 행동 전송
+            all_actions = np.zeros((len(decision_steps.agent_id), CONTINUOUS_ACTION_SIZE))
+            for i, agent_id in enumerate(decision_steps.agent_id):
+                if agent_id in agent_id_list:
+                    agent_idx = agent_id_list.index(agent_id)
+                    all_actions[i] = merged_actions[agent_idx]
+
+            action_tuple = ActionTuple(continuous=all_actions)
+
+            try:
+                env.set_actions(behavior_name, action_tuple)
+                env.step()
+            except Exception as e:
+                print(f"  [WARNING] Unity error: {e}")
+                break
+
+        # 평균 리워드 계산
+        avg_reward = stats['total_reward'] / max(len(agent_rewards), 1)
+        stats['avg_reward'] = avg_reward
+
+        # Radar / Comm 그룹별 통계
+        radar_rewards = [v for k, v in agent_rewards.items() if k < n_radar]
+        comm_rewards = [v for k, v in agent_rewards.items() if k >= n_radar]
+        stats['radar_avg_reward'] = np.mean(radar_rewards) if radar_rewards else 0
+        stats['comm_avg_reward'] = np.mean(comm_rewards) if comm_rewards else 0
+
+        all_stats.append(stats)
+        all_trajectory.extend(trajectory_data)
+
+        print(f"  [Run {run+1:2d}/{num_runs}] Collision: {stats['collision_count']:3d}, "
+              f"Success: {stats['success_count']:3d}, Reward: {stats['avg_reward']:.2f} "
+              f"(Radar: {stats['radar_avg_reward']:.2f}, Comm: {stats['comm_avg_reward']:.2f})")
+
+    return all_stats, all_trajectory
+
+
+def run_mixed_experiment(num_runs=10, test_steps=2000, time_scale=20.0, tag=None):
+    """
+    혼합 모델 실험: 다양한 radar/comm 비율로 테스트 실행.
+
+    설정 목록: (2,14), (4,12), (6,10), (8,8)
+    """
+    import networks
+
+    configs = [
+        (2, 14),   # 2 radar + 14 comm
+        (4, 12),   # 4 radar + 12 comm
+        (6, 10),   # 6 radar + 10 comm
+        (8, 8),    # 8 radar + 8 comm
+    ]
+
+    print("=" * 80)
+    print(f"[MIXED EXPERIMENT] {len(configs)} configs x {num_runs} runs x {test_steps} steps")
+    print("=" * 80)
+
+    # 모델 경로 확인
+    for label, path in [("COMM_OFF (Phase 1)", MODEL_PATH_COMM_OFF), ("COMM_ON (Phase 2)", MODEL_PATH_COMM_ON)]:
+        if not os.path.exists(path):
+            print(f"[ERROR] {label} model not found: {path}")
+            return
+        print(f"  {label}: {path}")
+
+    # 두 모델 로드
+    print("\n[INFO] Loading Phase 1 model (radar-only)...")
+    policy_off = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
+    load_model_with_padding(policy_off, MODEL_PATH_COMM_OFF)
+    policy_off.eval()
+    print(f"[OK] Phase 1 model loaded")
+
+    print("[INFO] Loading Phase 2 model (communication)...")
+    policy_on = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
+    checkpoint = torch.load(MODEL_PATH_COMM_ON, map_location=DEVICE)
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        policy_on.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        policy_on.load_state_dict(checkpoint)
+    policy_on.eval()
+    print(f"[OK] Phase 2 model loaded")
+
+    # Unity 환경 연결 (한 번만)
+    print("\n[INFO] Connecting to Unity environment...")
+    channel = EngineConfigurationChannel()
+    env = UnityEnvironment(
+        file_name=None,
+        side_channels=[channel],
+        base_port=BASE_PORT
+    )
+    channel.set_configuration_parameters(time_scale=time_scale)
+    print("[OK] Unity environment connected")
+
+    env.reset()
+    behavior_name = list(env.behavior_specs)[0]
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    traj_dir = os.path.join(PROJECT_ROOT, "trajectory_data")
+    os.makedirs(traj_dir, exist_ok=True)
+    figures_dir = os.path.join(PROJECT_ROOT, "figures")
+    os.makedirs(figures_dir, exist_ok=True)
+
+    prefix = f"{tag}_" if tag else ""
+    all_results = {}
+
+    for n_radar, n_comm in configs:
+        config_label = f"R{n_radar}_C{n_comm}"
+        print(f"\n{'=' * 60}")
+        print(f"[CONFIG] {n_radar} radar + {n_comm} comm")
+        print(f"{'=' * 60}")
+
+        stats_list, trajectory = run_mixed_test(
+            env, behavior_name, policy_off, policy_on,
+            n_radar, n_comm, num_runs=num_runs, test_steps=test_steps
+        )
+
+        all_results[config_label] = {
+            'stats': stats_list,
+            'n_radar': n_radar,
+            'n_comm': n_comm,
+        }
+
+        # Trajectory CSV 저장
+        if len(trajectory) > 0:
+            traj_header = ['step', 'agent_id', 'agent_type', 'colregs', 'colregs_name',
+                           'x', 'z', 'speed', 'heading', 'rudder',
+                           'goal_dist', 'goal_angle', 'action_0', 'action_1']
+            traj_path = os.path.join(traj_dir, f"{prefix}mixed_{config_label}_{num_runs}x{test_steps}_{timestamp}.csv")
+
+            with open(traj_path, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(traj_header)
+                for d in trajectory:
+                    w.writerow([d['step'], d['agent_id'], d['agent_type'],
+                                d['colregs'], d['colregs_name'],
+                                d['x'], d['z'], d['speed'], d['heading'], d['rudder'],
+                                d['goal_dist'], d['goal_angle'],
+                                d['action_0'], d['action_1']])
+
+            print(f"[SAVED] Trajectory: {traj_path}")
+            all_results[config_label]['traj_path'] = traj_path
+
+            # COLREGs 준수도 평가
+            compliance = evaluate_colregs_compliance(traj_path)
+            all_results[config_label]['compliance'] = compliance
+
+    env.close()
+    del policy_off, policy_on
+
+    # === 비교 결과 출력 ===
+    print(f"\n{'=' * 80}")
+    print(f"[MIXED EXPERIMENT RESULTS] {num_runs} runs x {test_steps} steps")
+    print(f"{'=' * 80}")
+    print(f"{'Config':<12} {'Collision':>12} {'Success':>12} {'Avg Reward':>14} {'Radar Rwd':>12} {'Comm Rwd':>12}")
+    print(f"{'-' * 74}")
+
+    for config_label, data in all_results.items():
+        stats_list = data['stats']
+        collisions = [s['collision_count'] for s in stats_list]
+        successes = [s['success_count'] for s in stats_list]
+        rewards = [s['avg_reward'] for s in stats_list]
+        radar_rwds = [s['radar_avg_reward'] for s in stats_list]
+        comm_rwds = [s['comm_avg_reward'] for s in stats_list]
+
+        print(f"{config_label:<12} "
+              f"{np.mean(collisions):>5.1f}+/-{np.std(collisions):<4.1f} "
+              f"{np.mean(successes):>5.1f}+/-{np.std(successes):<4.1f} "
+              f"{np.mean(rewards):>7.2f}+/-{np.std(rewards):<5.2f} "
+              f"{np.mean(radar_rwds):>5.1f}+/-{np.std(radar_rwds):<4.1f} "
+              f"{np.mean(comm_rwds):>5.1f}+/-{np.std(comm_rwds):<4.1f}")
+
+    print(f"{'=' * 80}")
+
+    # === 비교 그래프 생성 ===
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        config_labels = list(all_results.keys())
+        x_labels = [f"{d['n_radar']}R+{d['n_comm']}C" for d in all_results.values()]
+        x = np.arange(len(config_labels))
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+        # (a) Collision 비교
+        ax = axes[0, 0]
+        col_means = [np.mean([s['collision_count'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        col_stds = [np.std([s['collision_count'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        ax.bar(x, col_means, yerr=col_stds, color='#D4652F', edgecolor='black', linewidth=0.5, capsize=5)
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels)
+        ax.set_ylabel('Collisions per Run')
+        ax.set_title('(a) Collision Count', fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+
+        # (b) Success 비교
+        ax = axes[0, 1]
+        suc_means = [np.mean([s['success_count'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        suc_stds = [np.std([s['success_count'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        ax.bar(x, suc_means, yerr=suc_stds, color='#4878A8', edgecolor='black', linewidth=0.5, capsize=5)
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels)
+        ax.set_ylabel('Successes per Run')
+        ax.set_title('(b) Goal Arrivals', fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+
+        # (c) Radar vs Comm 그룹별 평균 보상
+        ax = axes[1, 0]
+        radar_means = [np.mean([s['radar_avg_reward'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        comm_means = [np.mean([s['comm_avg_reward'] for s in all_results[cl]['stats']]) for cl in config_labels]
+        w = 0.35
+        ax.bar(x - w/2, radar_means, w, color='#888888', edgecolor='black', linewidth=0.5, label='Radar-only')
+        ax.bar(x + w/2, comm_means, w, color='#D4652F', edgecolor='black', linewidth=0.5, label='Comm')
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels)
+        ax.set_ylabel('Avg Reward')
+        ax.set_title('(c) Per-group Reward', fontweight='bold')
+        ax.legend()
+        ax.grid(axis='y', alpha=0.3)
+
+        # (d) COLREGs 준수율
+        ax = axes[1, 1]
+        compliance_rates = []
+        for cl in config_labels:
+            comp = all_results[cl].get('compliance')
+            if comp:
+                compliance_rates.append(comp['overall_compliance_rate'] * 100)
+            else:
+                compliance_rates.append(0)
+        ax.bar(x, compliance_rates, color='#2E8B57', edgecolor='black', linewidth=0.5)
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels)
+        ax.set_ylabel('Compliance Rate (%)')
+        ax.set_title('(d) COLREGs Compliance', fontweight='bold')
+        ax.set_ylim([0, 105])
+        ax.grid(axis='y', alpha=0.3)
+        for i, rate in enumerate(compliance_rates):
+            ax.text(i, rate + 1, f'{rate:.0f}%', ha='center', va='bottom', fontsize=10)
+
+        env_label = tag.replace('_', ' ').title() if tag else 'Mixed Model'
+        plt.suptitle(f'Mixed Model Experiment: {env_label}\n({num_runs} runs x {test_steps} steps)',
+                     fontsize=13, fontweight='bold')
+        plt.tight_layout()
+        fig_path = os.path.join(figures_dir, f'{prefix}mixed_comparison_{timestamp}.png')
+        plt.savefig(fig_path, dpi=200, bbox_inches='tight')
+        print(f"[SAVED] {fig_path}")
+        plt.close('all')
+    except Exception as e:
+        print(f"[WARNING] 그래프 생성 실패: {e}")
+
+    # === Summary 텍스트 저장 ===
+    save_dir = os.path.join(PROJECT_ROOT, "latent_data")
+    os.makedirs(save_dir, exist_ok=True)
+    summary_path = os.path.join(save_dir, f"{prefix}mixed_experiment_{num_runs}x{test_steps}_{timestamp}.txt")
+    with open(summary_path, 'w') as f:
+        f.write(f"=== Mixed Model Experiment Results ===\n")
+        f.write(f"Runs: {num_runs}, Steps per run: {test_steps}\n")
+        f.write(f"COMM_OFF model: {MODEL_PATH_COMM_OFF}\n")
+        f.write(f"COMM_ON model: {MODEL_PATH_COMM_ON}\n\n")
+        for config_label, data in all_results.items():
+            stats_list = data['stats']
+            collisions = [s['collision_count'] for s in stats_list]
+            successes = [s['success_count'] for s in stats_list]
+            rewards = [s['avg_reward'] for s in stats_list]
+            f.write(f"--- {config_label} ({data['n_radar']} radar + {data['n_comm']} comm) ---\n")
+            f.write(f"Collision: {np.mean(collisions):.2f} +/- {np.std(collisions):.2f}\n")
+            f.write(f"Success: {np.mean(successes):.2f} +/- {np.std(successes):.2f}\n")
+            f.write(f"Avg Reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}\n")
+            comp = data.get('compliance')
+            if comp:
+                f.write(f"COLREGs Compliance: {comp['overall_compliance_rate']*100:.1f}%\n")
+                f.write(f"Avg DCPA: {comp['dcpa']['avg_min_distance']:.2f}m\n")
+            f.write(f"Per-run:\n")
+            for i, s in enumerate(stats_list):
+                f.write(f"  Run {i+1}: Col={s['collision_count']}, Suc={s['success_count']}, "
+                        f"Rwd={s['avg_reward']:.2f}, R_rwd={s['radar_avg_reward']:.2f}, C_rwd={s['comm_avg_reward']:.2f}\n")
+            f.write("\n")
+
+    print(f"[SAVED] {summary_path}")
+    return all_results
+
+
+def run_simulation(model_path=None, max_steps=10_000_000, time_scale=5.0, log_interval_sec=10.0):
+    """
+    세계지도 ship traffic 시뮬레이션 모드.
+    - 동적 vessel count (Unity 측 Progressive Spawn과 연동)
+    - 데이터 수집 없음 (가벼운 inference only)
+    - 무한에 가까운 step (기본 1천만)
+    - 배가 추가/제거되어도 MultiAgentFrameStack이 dict 기반이라 자동 대응
+    """
+    import time
+
+    print("=" * 80)
+    print(f"[SIMULATION MODE] World map ship traffic simulation")
+    print(f"max_steps={max_steps}, time_scale={time_scale}x")
+    print("=" * 80)
+
+    if model_path is None:
+        model_path = TEST_MODEL_PATH
+    if model_path is None or not os.path.exists(model_path):
+        print(f"[ERROR] Model not found: {model_path}")
+        return
+
+    # Unity 연결
+    print("\n[INFO] Connecting to Unity...")
+    channel = EngineConfigurationChannel()
+    env = UnityEnvironment(file_name=None, side_channels=[channel], worker_id=0,
+                           base_port=BASE_PORT, timeout_wait=60)
+    channel.set_configuration_parameters(time_scale=time_scale)
+    env.reset()
+    behavior_name = list(env.behavior_specs)[0]
+    print(f"[OK] Connected. Behavior: {behavior_name}")
+
+    # 모델 로드
+    print(f"[INFO] Loading: {model_path}")
+    policy = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
+    checkpoint = torch.load(model_path, map_location=DEVICE)
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        policy.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        policy.load_state_dict(checkpoint)
+    policy.eval()
+    frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
+    print(f"[OK] Model loaded. Communication: {'ON' if USE_COMMUNICATION else 'OFF'}")
+    print(f"[OK] Starting simulation loop. Ctrl+C to stop.\n")
+
+    last_log_time = time.time()
+    start_time = last_log_time
+    total_terminal = 0
+
+    try:
+        for step in range(max_steps):
+            decision_steps, terminal_steps = env.get_steps(behavior_name)
+            agent_ids = list(decision_steps.agent_id)
+            n_agents = len(agent_ids)
+
+            # Terminal agents: frame_stack 정리
+            for t_agent_id in terminal_steps.agent_id:
+                frame_stack.remove_agent(t_agent_id)
+                total_terminal += 1
+
+            if n_agents == 0:
+                env.step()
+                continue
+
+            # Batch state 구성
+            batch_states, batch_goals, batch_self, batch_colregs, batch_pos = [], [], [], [], []
+            for idx, agent_id in enumerate(agent_ids):
+                obs_raw = decision_steps.obs[0][idx]
+                state, goal, self_state, colregs, _, position = parse_observation(obs_raw)
+                state_stacked = frame_stack.update(agent_id, state)
+                batch_states.append(state_stacked)
+                batch_goals.append(goal)
+                batch_self.append(self_state)
+                batch_colregs.append(colregs)
+                batch_pos.append((position[0], position[1]))
+
+            # 통신 파트너 (거리 기반)
+            positions_dict = {agent_ids[i]: batch_pos[i] for i in range(n_agents)}
+            comm_partners = {}
+            if USE_COMMUNICATION:
+                for agent_id in agent_ids:
+                    comm_partners[agent_id] = get_comm_partners(
+                        agent_id, positions_dict[agent_id], positions_dict)
+
+            # Inference
+            st_t = torch.FloatTensor(np.array(batch_states)).unsqueeze(0).to(DEVICE)
+            gl_t = torch.FloatTensor(np.array(batch_goals)).unsqueeze(0).to(DEVICE)
+            sf_t = torch.FloatTensor(np.array(batch_self)).unsqueeze(0).to(DEVICE)
+            cr_t = torch.FloatTensor(np.array(batch_colregs)).unsqueeze(0).to(DEVICE)
+
+            with torch.no_grad():
+                if USE_COMMUNICATION:
+                    _, actions, _, _, _ = policy.forward(
+                        st_t, gl_t, sf_t, cr_t,
+                        comm_partners=comm_partners,
+                        agent_id_list=list(agent_ids))
+                else:
+                    _, actions, _, _, _ = policy.forward(st_t, gl_t, sf_t, cr_t)
+
+            actions_np = actions.squeeze(0).cpu().numpy()
+            action_tuple = ActionTuple(continuous=actions_np)
+            env.set_actions(behavior_name, action_tuple)
+            env.step()
+
+            # 주기적 로그
+            now = time.time()
+            if now - last_log_time >= log_interval_sec:
+                elapsed = now - start_time
+                sps = (step + 1) / elapsed
+                print(f"[step={step:>8d}] active={n_agents:>4d}  terminated_total={total_terminal:>6d}  "
+                      f"sps={sps:5.1f}  elapsed={elapsed:6.1f}s")
+                last_log_time = now
+
+    except KeyboardInterrupt:
+        print("\n[STOP] Simulation interrupted by user.")
+    finally:
+        env.close()
+        print("[CLOSED] Unity environment closed.")
 
 
 if __name__ == "__main__":
@@ -1229,6 +2068,8 @@ if __name__ == "__main__":
     parser.add_argument('--analyze', type=str, default=None, help='Path to existing CSV for analysis only')
     parser.add_argument('--multitest', action='store_true', help='Run multi-test mode instead of trajectory')
     parser.add_argument('--compare', action='store_true', help='Run Comm OFF vs ON comparison test')
+    parser.add_argument('--mixed', action='store_true', help='Run mixed model experiment (radar + comm)')
+    parser.add_argument('--simulation', action='store_true', help='World-map ship traffic simulation (infinite loop, dynamic vessels)')
     parser.add_argument('--runs', type=int, default=NUM_RUNS, help='Number of runs (multi-test mode)')
     parser.add_argument('--tag', type=str, default=None, help='Tag prefix for output files (e.g., narrow, open)')
     parser.add_argument('--compliance', type=str, default=None, help='Path to trajectory CSV for COLREGs compliance evaluation')
@@ -1239,6 +2080,19 @@ if __name__ == "__main__":
         evaluate_colregs_compliance(args.compliance)
     elif args.analyze:
         analyze_tsne_with_observation(args.analyze)
+    elif args.simulation:
+        run_simulation(
+            model_path=args.model,
+            max_steps=args.steps if args.steps != TRAJECTORY_STEPS else 10_000_000,
+            time_scale=args.time_scale,
+        )
+    elif args.mixed:
+        run_mixed_experiment(
+            num_runs=args.runs,
+            test_steps=args.steps if args.steps != TRAJECTORY_STEPS else TEST_STEPS,
+            time_scale=args.time_scale,
+            tag=args.tag
+        )
     elif args.compare:
         run_comparison_test(
             test_steps=args.steps if args.steps != TRAJECTORY_STEPS else TEST_STEPS,

@@ -5,17 +5,17 @@ using UnityEngine;
 public class VesselDynamics : MonoBehaviour
 {
     // 선박 종류마다 달라질 수 있음. (이거는 어떻게 러닝해야 하는가? 그냥 통일해도 될까?)
-    public float mass = 1.0f;   
-    public float length = 10.0f;     
-    public float beam = 2.0f;           // 선박 폭
-    public float maxSpeed = 5.0f;      
-    public float maxTurnRate = 30.0f;   
-    public float dragCoefficient = 0.1f; // 물의 저항 계수암
-    
-    public float accelerationRate = 0.5f;  // 가속률
-    public float decelerationRate = 0.2f;  // 감속률
-    public float brakeRate = 1.0f;         // 브레이크 감속률
-    public float rudderEffectiveness = 1.5f; // 타 효과 계수
+    // ※ 1/10 스케일 (2026-04-24): 원본 length=10, beam=2, maxSpeed=5, accel/decel/brake
+    public float length = 1.0f;
+    public float beam = 0.2f;           // 선박 폭
+    public float maxSpeed = 0.5f;
+    public float maxTurnRate = 30.0f;   // 각도 - 스케일 무관
+    public float dragCoefficient = 0.1f; // 물의 저항 계수 (1/T 차원, 무차원화됨 - 유지)
+
+    public float accelerationRate = 0.05f;  // 가속률 (L/T² - s배)
+    public float decelerationRate = 0.02f;  // 감속률
+    public float brakeRate = 0.1f;          // 브레이크 감속률
+    public float rudderEffectiveness = 1.5f; // 타 효과 계수 (무차원 - 유지)
     
     // 동역학 상태
     private float currentSpeed = 0f;       // 현재 속도
@@ -26,6 +26,7 @@ public class VesselDynamics : MonoBehaviour
     private bool isBraking = false;        // 브레이크 상태
 
     private Rigidbody rb;
+    private bool scaleApplied = false;   // localScale/mass 중복 적용 방지
 
     private Vector3 initialPosition;
     private Quaternion initialRotation;
@@ -36,16 +37,39 @@ public class VesselDynamics : MonoBehaviour
     public bool IsBraking { get { return isBraking; } }
     public Vector3 Velocity { get { return rb != null ? rb.linearVelocity : Vector3.zero; } }
 
+    // 실제 최대 yaw rate (°/s): speedRatio=1일 때 최대값
+    public float MaxYawRate { get { return maxTurnRate * rudderEffectiveness * (10.0f / length) * (beam / 2.0f); } }
+
+    private void Awake()
+    {
+        // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
+        length = GlobalScale.LENGTH;
+        beam = GlobalScale.BEAM;
+        maxSpeed = GlobalScale.MAX_SPEED;
+        accelerationRate = GlobalScale.ACCEL;
+        decelerationRate = GlobalScale.DECEL;
+        brakeRate = GlobalScale.BRAKE;
+        // maxTurnRate, dragCoefficient, rudderEffectiveness: 각도/무차원 - 유지
+    }
+
     public void Initialize(Rigidbody rigidbody)
     {
         rb = rigidbody;
-        
+
         if (rb != null && rb.gameObject != null)
         {
             initialPosition = rb.gameObject.transform.position;
             initialRotation = rb.gameObject.transform.rotation;
+
+            // Transform localScale / mass는 최초 1회만 적용 (중복 적용 방지)
+            if (!scaleApplied)
+            {
+                rb.gameObject.transform.localScale = GlobalScale.TRANSFORM_SCALE;
+                rb.mass *= GlobalScale.MASS_SCALE;
+                scaleApplied = true;
+            }
         }
-        
+
         ResetState();
     }
 
@@ -97,7 +121,7 @@ public class VesselDynamics : MonoBehaviour
         // 4. 회전 효과 계산
         float lengthFactor = 10.0f / length; // 길이에 반비례
         float beamFactor = beam / 2.0f;      // 폭에 비례
-        float turnFactor = rudderEffectiveness * speedRatio * lengthFactor * beamFactor;
+        float turnFactor = rudderEffectiveness * lengthFactor * beamFactor;
         
         // 5. 회전 속도(yaw rate) 업데이트
         yawRate = effectiveRudderAngle * turnFactor;
@@ -116,12 +140,11 @@ public class VesselDynamics : MonoBehaviour
             }
         }
         
-        // 7. 항력(drag) 적용 - 자동 감속
-        if (targetSpeed < 0.1f && !isBraking) // 입력이 없을 때 (브레이크 중이 아닐 때)
-        {
-            // 물의 저항에 의한 자연 감속
-            currentSpeed *= (1.0f - dragCoefficient * deltaTime);
-        }
+        // 7. 항력(drag) 적용 - 항상 적용 (물의 저항)
+        float dragEffect = dragCoefficient * deltaTime;
+        if (targetSpeed >= 0.1f || isBraking)
+            dragEffect *= 0.3f;  // 추력/브레이크 중에도 약한 항력 적용
+        currentSpeed *= (1.0f - dragEffect);
     }
     public void SetRudderAngle(float angle)
     {

@@ -18,19 +18,13 @@ public class VesselAutoPilot : MonoBehaviour
     public NavigationMode mode = NavigationMode.Radar;
 
     [Header("Detection Range")]
-    public float radarRange = 40f;          // Radar 모드 감지 거리
-    public float communicationRange = 100f;  // Communication 모드 감지 거리
-
-    [Header("Avoidance Parameters")]
-    [Range(0.5f, 1.5f)]
-    public float radarRudderMultiplier = 1.2f;      // Radar: 급격한 회피
-    [Range(0.2f, 0.6f)]
-    public float commRudderMultiplier = 0.4f;       // Communication: 여유로운 회피
+    public float radarRange = 4f;           // Radar 모드 감지 거리 (1/10 스케일, 원본 40m)
+    public float communicationRange = 10f;  // Communication 모드 감지 거리 (1/10 스케일, 원본 100m)
 
     [Header("Goal Settings")]
     public Vector3 goalPosition;
     public bool hasGoal = false;
-    public float goalReachedDistance = 10f;
+    public float goalReachedDistance = 1f;  // 1/10 스케일 (원본 10m)
 
     [Header("References")]
     public VesselDynamics dynamics;
@@ -50,6 +44,14 @@ public class VesselAutoPilot : MonoBehaviour
     private float lastTrajectoryTime;
 
     public List<Vector3> TrajectoryPoints => trajectoryPoints;
+
+    void Awake()
+    {
+        // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
+        radarRange = GlobalScale.AUTOPILOT_RADAR;
+        communicationRange = GlobalScale.AUTOPILOT_COMM;
+        goalReachedDistance = GlobalScale.AUTOPILOT_GOAL;
+    }
 
     void Start()
     {

@@ -17,7 +17,7 @@ public class COLREGsHandler
     private const float HEAD_ON_ANGLE = 15f;        // 정면 조우 판정 각도
     private const float CROSSING_ANGLE = 112.5f;    // 횡단 상황@ 판정 각도
     private const float OVERTAKING_ANGLE = 112.5f;  // 추월 판정 각도
-    private const float DETECTION_RANGE = 60f;      // 충돌 위험 감지 거리 (radar range와 동일)
+    private const float DETECTION_RANGE = GlobalScale.COLREGS_DETECTION;   // 충돌 위험 감지 거리 (원본 200m × SCALE)
 
     // Rule 16: Early and Substantial Action
     private const float EARLY_ACTION_TIME = 60f;    // Early action threshold (seconds)
@@ -25,13 +25,13 @@ public class COLREGsHandler
 
     // Rule 17: Stand-on Vessel Action Thresholds
     private const float RULE_17B_TIME = 20f;        // May take action threshold (seconds)
-    private const float RULE_17B_DISTANCE = 30f;    // May take action distance (meters)
-    private const float RULE_17C_TIME = 10f;        // Shall take action threshold (seconds)
-    private const float RULE_17C_DISTANCE = 15f;    // Shall take action distance (meters)
+    private const float RULE_17B_DISTANCE = GlobalScale.RULE_17B_DIST;     // May take action distance (원본 30m × SCALE)
+    private const float RULE_17C_TIME = 10f;                               // Shall take action threshold (seconds) - 시간 유지
+    private const float RULE_17C_DISTANCE = GlobalScale.RULE_17C_DIST;     // Shall take action distance (원본 15m × SCALE)
 
     // Safe passing distances
-    private const float SAFE_PASSING_DISTANCE = 20f; // Rule 8: Safe passing distance (meters)
-    private const float CRITICAL_CPA = 10f;         // Critical CPA for emergency action (meters)
+    private const float SAFE_PASSING_DISTANCE = GlobalScale.SAFE_PASSING;  // Rule 8: Safe passing distance (원본 20m × SCALE)
+    private const float CRITICAL_CPA = GlobalScale.CRITICAL_CPA;           // Critical CPA for emergency action (원본 10m × SCALE)
 
     /// <summary>
     /// 두 선박 간의 상황을 판단 (수정됨 2025-01-12: TCPA 체크 추가)
@@ -93,13 +93,13 @@ public class COLREGsHandler
         // otherBearingAngle: 상대방 기준으로 내가 어느 방향에 있는지
         // Mathf.Abs(otherBearingAngle) > 112.5f 이면 내가 상대방 뒤에 있음
         float absOtherBearing = Mathf.Abs(otherBearingAngle);
-        if (absOtherBearing > 112.5f && mySpeed > otherSpeed * 1.1f)
+        if (absOtherBearing > OVERTAKING_ANGLE && mySpeed > otherSpeed * 1.1f)
         {
             return CollisionSituation.Overtaking;
         }
 
         // 3. Crossing 상황 체크 (수정됨: 5~112.5° 범위만)
-        if (absBearingAngle > 5f && absBearingAngle < 112.5f)
+        if (absBearingAngle > 5f && absBearingAngle < CROSSING_ANGLE)
         {
             // 우측(+)에서 접근하는 선박 = Give-way
             // 좌측(-)에서 접근하는 선박 = Stand-on
@@ -122,7 +122,7 @@ public class COLREGsHandler
     {
         float suggestedRudder = 0f;
         // currentSpeed가 0이면 기본 속도 사용 (5.0f는 일반적인 선박 속도)
-        float effectiveSpeed = Mathf.Max(currentSpeed, 3.5f);  // 최소 3.5m/s
+        float effectiveSpeed = Mathf.Max(currentSpeed, GlobalScale.EFFECTIVE_SPEED_MIN);  // 원본 3.5m/s × SCALE
         float suggestedSpeed = effectiveSpeed;
         float distance = toOther.magnitude;
 
@@ -237,7 +237,7 @@ public class COLREGsHandler
 
         // 회피 행동 판정 기준
         const float MIN_HEADING_CHANGE_RATE = 2.0f;  // 초당 2도 이상 변침
-        const float MIN_SPEED_REDUCTION_RATE = 0.5f;  // 초당 0.5m/s 이상 감속
+        const float MIN_SPEED_REDUCTION_RATE = GlobalScale.MIN_SPEED_REDUCTION;  // 원본 0.5m/s × SCALE
         const float MIN_PATH_DEVIATION = 2.0f;  // 예상 경로에서 2m 이상 이탈
 
         return (headingChange > MIN_HEADING_CHANGE_RATE) ||
@@ -252,6 +252,7 @@ public class COLREGsHandler
         CollisionSituation situation,
         float actualRudder,
         float recommendedRudder,
+        float maxTurnRate = 30f,
         float actualSpeed = -1f,
         float recommendedSpeed = -1f,
         float tcpa = float.MaxValue,
@@ -261,8 +262,7 @@ public class COLREGsHandler
 
         float reward = 0f;
 
-        // maxTurnRate 기본값으로 러더 정규화 (도 단위 → [-1, 1] 범위)
-        float maxTurnRate = 30f;  // VesselDynamics 기본값
+        // 러더 정규화 (도 단위 → [-1, 1] 범위)
         float normalizedRudder = actualRudder / maxTurnRate;
 
         // Rule 16: Early and Substantial Action 평가
@@ -331,11 +331,10 @@ public class COLREGsHandler
 
         float relativeSpeed = relativeVelocity.magnitude;
 
-        // 상대 속도가 거의 0 (평행 이동 또는 정지)
+        // 상대 속도가 거의 0 (평행 이동 또는 정지) → 접근하지 않으므로 TCPA 무한대
         if (relativeSpeed < 0.01f)
         {
-            float currentDistance = relativePosition.magnitude;
-            return currentDistance / 0.5f;
+            return float.MaxValue;
         }
 
         // TCPA = -(relative_position · relative_velocity) / |relative_velocity|^2
@@ -409,7 +408,7 @@ public class COLREGsHandler
         float tcpaRisk = 1.0f / (1.0f + tcpa / 60f); // 60초 기준
 
         // DCPA 기반 위험도 (가까워질수록 위험)
-        float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / 50f); // 50m 기준
+        float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / GlobalScale.DCPA_RISK); // 5m 기준 (1/10 스케일, 원본 50m)
 
         // 종합 위험도 (가중 평균)
         float risk = (distanceRisk * 0.3f + tcpaRisk * 0.4f + dcpaRisk * 0.3f);
@@ -433,6 +432,53 @@ public class COLREGsHandler
         }
 
         return Mathf.Clamp01(risk);  // 0~1 사이로 정규화
+    }
+
+    /// <summary>
+    /// 위험도와 상황을 동시에 반환 (AnalyzeSituation 이중 호출 방지)
+    /// </summary>
+    public static (float risk, CollisionSituation situation) CalculateRiskWithSituation(
+        Vector3 myPosition, Vector3 myForward, float mySpeed,
+        Vector3 otherPosition, Vector3 otherForward, float otherSpeed)
+    {
+        Vector3 toOther = otherPosition - myPosition;
+        float distance = toOther.magnitude;
+
+        if (distance > DETECTION_RANGE) return (0f, CollisionSituation.None);
+
+        Vector3 myVelocity = myForward.normalized * mySpeed;
+        Vector3 otherVelocity = otherForward.normalized * otherSpeed;
+
+        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        if (rawTCPA < 0f) return (0f, CollisionSituation.None);
+
+        float tcpa = Mathf.Max(0f, rawTCPA);
+        float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+
+        float distanceRisk = 1.0f - (distance / DETECTION_RANGE);
+        float tcpaRisk = 1.0f / (1.0f + tcpa / 60f);
+        float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / GlobalScale.DCPA_RISK);    // 1/10 스케일 (원본 50m)
+
+        float risk = (distanceRisk * 0.3f + tcpaRisk * 0.4f + dcpaRisk * 0.3f);
+
+        var situation = AnalyzeSituation(myPosition, myForward, mySpeed, otherPosition, otherForward, otherSpeed);
+        switch (situation)
+        {
+            case CollisionSituation.HeadOn:
+                risk *= 2.0f;
+                break;
+            case CollisionSituation.CrossingGiveWay:
+                risk *= 1.5f;
+                break;
+            case CollisionSituation.Overtaking:
+                risk *= 1.2f;
+                break;
+            case CollisionSituation.CrossingStandOn:
+                risk *= 1.3f;
+                break;
+        }
+
+        return (Mathf.Clamp01(risk), situation);
     }
 
 }

@@ -5,9 +5,16 @@ using UnityEngine.AI;
 public class WaypointPathFinder : MonoBehaviour
 {
     [Header("Path Settings")]
-    public float navMeshSampleRadius = 5f;   // NavMesh 스냅 반경
-    public float minWaypointDistance = 15f;   // 웨이포인트 최소 간격 (가까운 점 병합)
-    public float pathHeightY = 0f;           // Y 고정값 (수면 높이)
+    public float navMeshSampleRadius = 0.5f;   // NavMesh 스냅 반경 (1/10 스케일, 원본 5m)
+    public float minWaypointDistance = 1.5f;   // 웨이포인트 최소 간격 (1/10 스케일, 원본 15m)
+    public float pathHeightY = 0f;             // Y 고정값 (수면 높이)
+
+    void Awake()
+    {
+        // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
+        navMeshSampleRadius = GlobalScale.WAYPOINT_SAMPLE;
+        minWaypointDistance = GlobalScale.MIN_WAYPOINT_DIST;
+    }
 
     /// <summary>
     /// NavMesh 기반 경로 계산 후 웨이포인트 리스트 반환.

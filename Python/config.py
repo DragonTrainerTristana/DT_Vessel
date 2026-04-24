@@ -31,28 +31,38 @@ POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학
 OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POSITION_SIZE  # 373D
 
 # ============================================================================
+# Scale (C#의 GlobalScale과 반드시 일치해야 함)
+# ============================================================================
+VESSEL_SCALE = 0.1              # 배 자체 크기 (길이/속도/센서)
+MAP_SCALE = 1.0                 # 월드맵 내 활동 영역 (spawn zone, goal distance)
+
+# ============================================================================
 # Communication Settings
 # ============================================================================
-COMM_RANGE = 90                 # 통신 범위 (미터) - radar(60m)보다 넓게
+COMM_RANGE = 300 * VESSEL_SCALE # 통신 범위 (미터) - 배 센서 기반 → VESSEL_SCALE
 MAX_COMM_PARTNERS = 4           # 최대 통신 파트너 수
 MSG_ANNEAL_STEPS = 500000       # 메시지 기여도 0→1 선형 증가 스텝 수 (Phase 2 전환 안정화)
 MSG_LR_SCALE = 3.0              # MessageActor 학습률 배수 (untrained → 빠르게 학습)
 COLREGS_LOSS_COEF = 0.1         # COLREGs classifier auxiliary loss 계수
+
+# Terminal reward 판별 threshold (C# collisionPenalty=-100, spinningPenalty=-80 기준)
+COLLISION_REWARD_THRESHOLD = -90   # collision: reward < -90
+SPINNING_REWARD_THRESHOLD = -50    # spinning: -90 < reward < -50
 
 # ============================================================================
 # Training Phase (2-Phase Learning)
 # ============================================================================
 # Phase 1: USE_COMMUNICATION = False (자기 obs만으로 기본 navigation 학습)
 # Phase 2: USE_COMMUNICATION = True (msg 통신 추가해서 fine-tune)
-USE_COMMUNICATION = True        # 통신 ON
+USE_COMMUNICATION = True        # Phase 3: 통신 ON (test용)
 
 # ============================================================================
 # Training Mode
 # ============================================================================
-LOAD_MODEL = True
+LOAD_MODEL = True               # Phase 3: 최근 모델 로드
 TRAIN_MODE = True               # 학습 모드
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260114_183130", "policy_step_4070000.pth")
-START_STEP = 4070000            # Phase 1 407만에서 Phase 2 시작
+MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
+START_STEP = 3220000            # Phase 3: 이전 학습 이어서
 
 # ============================================================================
 # PPO Hyperparameters
@@ -73,16 +83,14 @@ MAX_GRAD_NORM = 0.5             # Gradient clipping norm
 RUN_STEP = 30000000 if TRAIN_MODE else 0  # 전체 학습 스텝
 MAX_STEPS = RUN_STEP            # 전체 학습 스텝 (30,000,000)
 UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격 (N_STEP)
-SAVE_INTERVAL = 100             # 모델 저장 간격 (에피소드)
-NUM_EPISODES = RUN_STEP // MAX_STEPS if MAX_STEPS > 0 else 0  # 총 에피소드 수
 
 # ============================================================================
 # Unity Environment
 # ============================================================================
-NUM_ENVS = 1                    # Unity 1개 + 환경 복사 방식
+NUM_ENVS = 4                    # 병렬 환경 수 (빌드 exe 사용)
 BASE_PORT = 5004                # Unity 통신 시작 포트
-TIME_SCALE = 20.0                # 시뮬레이션 속도 (1.0 = 실시간, 10.0 = 10배속)
-ENV_PATH = r"C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\Vessel_MLAgent.exe"
+TIME_SCALE = 100.0              # 시뮬레이션 속도 (headless 빌드용)
+ENV_PATH = r"c:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0424\Vessel_MLAgent.exe"
 
 # ============================================================================
 # Paths and Logging
@@ -91,10 +99,10 @@ ENV_NAME = "VesselNavigation"
 DATE_TIME = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # 이어서 학습할 폴더 (None이면 새 폴더 생성)
-RESUME_FOLDER = None  # 새 폴더 생성
+RESUME_FOLDER = None            # Phase 1: 새 폴더 생성
 
 # 통신 모드에 따라 저장 경로 분리
-COMM_FOLDER = "COMM_YES_PHASE2_v2"  # Phase 2 재학습: COMM_NON 1599만 기반, gradient fix
+COMM_FOLDER = "COMM_YES_PHASE3_NEW"  # Phase 3: 통신 ON 새 폴더
 
 if RESUME_FOLDER and LOAD_MODEL:
     SAVE_PATH = os.path.join(PROJECT_ROOT, "models", COMM_FOLDER, RESUME_FOLDER)
