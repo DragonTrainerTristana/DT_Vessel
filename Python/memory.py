@@ -36,9 +36,6 @@ class AgentMemory:
         self.logprobs.clear()
         self.episode_done = False
 
-        import gc
-        gc.collect()
-
     def add(self, state, goal, self_state, colregs, others_msg, action, reward, done, value, logprob):
         """새로운 경험 추가"""
         if not self.episode_done:
@@ -81,9 +78,6 @@ class Memory:
             agent_memory.clear()
         self.agent_memories.clear()
 
-        import gc
-        gc.collect()
-
     def add_agent_experience(self, agent_id, state, goal, self_state, colregs, others_msg,
                              action, reward, done, value, logprob):
         """특정 에이전트의 경험 추가"""
@@ -108,7 +102,7 @@ class Memory:
             dict: 통합된 경험 데이터 (returns 포함)
                 - states: [N, frames * STATE_SIZE]
                 - goals: [N, 2]
-                - speeds: [N, 2]
+                - self_states: [N, 4]
                 - colregs: [N, 5]
                 - actions: [N, action_size]
                 - rewards: [N]

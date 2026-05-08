@@ -33,7 +33,7 @@ COLLECT_INTERVAL = 10           # 메시지 수집 간격 (매 N step마다)
 
 # Trajectory 수집용 설정
 TRAJECTORY_STEPS = 20000        # trajectory 수집 스텝 수
-TRAJECTORY_TIME_SCALE = 20.0    # trajectory 수집 시 시뮬레이션 속도 (20배속)
+TRAJECTORY_TIME_SCALE = 1.0     # trajectory 수집 시 시뮬레이션 속도 (실시간)
 
 # Observation 크기 (frame stacking 전)
 OBS_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE  # 360 + 2 + 4 + 5 = 371D
@@ -513,16 +513,20 @@ def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, ti
         print("Please set TEST_MODEL_PATH or pass --model argument.")
         return None
 
-    # Unity 환경 연결
+    # Unity 환경 연결 (build exe 자동 실행)
     print("\n[INFO] Connecting to Unity environment...")
     channel = EngineConfigurationChannel()
+    use_build = os.environ.get('VESSEL_USE_EDITOR', '0') != '1' and ENV_PATH and os.path.exists(ENV_PATH)
     env = UnityEnvironment(
-        file_name=None,  # Unity 에디터 사용
+        file_name=ENV_PATH if use_build else None,
         side_channels=[channel],
-        base_port=BASE_PORT
+        worker_id=0,
+        base_port=BASE_PORT,
+        timeout_wait=60,
+        additional_args=["-batchmode", "-nographics"] if use_build else None,
     )
     channel.set_configuration_parameters(time_scale=time_scale)
-    print("[OK] Unity environment connected")
+    print(f"[OK] Unity environment connected (mode: {'BUILD' if use_build else 'EDITOR'})")
 
     # 모델 로드
     print(f"\n[INFO] Loading model from: {model_path}")
@@ -547,16 +551,40 @@ def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, ti
     print(f"\n[TESTING] Running {num_runs} tests...")
     print(f"[INFO] Data will be saved to: {csv_path}")
 
+    # Trajectory CSV 경로 (per-step position/goal_dist/speed 저장)
+    traj_dir = os.path.join(PROJECT_ROOT, "trajectory_data")
+    os.makedirs(traj_dir, exist_ok=True)
+    diag_tag = os.environ.get('VESSEL_DIAG_TAG', 'multitest')
+    traj_csv_path = os.path.join(traj_dir, f"{diag_tag}_{num_runs}x{test_steps}_{timestamp}.csv")
+    save_trajectory = os.environ.get('VESSEL_SAVE_TRAJECTORY', '0') == '1'
+
+    # use_comm을 USE_COMMUNICATION에 맞춤 (이전엔 항상 False였음 — comm 검증 불가능했던 버그)
+    # VESSEL_FORCE_MEANFIELD=1: comm_partners 계산 skip → networks._get_others_msg가 mean-field fallback 사용
+    force_meanfield = os.environ.get('VESSEL_FORCE_MEANFIELD', '0') == '1'
+    inference_use_comm = USE_COMMUNICATION and not force_meanfield
+    print(f"[INFO] Inference use_comm = {inference_use_comm} "
+          f"(USE_COMMUNICATION={USE_COMMUNICATION}, force_meanfield={force_meanfield})")
+    if save_trajectory:
+        print(f"[INFO] Trajectory will be saved to: {traj_csv_path}")
+
+    all_trajectory_data = []
+
     try:
         for run in range(num_runs):
             frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
 
-            stats, collected_data, _ = run_single_test(
-                env, policy, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL
+            stats, collected_data, traj_data = run_single_test(
+                env, policy, frame_stack, behavior_name, test_steps, COLLECT_INTERVAL,
+                use_comm=inference_use_comm
             )
 
             all_stats.append(stats)
             all_collected_data.extend(collected_data)
+            if save_trajectory:
+                # run_id 추가
+                for d in traj_data:
+                    d['run_id'] = run
+                all_trajectory_data.extend(traj_data)
 
             print(f"  [Run {run + 1:2d}/{num_runs}] Collisions: {stats['collision_count']:3d}, "
                   f"Success: {stats['success_count']:3d}, Avg Reward: {stats['avg_reward']:.2f}, "
@@ -625,7 +653,34 @@ def run_multi_test(model_path=None, test_steps=TEST_STEPS, num_runs=NUM_RUNS, ti
                 f.write(f"  Run {i+1}: Collision={s['collision_count']}, Success={s['success_count']}, Reward={s['avg_reward']:.2f}\n")
         print(f"[SAVED] Summary saved to: {summary_path}")
 
+        # Trajectory CSV 저장 (옵션)
+        if save_trajectory and len(all_trajectory_data) > 0:
+            traj_header = ['run_id', 'step', 'agent_id', 'colregs', 'colregs_name',
+                           'x', 'z', 'speed', 'heading', 'rudder', 'goal_dist', 'goal_angle']
+            with open(traj_csv_path, 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(traj_header)
+                for d in all_trajectory_data:
+                    w.writerow([d['run_id'], d['step'], d['agent_id'], d['colregs'],
+                                d['colregs_name'], d['x'], d['z'], d['speed'],
+                                d['heading'], d['rudder'], d['goal_dist'], d['goal_angle']])
+            print(f"[SAVED] Trajectory saved to: {traj_csv_path}")
+
         return csv_path
+
+    # Trajectory만 저장하고 collected_data 없는 경우 (use_comm=False)
+    if save_trajectory and len(all_trajectory_data) > 0:
+        traj_header = ['run_id', 'step', 'agent_id', 'colregs', 'colregs_name',
+                       'x', 'z', 'speed', 'heading', 'rudder', 'goal_dist', 'goal_angle']
+        with open(traj_csv_path, 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(traj_header)
+            for d in all_trajectory_data:
+                w.writerow([d['run_id'], d['step'], d['agent_id'], d['colregs'],
+                            d['colregs_name'], d['x'], d['z'], d['speed'],
+                            d['heading'], d['rudder'], d['goal_dist'], d['goal_angle']])
+        print(f"[SAVED] Trajectory saved to: {traj_csv_path}")
+        return traj_csv_path
 
     return None
 
@@ -2060,6 +2115,183 @@ def run_simulation(model_path=None, max_steps=10_000_000, time_scale=5.0, log_in
         print("[CLOSED] Unity environment closed.")
 
 
+def run_longhaul_compare(comm_mode='OFF', n_runs=10, max_steps_per_run=30000,
+                         time_scale=20.0, tag="longhaul"):
+    """
+    장거리 항해(예: 대만↔부산) comm ON/OFF 성능 비교 실험.
+
+    조건:
+    - Unity Scene의 spawnPoints[i] ↔ goalPoints[i] pair matching (AssignGoalForVessel이 자동 인식)
+    - VesselManager.vesselCount = 홀수 대 여러 척 (pair별 양방향)
+    - SIMULATION_MODE 무관하게 도달 감지 (EndEpisode → terminal_steps)
+
+    구조:
+    - 각 run: env.reset → 모든 배 장거리 항해
+    - 도달 감지: terminal_steps.reward > 50 (arrivalReward=100, collision=-100 구분)
+    - 한 번 도착한 배는 이후 기록 중단
+    - run 종료: 모든 배 도착 or max_steps
+
+    측정:
+    - episode_time: arrival_step (첫 도달까지 걸린 step)
+    - fuel_consumption: Σ speed² over unarrived steps (정규화된 speed 사용)
+    """
+    import time
+
+    assert comm_mode in ('OFF', 'ON'), "comm_mode must be 'OFF' or 'ON'"
+    use_comm = (comm_mode == 'ON')
+
+    model_path = MODEL_PATH_COMM_ON if use_comm else MODEL_PATH_COMM_OFF
+    if not os.path.exists(model_path):
+        print(f"[ERROR] Model not found: {model_path}")
+        return None
+
+    print("=" * 80)
+    print(f"[LONGHAUL] comm={comm_mode}, n_runs={n_runs}, max_steps={max_steps_per_run}")
+    print(f"Model: {model_path}")
+    print("=" * 80)
+
+    channel = EngineConfigurationChannel()
+    env = UnityEnvironment(file_name=None, side_channels=[channel], worker_id=0,
+                           base_port=BASE_PORT, timeout_wait=60)
+    channel.set_configuration_parameters(time_scale=time_scale)
+    env.reset()
+    behavior_name = list(env.behavior_specs)[0]
+    print(f"[OK] Connected. Behavior: {behavior_name}")
+
+    policy = CNNPolicy(MSG_DIM, CONTINUOUS_ACTION_SIZE, FRAMES).to(DEVICE)
+    checkpoint = torch.load(model_path, map_location=DEVICE)
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        policy.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        policy.load_state_dict(checkpoint)
+    policy.eval()
+    print(f"[OK] Model loaded")
+
+    all_records = []
+    all_arrivals = []
+
+    try:
+        for run_id in range(n_runs):
+            print(f"\n[RUN {run_id+1}/{n_runs}]")
+            env.reset()
+            frame_stack = MultiAgentFrameStack(FRAMES, STATE_SIZE)
+
+            arrival_step = {}
+            fuel_accum = {}
+            seen_agents = set()
+            start_time = time.time()
+
+            for step in range(max_steps_per_run):
+                decision_steps, terminal_steps = env.get_steps(behavior_name)
+
+                for t_idx, t_agent_id in enumerate(terminal_steps.agent_id):
+                    t_reward = terminal_steps.reward[t_idx]
+                    if t_reward > 50 and int(t_agent_id) not in arrival_step:
+                        arrival_step[int(t_agent_id)] = step
+                    frame_stack.remove_agent(t_agent_id)
+
+                agent_ids = list(decision_steps.agent_id)
+                if len(agent_ids) == 0:
+                    env.step()
+                    continue
+
+                for a in agent_ids:
+                    seen_agents.add(int(a))
+
+                batch_states, batch_goals, batch_self, batch_colregs, batch_pos = [], [], [], [], []
+                for idx, agent_id in enumerate(agent_ids):
+                    obs_raw = decision_steps.obs[0][idx]
+                    state, goal, self_state, colregs, _, position = parse_observation(obs_raw)
+                    state_stacked = frame_stack.update(agent_id, state)
+                    batch_states.append(state_stacked)
+                    batch_goals.append(goal)
+                    batch_self.append(self_state)
+                    batch_colregs.append(colregs)
+                    batch_pos.append((position[0], position[1]))
+
+                    if int(agent_id) not in arrival_step:
+                        sp = float(self_state[0])
+                        fuel_accum[int(agent_id)] = fuel_accum.get(int(agent_id), 0.0) + sp * sp
+                        all_records.append({
+                            'run_id': run_id,
+                            'step': step,
+                            'agent_id': int(agent_id),
+                            'x': float(position[0]),
+                            'z': float(position[1]),
+                            'speed': sp,
+                            'goal_dist': float(goal[0]),
+                            'comm_mode': comm_mode,
+                        })
+
+                positions_dict = {agent_ids[i]: batch_pos[i] for i in range(len(agent_ids))}
+                comm_partners = {}
+                if use_comm:
+                    for agent_id in agent_ids:
+                        comm_partners[agent_id] = get_comm_partners(
+                            agent_id, positions_dict[agent_id], positions_dict)
+
+                st_t = torch.FloatTensor(np.array(batch_states)).unsqueeze(0).to(DEVICE)
+                gl_t = torch.FloatTensor(np.array(batch_goals)).unsqueeze(0).to(DEVICE)
+                sf_t = torch.FloatTensor(np.array(batch_self)).unsqueeze(0).to(DEVICE)
+                cr_t = torch.FloatTensor(np.array(batch_colregs)).unsqueeze(0).to(DEVICE)
+
+                with torch.no_grad():
+                    if use_comm:
+                        _, actions, _, _, _ = policy.forward(
+                            st_t, gl_t, sf_t, cr_t,
+                            comm_partners=comm_partners,
+                            agent_id_list=list(agent_ids))
+                    else:
+                        _, actions, _, _, _ = policy.forward(st_t, gl_t, sf_t, cr_t)
+
+                actions_np = actions.squeeze(0).cpu().numpy()
+                env.set_actions(behavior_name, ActionTuple(continuous=actions_np))
+                env.step()
+
+                if len(seen_agents) > 0 and len(arrival_step) >= len(seen_agents):
+                    print(f"  [RUN {run_id+1}] All {len(arrival_step)} vessels arrived at step {step}")
+                    break
+
+            elapsed = time.time() - start_time
+            for ag_id, arr_step in arrival_step.items():
+                all_arrivals.append({
+                    'run_id': run_id,
+                    'agent_id': ag_id,
+                    'arrival_step': arr_step,
+                    'fuel_consumption': fuel_accum.get(ag_id, 0.0),
+                    'comm_mode': comm_mode,
+                })
+            # max_steps 도달하고 못 끝난 배도 기록 (censored) — episode_time = max_steps, fuel = accum
+            for ag_id in seen_agents:
+                if ag_id not in arrival_step:
+                    all_arrivals.append({
+                        'run_id': run_id,
+                        'agent_id': ag_id,
+                        'arrival_step': max_steps_per_run,   # 도달 못함 (censored)
+                        'fuel_consumption': fuel_accum.get(ag_id, 0.0),
+                        'comm_mode': comm_mode,
+                    })
+            print(f"  [RUN {run_id+1}] arrived={len(arrival_step)}/{len(seen_agents)}, elapsed={elapsed:.1f}s")
+
+    except KeyboardInterrupt:
+        print("\n[STOP] Interrupted.")
+    finally:
+        env.close()
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = os.path.join(PROJECT_ROOT, "trajectory_data")
+    os.makedirs(out_dir, exist_ok=True)
+
+    traj_path = os.path.join(out_dir, f"{tag}_comm{comm_mode}_{n_runs}runs_{ts}.csv")
+    summary_path = os.path.join(out_dir, f"{tag}_comm{comm_mode}_{n_runs}runs_{ts}_summary.csv")
+
+    pd.DataFrame(all_records).to_csv(traj_path, index=False)
+    pd.DataFrame(all_arrivals).to_csv(summary_path, index=False)
+    print(f"\n[SAVED] trajectory: {traj_path}")
+    print(f"[SAVED] summary:    {summary_path}")
+    return traj_path, summary_path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Test Vessel ML-Agent')
     parser.add_argument('--model', type=str, default=None, help='Path to trained model (.pth)')
@@ -2070,6 +2302,8 @@ if __name__ == "__main__":
     parser.add_argument('--compare', action='store_true', help='Run Comm OFF vs ON comparison test')
     parser.add_argument('--mixed', action='store_true', help='Run mixed model experiment (radar + comm)')
     parser.add_argument('--simulation', action='store_true', help='World-map ship traffic simulation (infinite loop, dynamic vessels)')
+    parser.add_argument('--longhaul', action='store_true', help='Long-haul (e.g., Taiwan<->Busan) comm ON/OFF comparison')
+    parser.add_argument('--comm', type=str, default='OFF', choices=['OFF', 'ON'], help='For --longhaul: which model to run')
     parser.add_argument('--runs', type=int, default=NUM_RUNS, help='Number of runs (multi-test mode)')
     parser.add_argument('--tag', type=str, default=None, help='Tag prefix for output files (e.g., narrow, open)')
     parser.add_argument('--compliance', type=str, default=None, help='Path to trajectory CSV for COLREGs compliance evaluation')
@@ -2085,6 +2319,14 @@ if __name__ == "__main__":
             model_path=args.model,
             max_steps=args.steps if args.steps != TRAJECTORY_STEPS else 10_000_000,
             time_scale=args.time_scale,
+        )
+    elif args.longhaul:
+        run_longhaul_compare(
+            comm_mode=args.comm,
+            n_runs=args.runs,
+            max_steps_per_run=args.steps if args.steps != TRAJECTORY_STEPS else 30000,
+            time_scale=args.time_scale,
+            tag=args.tag if args.tag else "longhaul",
         )
     elif args.mixed:
         run_mixed_experiment(

@@ -68,8 +68,3 @@ class RunningMeanStd:
         self.mean = new_mean
         self.var = new_var
         self.count = tot_count
-
-
-def normalize_state(state, running_mean_std):
-    """RunningMeanStd를 사용한 상태 정규화"""
-    return (state - running_mean_std.mean) / np.sqrt(running_mean_std.var + 1e-8)

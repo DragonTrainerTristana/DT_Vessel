@@ -26,7 +26,11 @@ public static class GlobalScale
     public const bool SIMULATION_MODE = true;
 
     // Debug Ray 렌더링: Editor 성능 크게 잡아먹음. SIMULATION_MODE에선 강제 off
-    public const bool SHOW_DEBUG_RAYS = false;
+    // (static readonly: const 대신 사용해야 CS0162 unreachable 경고 방지)
+    public static readonly bool SHOW_DEBUG_RAYS = false;
+
+    // 런타임 시각화 전역 off: goal line, detection sphere, trajectory line 등 모두 꺼짐
+    public static readonly bool SHOW_RUNTIME_GIZMOS = false;
 
     // ===== Base values (원본 스케일) =====
     public const float BASE_LENGTH = 10f;

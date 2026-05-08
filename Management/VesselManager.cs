@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using System.Linq;
+using Unity.MLAgents.Policies;
 
 public class VesselManager : MonoBehaviour
 {
@@ -28,6 +29,10 @@ public class VesselManager : MonoBehaviour
     [Header("NavMesh Snapping")]
     [Tooltip("스폰/목표 좌표를 가장 가까운 NavMesh로 스냅할 때 검색 반경. Cube가 land 근처여도 자동 보정됨.")]
     public float navMeshSnapRadius = 10f;         // 1/10 스케일 (원본 100m)
+
+    [Header("Control Mode")]
+    [Tooltip("true: rule-based (VesselAutoPilot, Python 불필요, A*+local COLREGs). false: RL (VesselAgent).")]
+    public bool useRuleBasedMode = false;
 
     [Header("Progressive Spawn (Simulation Mode)")]
     [Tooltip("체크하면 초기 N대 스폰 후 일정 간격으로 M대씩 추가 스폰 (세계지도 트래픽 시뮬)")]
@@ -131,6 +136,9 @@ public class VesselManager : MonoBehaviour
                 yield return null;   // 다음 프레임으로
             }
         }
+
+        // 배치 완료 후 autoPilot 상호 인식 갱신
+        if (useRuleBasedMode) InjectAutoPilotList();
     }
 
     public void InitializeVessels()
@@ -170,6 +178,25 @@ public class VesselManager : MonoBehaviour
         {
             SpawnVessel();
         }
+
+        // Rule-based 모드: 모든 autoPilot끼리 서로 인식하도록 리스트 주입
+        if (useRuleBasedMode) InjectAutoPilotList();
+    }
+
+    /// <summary>
+    /// 모든 VesselAutoPilot에 전체 autoPilot 리스트 전달 (서로 감지용).
+    /// Progressive Spawn에도 배치 추가마다 재호출.
+    /// </summary>
+    private void InjectAutoPilotList()
+    {
+        var autoPilots = new List<VesselAutoPilot>();
+        foreach (var v in vessels)
+        {
+            if (v == null) continue;
+            var ap = v.GetComponent<VesselAutoPilot>();
+            if (ap != null && ap.enabled) autoPilots.Add(ap);
+        }
+        foreach (var ap in autoPilots) ap.Initialize(autoPilots);
     }
 
     private GameObject SpawnVessel()
@@ -225,11 +252,31 @@ public class VesselManager : MonoBehaviour
         if (dynamics == null) dynamics = vessel.AddComponent<VesselDynamics>();
 
         VesselAgent agent = vessel.GetComponent<VesselAgent>();
-        if (agent != null) vesselAgents.Add(agent);
+        VesselAutoPilot autoPilot = vessel.GetComponent<VesselAutoPilot>();
+
+        if (useRuleBasedMode)
+        {
+            // Rule-based 모드: VesselAgent 비활성, VesselAutoPilot 활성
+            if (agent != null) agent.enabled = false;
+
+            // ML-Agents Python trainer 연결 시도 차단 (5초 timeout 제거, "Registered Communicator" 로그 방지)
+            var bp = vessel.GetComponent<BehaviorParameters>();
+            if (bp != null) bp.BehaviorType = BehaviorType.HeuristicOnly;
+
+            if (autoPilot == null) autoPilot = vessel.AddComponent<VesselAutoPilot>();
+            autoPilot.enabled = true;
+            autoPilot.EnsureInitialized();
+        }
+        else
+        {
+            // RL 모드: VesselAgent 활성, VesselAutoPilot 비활성
+            if (agent != null) agent.enabled = true;
+            if (autoPilot != null) autoPilot.enabled = false;
+            if (agent != null) vesselAgents.Add(agent);
+        }
 
         vesselSpawnIndices[vessel] = spawnIndex;
 
-        // 목표 할당 후 목표를 향해 회전
         AssignGoalForVessel(vessel, spawnPoint);
         RotateVesselTowardsGoal(vessel);
 
@@ -286,82 +333,106 @@ public class VesselManager : MonoBehaviour
         // goalPoints가 설정되어 있으면 사용, 없으면 spawnPoints 사용 (호환성)
         List<Transform> availableGoals = goalPoints.Count > 0 ? goalPoints : spawnPoints;
 
-        // 재사용 버퍼 (1000대 스폰 × 매번 List alloc 제거)
-        _validGoalBuffer.Clear();
+        Transform goalPoint = null;
+        int goalIndex = 0;
 
-        // 스폰 위치에서 충분히 먼 목표점들만 선택 (자기 자신 제외)
-        for (int i = 0; i < availableGoals.Count; i++)
+        // 인덱스 매칭: spawnPoints[i] → goalPoints[i] (Inspector에서 크로스 페어링)
+        if (goalPoints.Count > 0 && goalPoints.Count == spawnPoints.Count)
         {
-            Transform point = availableGoals[i];
-            if (point == spawnPoint) continue;
-            float distance = Vector3.Distance(spawnPoint.position, point.position);
-            if (distance >= minGoalDistance) _validGoalBuffer.Add(point);
+            int spawnIdx = spawnPoints.IndexOf(spawnPoint);
+            if (spawnIdx >= 0)
+            {
+                goalPoint = goalPoints[spawnIdx];
+                goalIndex = spawnIdx;
+            }
         }
 
-        // 거리 조건을 만족하는 목표점이 없으면 자기 자신 제외한 모든 목표점 사용
-        if (_validGoalBuffer.Count == 0)
+        // 인덱스 매칭 실패 시 기존 랜덤 로직 폴백
+        if (goalPoint == null)
         {
+            _validGoalBuffer.Clear();
+            string spawnName = spawnPoint.name;
             for (int i = 0; i < availableGoals.Count; i++)
             {
                 Transform point = availableGoals[i];
-                if (point != spawnPoint) _validGoalBuffer.Add(point);
+                if (point == spawnPoint || point.name == spawnName) continue;
+                float distance = Vector3.Distance(spawnPoint.position, point.position);
+                if (distance >= minGoalDistance) _validGoalBuffer.Add(point);
             }
-            if (_validGoalBuffer.Count == 0) _validGoalBuffer.Add(availableGoals[0]);
-        }
 
-        // 랜덤하게 목표점 선택
-        int goalIndex = Random.Range(0, _validGoalBuffer.Count);
-        Transform goalPoint = _validGoalBuffer[goalIndex];
+            if (_validGoalBuffer.Count == 0)
+            {
+                for (int i = 0; i < availableGoals.Count; i++)
+                {
+                    Transform point = availableGoals[i];
+                    if (point != spawnPoint && point.name != spawnName) _validGoalBuffer.Add(point);
+                }
+                if (_validGoalBuffer.Count == 0) _validGoalBuffer.Add(availableGoals[0]);
+            }
+
+            goalIndex = Random.Range(0, _validGoalBuffer.Count);
+            goalPoint = _validGoalBuffer[goalIndex];
+        }
 
         vesselGoals[vessel] = goalPoint;
 
-        VesselAgent agent = vessel.GetComponent<VesselAgent>();
-        if (agent != null)
+        // goal 좌표 결정 (공통)
+        Vector3 goalPos;
+        SpawnZone goalZone = goalPoint.GetComponent<SpawnZone>();
+        if (goalZone != null)
         {
-            agent.goalPointName = goalPoint.name;
-            agent.goalPointIndex = goalIndex;
-
-            // goal 좌표 결정 — zone이면 영역 안 random, 아니면 NavMesh 스냅
-            Vector3 goalPos;
-            SpawnZone goalZone = goalPoint.GetComponent<SpawnZone>();
-            if (goalZone != null)
+            if (!goalZone.TryGetRandomGoalPoint(out goalPos))
             {
-                if (!goalZone.TryGetRandomGoalPoint(out goalPos))
-                {
-                    Debug.LogWarning($"[VesselManager] Goal zone '{goalZone.name}' couldn't find valid point. " +
-                                     $"Using zone center.");
-                    goalPos = goalPoint.position;
-                }
-            }
-            else if (useNavMeshPathfinding && TrySnapToNavMesh(goalPoint.position, out goalPos))
-            {
-                // NavMesh 스냅 성공
-            }
-            else
-            {
+                Debug.LogWarning("[VesselManager] Goal zone couldn't find valid point. Using zone center.");
                 goalPos = goalPoint.position;
             }
+        }
+        else if (useNavMeshPathfinding && TrySnapToNavMesh(goalPoint.position, out goalPos))
+        {
+            // NavMesh 스냅 성공
+        }
+        else
+        {
+            goalPos = goalPoint.position;
+        }
 
-            if (useNavMeshPathfinding && pathFinder != null)
+        // 경로 계산 (공통)
+        List<Vector3> waypoints = null;
+        if (useNavMeshPathfinding && pathFinder != null)
+        {
+            waypoints = pathFinder.CalculatePath(vessel.transform.position, goalPos);
+        }
+
+        if (useRuleBasedMode)
+        {
+            // Rule-based: VesselAutoPilot에 주입
+            VesselAutoPilot autoPilot = vessel.GetComponent<VesselAutoPilot>();
+            if (autoPilot != null)
             {
-                // NavMesh 경로 계산 → 웨이포인트 순차 목표
-                List<Vector3> waypoints = pathFinder.CalculatePath(vessel.transform.position, goalPos);
-                agent.SetWaypoints(waypoints);
+                if (waypoints != null && waypoints.Count > 0) autoPilot.SetWaypoints(waypoints);
+                else autoPilot.SetGoal(goalPos);
             }
-            else
+        }
+        else
+        {
+            // RL: VesselAgent에 주입
+            VesselAgent agent = vessel.GetComponent<VesselAgent>();
+            if (agent != null)
             {
-                // 폴백: 단일 목표 (기존 방식)
-                agent.SetGoal(goalPos);
+                agent.goalPointName = goalPoint.name;
+                agent.goalPointIndex = goalIndex;
+
+                if (waypoints != null && waypoints.Count > 0) agent.SetWaypoints(waypoints);
+                else agent.SetGoal(goalPos);
             }
         }
     }
 
     private void RotateVesselTowardsGoal(GameObject vessel)
     {
+        // 최종 목적지(goal Transform) 방향으로 회전 (waypoint가 아닌 최종 destination)
         if (!vesselGoals.ContainsKey(vessel)) return;
 
-        // 최종 destination(goal Cube/zone 중심)을 향해 회전
-        // 첫 waypoint(우회 corner)가 아닌 직선 방향으로 — 양방향 traffic 시각 일관성
         Vector3 targetPos = vesselGoals[vessel].position;
         Vector3 direction = (targetPos - vessel.transform.position).normalized;
 

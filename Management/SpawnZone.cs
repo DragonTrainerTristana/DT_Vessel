@@ -77,8 +77,10 @@ public class SpawnZone : MonoBehaviour
         return TryGetRandomPoint(out point, 0f, null);
     }
 
+#if UNITY_EDITOR
     void OnDrawGizmos()
     {
+        if (!GlobalScale.SHOW_RUNTIME_GIZMOS) return;
         Gizmos.color = gizmoColor;
         const int segments = 48;
         Vector3 center = transform.position;
@@ -93,4 +95,5 @@ public class SpawnZone : MonoBehaviour
         // 중심 표시
         Gizmos.DrawSphere(center, radius * 0.02f);
     }
+#endif
 }

@@ -26,6 +26,13 @@ public class VesselAutoPilot : MonoBehaviour
     public bool hasGoal = false;
     public float goalReachedDistance = 1f;  // 1/10 스케일 (원본 10m)
 
+    [Header("Waypoint Navigation (Rule-based)")]
+    public float waypointReachedDistance = 2f;   // 중간 waypoint 도달 거리 (goal보다 관대)
+    private List<Vector3> waypoints;
+    private int currentWaypointIndex = 0;
+    private bool useWaypoints = false;
+    private Vector3 finalGoalPosition;
+
     [Header("References")]
     public VesselDynamics dynamics;
     public VesselRadar radar;
@@ -37,6 +44,8 @@ public class VesselAutoPilot : MonoBehaviour
     // 내부 변수
     private List<VesselAutoPilot> allVessels = new List<VesselAutoPilot>();
     private float baseSpeed;
+    private Rigidbody rb;
+    private bool initialized = false;
 
     // Trajectory
     private List<Vector3> trajectoryPoints = new List<Vector3>();
@@ -51,28 +60,53 @@ public class VesselAutoPilot : MonoBehaviour
         radarRange = GlobalScale.AUTOPILOT_RADAR;
         communicationRange = GlobalScale.AUTOPILOT_COMM;
         goalReachedDistance = GlobalScale.AUTOPILOT_GOAL;
+        waypointReachedDistance = GlobalScale.WAYPOINT_REACHED;
     }
 
     void Start()
     {
-        if (dynamics == null)
-            dynamics = GetComponent<VesselDynamics>();
-
-        if (radar == null)
-            radar = GetComponent<VesselRadar>();
-
+        EnsureInitialized();
         lastTrajectoryTime = Time.time;
+    }
+
+    /// <summary>
+    /// Rigidbody / VesselDynamics / VesselRadar 세팅.
+    /// VesselAgent가 비활성 상태(rule-based 모드)에서도 독립적으로 물리 초기화.
+    /// 중복 호출 방지.
+    /// </summary>
+    public void EnsureInitialized()
+    {
+        if (initialized) return;
+
+        rb = GetComponent<Rigidbody>();
+        if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
+        rb.useGravity = false;
+        rb.linearDamping = 0.0f;
+        rb.angularDamping = 0.0f;
+        rb.constraints = RigidbodyConstraints.FreezePositionY |
+                         RigidbodyConstraints.FreezeRotationX |
+                         RigidbodyConstraints.FreezeRotationZ;
+
+        if (dynamics == null) dynamics = GetComponent<VesselDynamics>();
+        if (dynamics == null) dynamics = gameObject.AddComponent<VesselDynamics>();
+        dynamics.Initialize(rb);
+
+        if (radar == null) radar = GetComponent<VesselRadar>();
+        if (radar == null) radar = gameObject.AddComponent<VesselRadar>();
+
+        // Transform localScale 적용 (VesselDynamics.Initialize에서 이미 처리하지만 안전 차원)
+        transform.localScale = GlobalScale.TRANSFORM_SCALE;
+
+        initialized = true;
     }
 
     public void Initialize(List<VesselAutoPilot> vessels)
     {
+        EnsureInitialized();
         allVessels = vessels;
 
-        // baseSpeed 초기화
         if (dynamics != null)
             baseSpeed = dynamics.maxSpeed * 0.7f;
-
-
     }
 
     public void SetGoal(Vector3 position)
@@ -80,34 +114,74 @@ public class VesselAutoPilot : MonoBehaviour
         goalPosition = position;
         hasGoal = true;
         hasArrived = false;
+        useWaypoints = false;
+        waypoints = null;
+    }
+
+    /// <summary>
+    /// Waypoint 리스트 설정 (A* 경로 + local rule 통합).
+    /// 마지막 점이 최종 목적지, 중간 점은 waypointReachedDistance로 판정.
+    /// </summary>
+    public void SetWaypoints(List<Vector3> newWaypoints)
+    {
+        if (newWaypoints == null || newWaypoints.Count == 0)
+        {
+            useWaypoints = false;
+            return;
+        }
+
+        waypoints = new List<Vector3>(newWaypoints);
+        currentWaypointIndex = 0;
+        useWaypoints = true;
+        finalGoalPosition = waypoints[waypoints.Count - 1];
+
+        goalPosition = waypoints[0];
+        hasGoal = true;
+        hasArrived = false;
+    }
+
+    private void AdvanceToNextWaypoint()
+    {
+        currentWaypointIndex++;
+        if (currentWaypointIndex < waypoints.Count)
+        {
+            goalPosition = waypoints[currentWaypointIndex];
+        }
     }
 
     void FixedUpdate()
     {
         if (!hasGoal || hasArrived || hasCollided) return;
 
-        // Trajectory 기록
         RecordTrajectory();
 
-        // 목적지 도착 체크
+        // 현재 waypoint / final goal 도달 판정
         float distanceToGoal = Vector3.Distance(transform.position, goalPosition);
-        if (distanceToGoal < goalReachedDistance)
-        {
-            hasArrived = true;
-            dynamics.SetTargetSpeed(0);
-            dynamics.SetBraking(true);
+        bool isLastWaypoint = !useWaypoints || currentWaypointIndex >= waypoints.Count - 1;
+        float reachDist = isLastWaypoint ? goalReachedDistance : waypointReachedDistance;
 
-            return;
+        if (distanceToGoal < reachDist)
+        {
+            if (isLastWaypoint)
+            {
+                // 최종 목적지 도착
+                hasArrived = true;
+                dynamics.SetTargetSpeed(0);
+                dynamics.SetBraking(true);
+                return;
+            }
+            else
+            {
+                // 다음 waypoint로 전환
+                AdvanceToNextWaypoint();
+                return;   // 이 프레임은 dynamics 업데이트 skip (다음 FixedUpdate에서 새 goal 기준)
+            }
         }
 
-        // 레이더 스캔
-        if (radar != null)
-            radar.ScanRadar();
+        if (radar != null) radar.ScanRadar();
 
-        // 자율 항해 로직
         NavigateToGoal();
 
-        // 동역학 업데이트
         dynamics.UpdateDynamics(Time.fixedDeltaTime);
     }
 
@@ -250,8 +324,10 @@ public class VesselAutoPilot : MonoBehaviour
         }
     }
 
+#if UNITY_EDITOR
     void OnDrawGizmos()
     {
+        if (!GlobalScale.SHOW_RUNTIME_GIZMOS) return;   // 시각화 off
         if (!Application.isPlaying) return;
 
         // 감지 범위 표시
@@ -267,4 +343,5 @@ public class VesselAutoPilot : MonoBehaviour
             Gizmos.DrawSphere(goalPosition, 2f);
         }
     }
+#endif
 }

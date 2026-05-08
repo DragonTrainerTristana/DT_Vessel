@@ -14,6 +14,15 @@ from torch.distributions import Normal
 from config import STATE_SIZE, USE_COMMUNICATION, MSG_ANNEAL_STEPS
 
 
+def _calc_conv_output_size(state_size):
+    """Conv1D 출력 크기 동적 계산"""
+    out1 = (state_size + 2 * 1 - 5) // 2 + 1  # conv1: kernel=5, stride=2, padding=1
+    out2 = (out1 + 2 * 1 - 3) // 2 + 1        # conv2: kernel=3, stride=2, padding=1
+    return out2 * 32  # 32 output channels
+
+CONV_FLAT_SIZE = _calc_conv_output_size(STATE_SIZE)
+
+
 class MessageActor(nn.Module):
     """
     각 에이전트의 observation을 6D 메시지로 압축
@@ -30,8 +39,8 @@ class MessageActor(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
                                kernel_size=3, stride=2, padding=1)
 
-        # Conv output: (360 -> 179 -> 90) * 32 = 2880
-        self.fc1 = nn.Linear(90 * 32, 256)
+        # Conv output 동적 계산
+        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
         # 256 + goal(2) + self_state(4) + colregs(5) = 267
         self.fc2 = nn.Linear(256 + 2 + 4 + 5, 128)
         self.msg_out = nn.Linear(128, msg_dim)
@@ -87,8 +96,8 @@ class ControlActor(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
                                kernel_size=3, stride=2, padding=1)
 
-        # Conv output: 90 * 32 = 2880
-        self.fc1 = nn.Linear(90 * 32, 256)
+        # Conv output 동적 계산
+        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
         # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(6) = 273
         self.fc2 = nn.Linear(256 + 2 + 4 + 5 + msg_dim, 128)
         self.fc3 = nn.Linear(128, 64)
@@ -230,7 +239,7 @@ class Critic(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
                                kernel_size=3, stride=2, padding=1)
 
-        self.fc1 = nn.Linear(90 * 32, 256)
+        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
         # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(6) = 273
         self.fc2 = nn.Linear(256 + 2 + 4 + 5 + msg_dim, 128)
         self.value_out = nn.Linear(128, 1)
@@ -282,7 +291,7 @@ class COLREGsClassifier(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
                                kernel_size=3, stride=2, padding=1)
 
-        self.fc1 = nn.Linear(90 * 32, 128)
+        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 128)
         self.fc2 = nn.Linear(128, 64)
         self.classifier = nn.Linear(64, 5)
 
@@ -332,16 +341,30 @@ class CNNPolicy(nn.Module):
         self.colregs_classifier = COLREGsClassifier(frames)
 
     def _get_others_msg(self, msg, comm_partners=None, agent_id_list=None):
-        """메시지 교환 로직 (annealing 포함)"""
+        """메시지 교환 로직 (annealing 포함)
+
+        env override:
+          VESSEL_AGG_MODE: 'sum' | 'mean' | 'scale' (default 'sum')
+            sum: 단순 합 (학습 모드)
+            mean: 평균 (sum/K) — 1명일땐 raw, 여러명일땐 평균
+            scale: nearest_scale / K 곱하기 (sum_of_K_train 모사)
+          VESSEL_NEAREST_SCALE: float, default 0 (>0이면 'scale' 모드 자동 활성)
+          VESSEL_MSG_GAIN: float, default 1.0 (최종 결과에 곱해지는 gating 계수)
+        """
+        import os as _os
+        agg_mode = _os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
+        nearest_scale = float(_os.environ.get('VESSEL_NEAREST_SCALE', 0))
+        msg_gain = float(_os.environ.get('VESSEL_MSG_GAIN', 1.0))
+        if nearest_scale > 0:
+            agg_mode = 'scale'
+
         batch_size, n_agent, _ = msg.shape
 
         if not USE_COMMUNICATION:
             # Phase 1: 통신 비활성화
             return torch.zeros_like(msg)
 
-        # Message annealing: 0→1로 점진적 증가 (Phase 2 전환 안정화)
-        anneal_coef = min(1.0, self.msg_anneal_step / max(MSG_ANNEAL_STEPS, 1))
-
+        # Phase 2: 통신 즉시 활성화 (annealing 없음)
         if comm_partners is not None and agent_id_list is not None:
             # 통신 범위 기반 메시지 교환
             others_msg = torch.zeros_like(msg)
@@ -351,13 +374,25 @@ class CNNPolicy(nn.Module):
                 partners = comm_partners.get(agent_id, [])
                 if partners:
                     partner_indices = [id_to_idx[p] for p in partners if p in id_to_idx]
-                    if partner_indices:
-                        others_msg[0, i, :] = msg[0, partner_indices, :].sum(dim=0)
-            return others_msg * anneal_coef
+                    if len(partner_indices) > 0:
+                        s = msg[0, partner_indices, :].sum(dim=0)
+                        K = len(partner_indices)
+                        if agg_mode == 'mean':
+                            s = s / K
+                        elif agg_mode == 'scale':
+                            s = s * (nearest_scale / K)
+                        # sum: 그대로
+                        if msg_gain != 1.0:
+                            s = s * msg_gain
+                        others_msg[0, i, :] = s
+            return others_msg
 
-        # 기본: 모든 에이전트와 통신
+        # Mean-field fallback: 전체 합 - 자기 메시지
         msg_sum = msg.sum(dim=1, keepdim=True).repeat(1, n_agent, 1)
-        return (msg_sum - msg) * anneal_coef
+        others_msg = msg_sum - msg
+        if msg_gain != 1.0:
+            others_msg = others_msg * msg_gain
+        return others_msg
 
     def forward(self, x, goal, self_state, colregs,
                 return_msg=False, comm_partners=None, agent_id_list=None):
@@ -416,19 +451,16 @@ class CNNPolicy(nn.Module):
             action = action.unsqueeze(1)
 
         if USE_COMMUNICATION:
-            # ★ 핵심 수정: MessageActor 재실행으로 gradient 흐름 복구 ★
-            # 메시지 재생성 (gradient가 MessageActor까지 역전파됨)
+            # Phase 2: MessageActor 재실행으로 gradient 흐름 보장
             msg = self.msg_actor(x, goal, self_state, colregs)
-            # 배치 내 모든 에이전트 메시지 합산 후 자기꺼 빼기 (mean-field)
             batch_size, n_agent, _ = msg.shape
             if n_agent > 1:
+                # Mean-field: 전체 합 - 자기 메시지
                 msg_sum = msg.sum(dim=1, keepdim=True).repeat(1, n_agent, 1)
-                regenerated_msg = msg_sum - msg
+                others_msg = msg_sum - msg
             else:
-                regenerated_msg = torch.zeros_like(msg)
-            # Annealing 적용
-            anneal_coef = min(1.0, self.msg_anneal_step / max(MSG_ANNEAL_STEPS, 1))
-            others_msg = regenerated_msg * anneal_coef
+                # n_agent=1 (PPO 배치): straight-through gradient
+                others_msg = others_msg + (msg - msg.detach())
         # Phase 1: others_msg = zeros (저장된 값 그대로 사용)
 
         # 1. Get logprob and entropy

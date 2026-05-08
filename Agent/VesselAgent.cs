@@ -131,7 +131,10 @@ public class VesselAgent : Agent
         }
         vesselDynamics.Initialize(rb);
 
-        vesselManager = transform.root.GetComponentInChildren<VesselManager>();
+        // 계층 무관하게 VesselManager 찾기 (Unity 6의 non-obsolete API 사용)
+        vesselManager = GetComponentInParent<VesselManager>();
+        if (vesselManager == null)
+            vesselManager = FindAnyObjectByType<VesselManager>();
 
         if (vesselManager != null)
         {
@@ -194,6 +197,7 @@ public class VesselAgent : Agent
         }
         else
         {
+            Debug.LogWarning($"===== [RESET] {gameObject.name}: vesselManager NULL! rotation={initialRotation.eulerAngles} =====");
             transform.position = initialPosition;
             transform.rotation = initialRotation;
         }
@@ -223,15 +227,21 @@ public class VesselAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        float targetRudderAngle = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f) * vesselDynamics.maxTurnRate;
-        // 네트워크 출력(-1~1)을 0~1로 변환: (-1+1)/2=0, (0+1)/2=0.5, (1+1)/2=1
-        float targetThrust = (Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f) + 1f) / 2f * vesselDynamics.maxSpeed;
+        try
+        {
+            float targetRudderAngle = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f) * vesselDynamics.maxTurnRate;
+            float targetThrust = (Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f) + 1f) / 2f * vesselDynamics.maxSpeed;
 
-        vesselDynamics.SetRudderAngle(targetRudderAngle);
-        vesselDynamics.SetTargetSpeed(targetThrust);
-        vesselDynamics.SetBraking(false);
+            vesselDynamics.SetRudderAngle(targetRudderAngle);
+            vesselDynamics.SetTargetSpeed(targetThrust);
+            vesselDynamics.SetBraking(false);
 
-        CalculateReward();
+            CalculateReward();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[OnAction] {gameObject.name}: {e.Message}\n{e.StackTrace}");
+        }
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -580,7 +590,14 @@ public class VesselAgent : Agent
 
     private void FixedUpdate()
     {
-        vesselDynamics.UpdateDynamics(Time.fixedDeltaTime);
+        try
+        {
+            vesselDynamics.UpdateDynamics(Time.fixedDeltaTime);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[FixedUpdate] {gameObject.name}: {e.Message}\n{e.StackTrace}");
+        }
     }
 
     void OnDrawGizmos()

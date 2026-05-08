@@ -8,9 +8,6 @@ using System.Collections.Generic;
 [RequireComponent(typeof(LineRenderer))]
 public class TrajectoryRenderer : MonoBehaviour
 {
-    [Header("References")]
-    public VesselAutoPilot autoPilot;
-
     [Header("Line Settings")]
     public Color lineColor = Color.white;
     public float lineWidth = 0.3f;
@@ -23,17 +20,23 @@ public class TrajectoryRenderer : MonoBehaviour
     private LineRenderer lineRenderer;
     private List<Vector3> points = new List<Vector3>();
     private float lastRecordTime;
+    private bool isDirty = false;  // LineRenderer 갱신 필요 플래그
 
     void Awake()
     {
+        // 시각화 전역 off면 컴포넌트 + LineRenderer 즉시 비활성화
+        if (!GlobalScale.SHOW_RUNTIME_GIZMOS)
+        {
+            var lr = GetComponent<LineRenderer>();
+            if (lr != null) lr.enabled = false;
+            enabled = false;
+            return;
+        }
         SetupLineRenderer();
     }
 
     void Start()
     {
-        if (autoPilot == null)
-            autoPilot = GetComponent<VesselAutoPilot>();
-
         // 시작 위치 기록
         RecordPoint();
         lastRecordTime = Time.time;
@@ -77,8 +80,12 @@ public class TrajectoryRenderer : MonoBehaviour
             lastRecordTime = Time.time;
         }
 
-        // LineRenderer 업데이트
-        UpdateLineRenderer();
+        // dirty 플래그가 있을 때만 LineRenderer 갱신
+        if (isDirty)
+        {
+            UpdateLineRenderer();
+            isDirty = false;
+        }
     }
 
     private void RecordPoint()
@@ -86,6 +93,7 @@ public class TrajectoryRenderer : MonoBehaviour
         Vector3 point = transform.position;
         point.y += heightOffset;  // 수면 위로
         points.Add(point);
+        isDirty = true;
     }
 
     private void UpdateLineRenderer()
@@ -115,6 +123,7 @@ public class TrajectoryRenderer : MonoBehaviour
     public void ClearTrajectory()
     {
         points.Clear();
+        isDirty = false;
         if (lineRenderer != null)
         {
             lineRenderer.positionCount = 0;
@@ -148,9 +157,11 @@ public class TrajectoryRenderer : MonoBehaviour
         // 궤적 데이터는 자동으로 정리됨
     }
 
+#if UNITY_EDITOR
     // Gizmos로도 표시 (에디터에서 확인용)
     void OnDrawGizmos()
     {
+        if (!GlobalScale.SHOW_RUNTIME_GIZMOS) return;
         if (!Application.isPlaying) return;
         if (points.Count < 2) return;
 
@@ -160,4 +171,5 @@ public class TrajectoryRenderer : MonoBehaviour
             Gizmos.DrawLine(points[i - 1], points[i]);
         }
     }
+#endif
 }

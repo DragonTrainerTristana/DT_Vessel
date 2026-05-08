@@ -31,9 +31,9 @@ class FrameStackBuffer:
         새 프레임으로 업데이트
 
         Args:
-            state: 새로운 state [state_size]
+            state: 새로운 state [state_size] (parse_observation이 매번 새 array 반환하므로 copy 불필요)
         """
-        self.buffer.append(state.copy())
+        self.buffer.append(state)
 
     def get_stacked(self):
         """
