@@ -21,6 +21,9 @@ public class VesselRadar : MonoBehaviour
     // GetAllRayDistances 캐시 (매 호출 할당 방지)
     private float[] cachedDistances;
 
+    // GetSectorMinDistances 캐시 (numSectors 가변 lazy alloc)
+    private float[] sectorCache;
+
     // 사전 계산된 local direction (Awake 시 1회, Scan 시 Quaternion.Euler 360회 제거)
     private Vector3[] localDirections;
 
@@ -162,6 +165,38 @@ public class VesselRadar : MonoBehaviour
                 minDist = radarHits[i].distance;
         }
         return minDist;
+    }
+
+    /// <summary>
+    /// 360 ray를 numSectors개 섹터로 압축. 각 섹터의 최소거리(가장 가까운 장애물)를
+    /// GetAllRayDistances와 동일 정규화(dist/radarRange - 0.5, 미감지 0.5)로 반환.
+    /// 충돌 회피엔 섹터 내 최근접 장애물이 핵심이므로 min pooling 사용.
+    /// </summary>
+    public float[] GetSectorMinDistances(int numSectors)
+    {
+        if (sectorCache == null || sectorCache.Length != numSectors)
+            sectorCache = new float[numSectors];
+
+        int raysPerSector = rayCount / numSectors;   // 360/36 = 10
+
+        for (int s = 0; s < numSectors; s++)
+        {
+            float minNorm = 0.5f;   // 미감지 = 최대거리 (정규화값 0.5)
+            int start = s * raysPerSector;
+            int end = (s == numSectors - 1) ? rayCount : start + raysPerSector;  // 나머지 ray는 마지막 섹터에 흡수
+
+            for (int i = start; i < end; i++)
+            {
+                if (rayHitFlags[i])
+                {
+                    float norm = (radarHits[i].distance / radarRange) - 0.5f;
+                    if (norm < minNorm) minNorm = norm;
+                }
+            }
+            sectorCache[s] = minNorm;
+        }
+
+        return sectorCache;
     }
 
 #if UNITY_EDITOR

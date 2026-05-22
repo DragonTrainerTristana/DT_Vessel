@@ -20,13 +20,13 @@ public class COLREGsHandler
     private const float DETECTION_RANGE = GlobalScale.COLREGS_DETECTION;   // 충돌 위험 감지 거리 (원본 200m × SCALE)
 
     // Rule 16: Early and Substantial Action
-    private const float EARLY_ACTION_TIME = 60f;    // Early action threshold (seconds)
-    private const float SUBSTANTIAL_ACTION_TIME = 30f; // Substantial action threshold (seconds)
+    private const float EARLY_ACTION_TIME = GlobalScale.EARLY_ACTION_TIME;    // GlobalScale 참조 (스케일 불변, 감지윈도우 비례)
+    private const float SUBSTANTIAL_ACTION_TIME = GlobalScale.SUBSTANTIAL_ACTION_TIME; // GlobalScale 참조
 
     // Rule 17: Stand-on Vessel Action Thresholds
-    private const float RULE_17B_TIME = 20f;        // May take action threshold (seconds)
+    private const float RULE_17B_TIME = GlobalScale.RULE_17B_TIME;        // GlobalScale 참조
     private const float RULE_17B_DISTANCE = GlobalScale.RULE_17B_DIST;     // May take action distance (원본 30m × SCALE)
-    private const float RULE_17C_TIME = 10f;                               // Shall take action threshold (seconds) - 시간 유지
+    private const float RULE_17C_TIME = GlobalScale.RULE_17C_TIME;                               // GlobalScale 참조
     private const float RULE_17C_DISTANCE = GlobalScale.RULE_17C_DIST;     // Shall take action distance (원본 15m × SCALE)
 
     // Safe passing distances
@@ -273,7 +273,7 @@ public class COLREGsHandler
             // 좌현 변침 패널티 (정규화된 러더 사용)
             if (normalizedRudder < -0.1f)
             {
-                reward -= 2.0f;  // 좌현 변침 패널티
+                reward -= 0.5f;  // 좌현 변침 패널티 (2.0→0.5: nav 보상 +0.3~0.5와 균형, 우현 +0.5와 대칭)
             }
             // 우현 변침 보상 (적극적 회피 유도)
             else if (normalizedRudder > 0.2f)
@@ -405,7 +405,7 @@ public class COLREGsHandler
         float distanceRisk = 1.0f - (distance / DETECTION_RANGE);
 
         // TCPA 기반 위험도 (가까운 미래일수록 위험)
-        float tcpaRisk = 1.0f / (1.0f + tcpa / 60f); // 60초 기준
+        float tcpaRisk = 1.0f / (1.0f + tcpa / GlobalScale.TCPA_RISK_DENOM); // GlobalScale 기준 (감지윈도우 비례)
 
         // DCPA 기반 위험도 (가까워질수록 위험)
         float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / GlobalScale.DCPA_RISK); // 5m 기준 (1/10 스케일, 원본 50m)
@@ -456,7 +456,7 @@ public class COLREGsHandler
         float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);
 
         float distanceRisk = 1.0f - (distance / DETECTION_RANGE);
-        float tcpaRisk = 1.0f / (1.0f + tcpa / 60f);
+        float tcpaRisk = 1.0f / (1.0f + tcpa / GlobalScale.TCPA_RISK_DENOM);
         float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / GlobalScale.DCPA_RISK);    // 1/10 스케일 (원본 50m)
 
         float risk = (distanceRisk * 0.3f + tcpaRisk * 0.4f + dcpaRisk * 0.3f);

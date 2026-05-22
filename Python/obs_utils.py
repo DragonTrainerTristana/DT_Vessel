@@ -8,12 +8,12 @@ from config import STATE_SIZE, COMM_RANGE, MAX_COMM_PARTNERS
 
 def parse_observation(obs_raw):
     """
-    373D observation 파싱 (STATE_SIZE=360 기준):
-    [0:360]      Radar (360 rays, 1도 간격)
-    [360:362]    Goal (distance, angle)
-    [362:366]    Self state (speed, yaw_rate, heading, rudder)
-    [366:371]    COLREGs (5D one-hot)
-    [371:373]    Position (x, z) - 통신용, 학습 제외
+    43D observation 파싱 (STATE_SIZE=30 기준, 인덱스는 STATE_SIZE로 자동 산출):
+    [0:30]    Radar (360 ray → 30 섹터 min-distance, 12°)
+    [30:32]   Goal (distance, angle)
+    [32:36]   Self state (speed, yaw_rate, heading, rudder)
+    [36:41]   COLREGs (5D one-hot)
+    [41:43]   Position (x, z) - 통신 범위 계산용, 학습 제외
     """
     idx = STATE_SIZE  # 360
     state = obs_raw[:idx]

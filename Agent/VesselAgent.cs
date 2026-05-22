@@ -5,6 +5,7 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
+using Unity.MLAgents.Policies;
 
 public class VesselAgent : Agent
 {
@@ -59,6 +60,7 @@ public class VesselAgent : Agent
     [Header("Radar Settings")]
     public VesselRadar radar;
     public float radarRange = 20f;    // 1/10 스케일 (원본 200m)
+    public int radarSectors = 30;     // radar 360 ray → 30섹터 압축 (Initialize에서 GlobalScale로 override)
     public LayerMask radarDetectionLayers;
 
     [Header("Communication Settings")]
@@ -102,14 +104,26 @@ public class VesselAgent : Agent
     public override void Initialize()
     {
         // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
-        maxEpisodeSteps = GlobalScale.MAX_EPISODE_STEPS;
+        // SIMULATION_MODE 무한 에피소드는 학습 rollout 오염·배회 정체 유발 → 유한 안전망 적용
+        maxEpisodeSteps = GlobalScale.SIMULATION_MODE ? GlobalScale.TRAINING_MAX_STEPS : GlobalScale.MAX_EPISODE_STEPS;
         MaxStep = maxEpisodeSteps;
 
         radarRange = GlobalScale.RADAR_RANGE;
+        radarSectors = GlobalScale.RADAR_SECTORS;
         maxMapDistance = GlobalScale.MAP_DISTANCE;
         goalReachedDistance = GlobalScale.GOAL_REACHED;
         waypointReachedDistance = GlobalScale.WAYPOINT_REACHED;
         proximityThreshold = GlobalScale.PROXIMITY_THRESHOLD;
+
+        // 에디터 학습 시 BehaviorParameters Inspector 수동 세팅 불필요:
+        // obs 차원을 GlobalScale 기준으로 강제. radarSectors + 13 (= self6 + colregs5 + position2).
+        // 프레임 스태킹은 Python(frame_stack.py)이 담당하므로 Unity 스택은 1로 고정.
+        var behaviorParams = GetComponent<BehaviorParameters>();
+        if (behaviorParams != null)
+        {
+            behaviorParams.BrainParameters.VectorObservationSize = radarSectors + 13;
+            behaviorParams.BrainParameters.NumStackedVectorObservations = 1;
+        }
 
         rb = GetComponent<Rigidbody>();
         if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
@@ -490,14 +504,14 @@ public class VesselAgent : Agent
 
         if (!hasGoal)
         {
-            // 373D = radar(360) + self_state(6) + colregs(5) + position(2)
-            for (int i = 0; i < radar.rayCount + 13; i++) sensor.AddObservation(0f);
+            // 43D = radar(30 섹터) + self_state(6) + colregs(5) + position(2)
+            for (int i = 0; i < radarSectors + 13; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // ========== 1. Radar (360D) ==========
-        // IList<float> overload 1회 호출 (기존 360회 호출 → 1회, dispatch 오버헤드 제거)
-        float[] rayDistances = radar.GetAllRayDistances();
+        // ========== 1. Radar (36섹터 압축) ==========
+        // 360 ray → radarSectors개 섹터 min-distance (sparse 입력 축소; 주변 선박 의도는 6D 통신으로 별도 수신)
+        float[] rayDistances = radar.GetSectorMinDistances(radarSectors);
         sensor.AddObservation(rayDistances);
 
         // ========== 2. Self State (6D) ==========
@@ -531,7 +545,7 @@ public class VesselAgent : Agent
         sensor.AddObservation(transform.position.x);
         sensor.AddObservation(transform.position.z);
 
-        // 총 관측 차원: 360 (radar) + 6 (self state) + 5 (colregs) + 2 (position) = 373D
+        // 총 관측 차원: 30 (radar 섹터) + 6 (self state) + 5 (colregs) + 2 (position) = 43D
         // position은 Python에서 통신 파트너 계산용으로만 사용 (네트워크 입력 제외)
     }
 

@@ -6,6 +6,10 @@ Vessel Navigation Policy Network
 - COLREGs Classifier: radar → situation prediction (auxiliary task)
 
 PPO 구현은 CleanRL 방식을 따름 (검증된 구현)
+
+radar obs를 360 ray → 30섹터로 압축하면서 Conv1D를 MLP(radar_fc)로 교체.
+주변 선박 정보는 obs가 아니라 6D others_msg 통신으로 받으므로 통신 경로
+(_get_others_msg / forward / evaluate_actions / fc2 concat 차원)는 무수정 보존.
 """
 import torch
 import torch.nn as nn
@@ -14,33 +18,18 @@ from torch.distributions import Normal
 from config import STATE_SIZE, USE_COMMUNICATION, MSG_ANNEAL_STEPS
 
 
-def _calc_conv_output_size(state_size):
-    """Conv1D 출력 크기 동적 계산"""
-    out1 = (state_size + 2 * 1 - 5) // 2 + 1  # conv1: kernel=5, stride=2, padding=1
-    out2 = (out1 + 2 * 1 - 3) // 2 + 1        # conv2: kernel=3, stride=2, padding=1
-    return out2 * 32  # 32 output channels
-
-CONV_FLAT_SIZE = _calc_conv_output_size(STATE_SIZE)
-
-
 class MessageActor(nn.Module):
     """
-    각 에이전트의 observation을 6D 메시지로 압축
-    Conv1D로 레이더 처리 후 tanh로 메시지 생성
+    각 에이전트의 observation을 msg_dim 메시지로 압축
+    radar(섹터압축) → MLP → FC 후 tanh로 메시지 생성
     """
     def __init__(self, frames, msg_dim):
         super(MessageActor, self).__init__()
         self.frames = frames
         self.msg_dim = msg_dim
 
-        # Conv1D layers for radar feature extraction
-        self.conv1 = nn.Conv1d(in_channels=frames, out_channels=32,
-                               kernel_size=5, stride=2, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
-                               kernel_size=3, stride=2, padding=1)
-
-        # Conv output 동적 계산
-        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
+        # Radar feature extraction (Conv1D 제거 → MLP; 섹터 압축으로 입력이 작아 Conv 불필요)
+        self.radar_fc = nn.Linear(STATE_SIZE * frames, 256)
         # 256 + goal(2) + self_state(4) + colregs(5) = 267
         self.fc2 = nn.Linear(256 + 2 + 4 + 5, 128)
         self.msg_out = nn.Linear(128, msg_dim)
@@ -58,22 +47,19 @@ class MessageActor(nn.Module):
         batch_size, n_agent, _ = x.shape
 
         # Flatten for processing
-        x_flat = x.view(batch_size * n_agent, self.frames, STATE_SIZE)
+        x_flat = x.view(batch_size * n_agent, self.frames * STATE_SIZE)
         goal_flat = goal.view(batch_size * n_agent, -1)
         self_state_flat = self_state.view(batch_size * n_agent, -1)
         colregs_flat = colregs.view(batch_size * n_agent, -1)
 
-        # Conv1D feature extraction
-        a = F.relu(self.conv1(x_flat))
-        a = F.relu(self.conv2(a))
-        a = a.view(a.shape[0], -1)
-        a = F.relu(self.fc1(a))
+        # Radar feature extraction (MLP)
+        a = F.relu(self.radar_fc(x_flat))
 
         # Concatenate all features
         a = torch.cat((a, goal_flat, self_state_flat, colregs_flat), dim=-1)
         a = F.relu(self.fc2(a))
 
-        # 6D message (tanh for bounded output)
+        # msg_dim message (tanh for bounded output)
         msg = torch.tanh(self.msg_out(a))
 
         return msg.view(batch_size, n_agent, self.msg_dim)
@@ -90,15 +76,9 @@ class ControlActor(nn.Module):
         self.msg_dim = msg_dim
         self.action_size = action_size
 
-        # Conv1D for radar feature extraction
-        self.conv1 = nn.Conv1d(in_channels=frames, out_channels=32,
-                               kernel_size=5, stride=2, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
-                               kernel_size=3, stride=2, padding=1)
-
-        # Conv output 동적 계산
-        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
-        # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(6) = 273
+        # Radar feature extraction (Conv1D 제거 → MLP)
+        self.radar_fc = nn.Linear(STATE_SIZE * frames, 256)
+        # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(msg_dim)
         self.fc2 = nn.Linear(256 + 2 + 4 + 5 + msg_dim, 128)
         self.fc3 = nn.Linear(128, 64)
 
@@ -126,17 +106,14 @@ class ControlActor(nn.Module):
         batch_size, n_agent, _ = x.shape
 
         # Flatten for processing
-        x_flat = x.view(batch_size * n_agent, self.frames, STATE_SIZE)
+        x_flat = x.view(batch_size * n_agent, self.frames * STATE_SIZE)
         goal_flat = goal.view(batch_size * n_agent, -1)
         self_state_flat = self_state.view(batch_size * n_agent, -1)
         colregs_flat = colregs.view(batch_size * n_agent, -1)
         others_msg_flat = others_msg.view(batch_size * n_agent, -1)
 
-        # Conv1D feature extraction
-        a = F.relu(self.conv1(x_flat))
-        a = F.relu(self.conv2(a))
-        a = a.view(a.shape[0], -1)
-        a = F.relu(self.fc1(a))
+        # Radar feature extraction (MLP)
+        a = F.relu(self.radar_fc(x_flat))
 
         # Concatenate all features
         a = torch.cat((a, goal_flat, self_state_flat, colregs_flat, others_msg_flat), dim=-1)
@@ -175,18 +152,15 @@ class ControlActor(nn.Module):
         batch_size, n_agent, _ = x.shape
 
         # Flatten for processing
-        x_flat = x.view(batch_size * n_agent, self.frames, STATE_SIZE)
+        x_flat = x.view(batch_size * n_agent, self.frames * STATE_SIZE)
         goal_flat = goal.view(batch_size * n_agent, -1)
         self_state_flat = self_state.view(batch_size * n_agent, -1)
         colregs_flat = colregs.view(batch_size * n_agent, -1)
         others_msg_flat = others_msg.view(batch_size * n_agent, -1)
         action_flat = action.view(batch_size * n_agent, -1)
 
-        # Conv1D feature extraction
-        a = F.relu(self.conv1(x_flat))
-        a = F.relu(self.conv2(a))
-        a = a.view(a.shape[0], -1)
-        a = F.relu(self.fc1(a))
+        # Radar feature extraction (MLP)
+        a = F.relu(self.radar_fc(x_flat))
 
         # Concatenate all features
         a = torch.cat((a, goal_flat, self_state_flat, colregs_flat, others_msg_flat), dim=-1)
@@ -233,14 +207,9 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
         self.frames = frames
 
-        # Conv1D for radar feature extraction
-        self.conv1 = nn.Conv1d(in_channels=frames, out_channels=32,
-                               kernel_size=5, stride=2, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
-                               kernel_size=3, stride=2, padding=1)
-
-        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 256)
-        # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(6) = 273
+        # Radar feature extraction (Conv1D 제거 → MLP)
+        self.radar_fc = nn.Linear(STATE_SIZE * frames, 256)
+        # 256 + goal(2) + self_state(4) + colregs(5) + others_msg(msg_dim)
         self.fc2 = nn.Linear(256 + 2 + 4 + 5 + msg_dim, 128)
         self.value_out = nn.Linear(128, 1)
 
@@ -258,17 +227,14 @@ class Critic(nn.Module):
         batch_size, n_agent, _ = x.shape
 
         # Flatten
-        x_flat = x.view(batch_size * n_agent, self.frames, STATE_SIZE)
+        x_flat = x.view(batch_size * n_agent, self.frames * STATE_SIZE)
         goal_flat = goal.view(batch_size * n_agent, -1)
         self_state_flat = self_state.view(batch_size * n_agent, -1)
         colregs_flat = colregs.view(batch_size * n_agent, -1)
         others_msg_flat = others_msg.view(batch_size * n_agent, -1)
 
-        # Conv
-        v = F.relu(self.conv1(x_flat))
-        v = F.relu(self.conv2(v))
-        v = v.view(v.shape[0], -1)
-        v = F.relu(self.fc1(v))
+        # Radar feature extraction (MLP)
+        v = F.relu(self.radar_fc(x_flat))
 
         # Concat and output (others_msg 포함)
         v = torch.cat((v, goal_flat, self_state_flat, colregs_flat, others_msg_flat), dim=-1)
@@ -286,12 +252,8 @@ class COLREGsClassifier(nn.Module):
         super(COLREGsClassifier, self).__init__()
         self.frames = frames
 
-        self.conv1 = nn.Conv1d(in_channels=frames, out_channels=32,
-                               kernel_size=5, stride=2, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=32, out_channels=32,
-                               kernel_size=3, stride=2, padding=1)
-
-        self.fc1 = nn.Linear(CONV_FLAT_SIZE, 128)
+        # Radar feature extraction (Conv1D 제거 → MLP)
+        self.radar_fc = nn.Linear(STATE_SIZE * frames, 128)
         self.fc2 = nn.Linear(128, 64)
         self.classifier = nn.Linear(64, 5)
 
@@ -304,12 +266,9 @@ class COLREGsClassifier(nn.Module):
         """
         batch_size, n_agent, _ = x.shape
 
-        x_flat = x.view(batch_size * n_agent, self.frames, STATE_SIZE)
+        x_flat = x.view(batch_size * n_agent, self.frames * STATE_SIZE)
 
-        c = F.relu(self.conv1(x_flat))
-        c = F.relu(self.conv2(c))
-        c = c.view(c.shape[0], -1)
-        c = F.relu(self.fc1(c))
+        c = F.relu(self.radar_fc(x_flat))
         c = F.relu(self.fc2(c))
         c = self.classifier(c)
 

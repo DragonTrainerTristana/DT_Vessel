@@ -280,17 +280,33 @@ def setup_environments():
     channels = []
     behavior_names = []
 
-    print(f"\n[INFO] Creating {NUM_ENVS} Unity environments (headless mode)...", flush=True)
+    if USE_EDITOR:
+        print(f"\n[INFO] EDITOR mode — Unity Editor에서 ▶ Play 를 누르세요 "
+              f"(port {BASE_PORT}, 연결 대기 최대 120초)...", flush=True)
+    else:
+        print(f"\n[INFO] Creating {NUM_ENVS} Unity environments (headless build)...", flush=True)
+
     for i in range(NUM_ENVS):
         channel = EngineConfigurationChannel()
-        env = UnityEnvironment(
-            file_name=ENV_PATH,  # 빌드된 exe 사용 (병렬 학습)
-            side_channels=[channel],
-            worker_id=i,
-            base_port=BASE_PORT + i,
-            timeout_wait=60,
-            additional_args=["-batchmode", "-nographics"]  # Headless 모드
-        )
+        if USE_EDITOR:
+            # 에디터 직결: file_name=None → Python이 Play 누를 때까지 대기.
+            # 에디터는 단일 인스턴스(worker_id=0)만 가능, batchmode 인자 없음.
+            env = UnityEnvironment(
+                file_name=None,
+                side_channels=[channel],
+                worker_id=0,
+                base_port=BASE_PORT,
+                timeout_wait=120,
+            )
+        else:
+            env = UnityEnvironment(
+                file_name=ENV_PATH,  # 빌드된 exe 사용 (병렬 학습)
+                side_channels=[channel],
+                worker_id=i,
+                base_port=BASE_PORT + i,
+                timeout_wait=60,
+                additional_args=["-batchmode", "-nographics"]  # Headless 모드
+            )
         channel.set_configuration_parameters(time_scale=TIME_SCALE)
         env.reset()
         behavior_name = list(env.behavior_specs)[0]

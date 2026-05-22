@@ -10,8 +10,9 @@ Vessel Navigation ML-Agent Configuration
     VESSEL_START_STEP     START_STEP (default 3220000)
     VESSEL_MODEL_PATH     MODEL_PATH (절대 경로)
     VESSEL_ENV_PATH       Unity build exe 경로 (default 0424)
-    VESSEL_NUM_ENVS       NUM_ENVS (default 2)
+    VESSEL_NUM_ENVS       NUM_ENVS (default 2, 에디터 모드면 무시되고 1)
     VESSEL_N_EPOCH        N_EPOCH (default 2)
+    VESSEL_USE_EDITOR     '1'=Unity Editor 직결 학습(기본), '0'=빌드 exe 병렬
 """
 import os
 
@@ -40,7 +41,8 @@ def _env_str(key, default):
 # ============================================================================
 # Network Architecture (GitHub 방식 - 메시지 교환)
 # ============================================================================
-STATE_SIZE = 360                # Radar state 크기 (360 rays, 1도 간격)
+RADAR_SECTORS = 30              # Radar 섹터 수 (360 ray → 12°씩 30섹터 min-distance 압축, obs 최소화)
+STATE_SIZE = RADAR_SECTORS      # Radar state 크기 (섹터 압축; 360 → 30, C# GlobalScale.RADAR_SECTORS와 반드시 일치)
 GOAL_SIZE = 2                   # Goal (distance, angle)
 SELF_STATE_SIZE = 4             # Self state (speed, yaw_rate, heading, rudder) - 네트워크 입력용
 COLREGS_SIZE = 5                # COLREGs one-hot (None, HeadOn, CrossingStandOn, CrossingGiveWay, Overtaking)
@@ -48,20 +50,20 @@ MSG_DIM = _env_int('VESSEL_MSG_DIM', 6)   # 메시지 차원 (env override 가�
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
 FRAMES = 3                      # Frame stacking 개수
 
-# Unity에서 보내는 관측값 구조:
-# [0:360]   Radar (360 rays)
-# [360:362] Goal (distance, angle)
-# [362:366] Self state (speed, yaw_rate, heading, rudder)
-# [366:371] COLREGs (5D one-hot)
-# [371:373] Position (x, z) - 통신 범위 계산용, 학습 제외
+# Unity에서 보내는 관측값 구조 (radar 360→30 섹터 압축, 나머지 불변):
+# [0:30]    Radar (30 섹터 min-distance)
+# [30:32]   Goal (distance, angle)
+# [32:36]   Self state (speed, yaw_rate, heading, rudder)
+# [36:41]   COLREGs (5D one-hot)
+# [41:43]   Position (x, z) - 통신 범위 계산용, 학습 제외
 POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학습 제외
-OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POSITION_SIZE  # 373D
+OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POSITION_SIZE  # 43D
 
 # ============================================================================
 # Scale (C#의 GlobalScale과 반드시 일치해야 함)
 # ============================================================================
 VESSEL_SCALE = 0.1              # 배 자체 크기 (길이/속도/센서)
-MAP_SCALE = 1.0                 # 월드맵 내 활동 영역 (spawn zone, goal distance)
+MAP_SCALE = 0.1                 # VESSEL_SCALE과 통일 (센서↔맵 스케일 정합, C# GlobalScale.MAP_SCALE과 일치)
 
 # ============================================================================
 # Communication Settings
@@ -70,7 +72,7 @@ def _env_float(key, default):
     v = os.environ.get(key)
     return float(v) if v is not None else default
 
-COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 300 * VESSEL_SCALE) # 통신 범위 (미터) - 기본 300*VESSEL_SCALE
+COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 280 * VESSEL_SCALE) # 통신 범위 28m (= C# COLREGS_DETECTION, 통신정보→COLREGs 보상 환원)
 MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N (=1: nearest-1, =4: sum-of-4)
 MSG_ANNEAL_STEPS = 500000       # 메시지 기여도 0→1 선형 증가 스텝 수 (Phase 2 전환 안정화)
 MSG_LR_SCALE = 3.0              # MessageActor 학습률 배수 (untrained → 빠르게 학습)
@@ -85,16 +87,16 @@ SPINNING_REWARD_THRESHOLD = -50    # spinning: -90 < reward < -50
 # ============================================================================
 # Phase 1: USE_COMMUNICATION = False (자기 obs만으로 기본 navigation 학습)
 # Phase 2: USE_COMMUNICATION = True (msg 통신 추가해서 fine-tune)
-USE_COMMUNICATION = True        # Phase 3: 통신 ON (test용)
+USE_COMMUNICATION = True        # 통신 ON (MSG_DIM=6, Phase 분리 없이 from-scratch)
 
 # ============================================================================
 # Training Mode
 # ============================================================================
-LOAD_MODEL = True               # Phase 3: 최근 모델 로드
+LOAD_MODEL = False              # from-scratch: 옛 모델 dual-scale 호환 불가 → 미로드 (reward_rms도 자동 미로드, 새 통계 시작)
 TRAIN_MODE = True               # 학습 모드
 _default_model_path = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
 MODEL_PATH = _env_str('VESSEL_MODEL_PATH', _default_model_path)
-START_STEP = _env_int('VESSEL_START_STEP', 3220000)   # env override 가능
+START_STEP = _env_int('VESSEL_START_STEP', 0)   # from-scratch=0 (LOAD_MODEL=False면 main.py가 0으로 강제)
 
 # ============================================================================
 # PPO Hyperparameters
@@ -120,7 +122,11 @@ UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격 (N_STEP)
 # ============================================================================
 # Unity Environment
 # ============================================================================
-NUM_ENVS = _env_int('VESSEL_NUM_ENVS', 2)  # 병렬 환경 수 (5학습 동시 시 GPU 부담 줄이기)
+# Editor 모드: Unity Editor에서 ▶Play 로 학습 (빌드 불필요, 최신 C# 즉시 반영).
+# main.py가 file_name=None으로 연결 → Unity에서 Play 누르면 학습 시작.
+# 에디터는 인스턴스 1개만 가능 → NUM_ENVS 자동 1. 빌드로 되돌리려면 VESSEL_USE_EDITOR=0.
+USE_EDITOR = _env_str('VESSEL_USE_EDITOR', '1') == '1'          # 기본 ON (편집 즉시 반영)
+NUM_ENVS = 1 if USE_EDITOR else _env_int('VESSEL_NUM_ENVS', 2)  # 에디터=1, 빌드=병렬
 BASE_PORT = _env_int('VESSEL_BASE_PORT', 5004)   # env override 가능 (병렬 학습 시 충돌 회피)
 TIME_SCALE = 100.0              # 시뮬레이션 속도 (headless 빌드용)
 _default_env_path = r"c:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0424\Vessel_MLAgent.exe"
