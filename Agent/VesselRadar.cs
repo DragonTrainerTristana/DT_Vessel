@@ -206,15 +206,22 @@ public class VesselRadar : MonoBehaviour
     /// </summary>
     private void OnDrawGizmos()
     {
-        if (!showDebugRays) return;
-
         Vector3 origin = transform.position + Vector3.up * rayHeight;
 
-        // 초록 원: 레이더 범위 (항상 표시)
-        Gizmos.color = Color.green;
-        DrawGizmoCircle(origin, radarRange, 60);
+        // ── 범위 원 (가벼움: 배당 2개 wire circle) — 학습 관찰용, 기본 ON ──────
+        if (GlobalScale.SHOW_RANGE_GIZMOS)
+        {
+            // 초록 원: 레이더 감지 범위 (radarRange = 8m)
+            Gizmos.color = Color.green;
+            DrawGizmoCircle(origin, radarRange, 60);
 
-        if (!Application.isPlaying || rayHitFlags == null) return;
+            // 반투명 시안 원: 통신 범위 (= COMM_RANGE = 140m)
+            Gizmos.color = new Color(0f, 0.8f, 1f, 0.5f);
+            DrawGizmoCircle(origin, GlobalScale.COMM_RANGE, 72);
+        }
+
+        // ── 360 감지선 (무거움: 배당 최대 360선) — 기본 OFF(SHOW_DEBUG_RAYS) ────
+        if (!showDebugRays || !Application.isPlaying || rayHitFlags == null) return;
 
         // 빨간 선: 감지된 ray만 표시
         Gizmos.color = Color.red;

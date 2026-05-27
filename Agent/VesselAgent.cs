@@ -20,7 +20,7 @@ public class VesselAgent : Agent
 
     public float arrivalReward = 100.0f;          // 도착 보상 강화
     public float goalDistanceCoef = 1.0f;         // 0.5 → 1.0 (progress 보상 강화)
-    public float collisionPenalty = -100.0f;       // 충돌 패널티 유지
+    public float collisionPenalty = -300.0f;       // -100→-300 (충돌 종료가 reward 분류에서 절대 안 묻히게 + 회피 압력↑). threshold -150과 짝
     public float colregsRewardCoef = 0.45f;       // COLREGs 보상 계수 (1.5x = Phase 3)
     public bool enableColregsReward = true;       // COLREGs 활성화 (우현 보상 제거됨, 좌현 패널티만)
     public float angleRewardCoef = 0.5f;          // 목적지 방향 보상 계수 (강화: 0.2 → 0.5)
@@ -33,7 +33,8 @@ public class VesselAgent : Agent
     public float lowSpeedPenalty = -0.15f;        // 저속 패널티 (강화: -0.1 → -0.15)
 
     public float goalReachedDistance = 1.5f;    // 1/10 스케일 (원본 15m)
-    public float maxMapDistance = 100f;          // 맵 최대 거리 (goal distance 정규화용, 1/10 스케일)
+    public float maxMapDistance = 100f;          // 맵 최대 거리 (goal distance 정규화용, 1/10 스케일) - 비선형 전환으로 미사용
+    public float goalNormK = 150f;               // goal dist 비선형 정규화 d/(d+k) 상수 (Initialize에서 GlobalScale로 override)
 
     public Vector3 goalPosition;
     public bool hasGoal = false;
@@ -50,6 +51,13 @@ public class VesselAgent : Agent
     private Vector3 finalGoalPosition;               // 최종 목적지 (웨이포인트 리스트의 마지막)
 
     private bool isCollided = false;
+
+    // ── 에피소드 종료(outcome) 직접 기록: reward 추론 버리고 ground truth. per-run 파일(VESSEL_OUTCOME_LOG) ──
+    private bool outcomeLogged = false;   // 이번 에피소드가 goal/collision으로 기록됐나 (false인 채 다음 에피소드 시작 → timeout)
+    private int episodeIndex = 0;         // per-agent 에피소드 인덱스
+    private int myStepCount = 0;          // 에피소드 길이(결정 수)
+    private static string _outcomeLogPath = null;
+    private static bool _outcomePathInit = false;
 
     private VesselManager vesselManager;
     private List<VesselAgent> cachedVessels;
@@ -91,9 +99,9 @@ public class VesselAgent : Agent
     private COLREGsHandler.CollisionSituation cachedDangerSituation;
 
     [Header("Proximity Penalty (전방 장애물 회피)")]
-    public float proximityThreshold = 5f;           // 전방 5m 이내 장애물에 반응 (1/10 스케일, 원본 50m)
-    public float proximityPenaltyCoef = -0.15f;     // 최대 -0.15/step (선형)
-    public int proximitySectorAngle = 45;            // 전방 ±45° 섹터
+    public float proximityThreshold = 5f;           // Initialize에서 radarRange×0.25로 override (30m@0.3)
+    public float proximityPenaltyCoef = -2.0f;      // -1.0→-2.0 (근접 시 돌진 보상 ~+1.3 확실히 이김). Initialize 강제
+    public int proximitySectorAngle = 135;           // ±45→±135 (충돌 45%가 측면. 전방+측면 270° 커버, 후방 제외). Initialize 강제
     private float previousFrontMinDist = float.MaxValue;
 
     [Header("Smoothness Reward (Phase 2 전용)")]
@@ -105,15 +113,24 @@ public class VesselAgent : Agent
     {
         // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
         // SIMULATION_MODE 무한 에피소드는 학습 rollout 오염·배회 정체 유발 → 유한 안전망 적용
-        maxEpisodeSteps = GlobalScale.SIMULATION_MODE ? GlobalScale.TRAINING_MAX_STEPS : GlobalScale.MAX_EPISODE_STEPS;
+        // VESSEL_MAX_STEP env로 MaxStep override (재빌드 없이 튜닝). 목표거리 vs 이동예산 정합용.
+        int trainMax = GlobalScale.TRAINING_MAX_STEPS;
+        string envMaxStep = System.Environment.GetEnvironmentVariable("VESSEL_MAX_STEP");
+        if (!string.IsNullOrEmpty(envMaxStep) && int.TryParse(envMaxStep, out int parsedMax) && parsedMax > 0)
+            trainMax = parsedMax;
+        maxEpisodeSteps = GlobalScale.SIMULATION_MODE ? trainMax : GlobalScale.MAX_EPISODE_STEPS;
         MaxStep = maxEpisodeSteps;
 
         radarRange = GlobalScale.RADAR_RANGE;
         radarSectors = GlobalScale.RADAR_SECTORS;
         maxMapDistance = GlobalScale.MAP_DISTANCE;
+        goalNormK = GlobalScale.GOAL_NORM_K;
         goalReachedDistance = GlobalScale.GOAL_REACHED;
         waypointReachedDistance = GlobalScale.WAYPOINT_REACHED;
-        proximityThreshold = GlobalScale.PROXIMITY_THRESHOLD;
+        proximityThreshold = radarRange * 0.35f;   // ~30m 유지 (radar 84m로 줄여도 회피 반응거리 보존: 0.25→0.35). 관측만 줄이고 회피는 고정
+        proximityPenaltyCoef = -2.0f;   // prefab 무시 강제. 근접 시 goal-rush(+1.3) 확실히 이기게
+        proximitySectorAngle = 135;     // prefab 무시 강제. 측면 위협(충돌 45%) 커버
+        collisionPenalty = -300.0f;     // prefab(-100) 무시 강제. 충돌 분류 신뢰화(≪-150) + 회피 압력↑
 
         // 에디터 학습 시 BehaviorParameters Inspector 수동 세팅 불필요:
         // obs 차원을 GlobalScale 기준으로 강제. radarSectors + 13 (= self6 + colregs5 + position2).
@@ -191,6 +208,12 @@ public class VesselAgent : Agent
 
     public override void OnEpisodeBegin()
     {
+        // 직전 에피소드가 goal/collision 기록 없이 끝남 → MaxStep timeout (절단)
+        if (episodeIndex > 0 && !outcomeLogged) LogOutcome("timeout");
+        outcomeLogged = false;
+        myStepCount = 0;
+        episodeIndex++;
+
         vesselDynamics.ResetState();
         isCollided = false;
 
@@ -241,6 +264,7 @@ public class VesselAgent : Agent
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        myStepCount++;
         try
         {
             float targetRudderAngle = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f) * vesselDynamics.maxTurnRate;
@@ -318,6 +342,8 @@ public class VesselAgent : Agent
             {
                 // 최종 목표 도착 → 에피소드 종료
                 AddReward(arrivalReward);
+                LogOutcome("goal");
+                outcomeLogged = true;
                 EndEpisode();
                 return true;  // 에피소드 종료
             }
@@ -483,6 +509,28 @@ public class VesselAgent : Agent
         HandleCollision(other.gameObject);
     }
 
+    /// <summary>
+    /// 에피소드 종료 결과를 per-run 파일에 직접 기록 (reward 추론 대체, ground truth).
+    /// 형식: agentId,episodeIndex,outcome,stepCount  | outcome ∈ {goal,collision_vessel,collision_obstacle,timeout}
+    /// 파일 경로 = env VESSEL_OUTCOME_LOG (run별 분리), 없으면 빌드폴더/outcomes.csv.
+    /// </summary>
+    private void LogOutcome(string outcome)
+    {
+        try
+        {
+            if (!_outcomePathInit)
+            {
+                _outcomeLogPath = System.Environment.GetEnvironmentVariable("VESSEL_OUTCOME_LOG");
+                if (string.IsNullOrEmpty(_outcomeLogPath))
+                    _outcomeLogPath = System.IO.Path.Combine(Application.dataPath, "..", "outcomes.csv");
+                _outcomePathInit = true;
+            }
+            System.IO.File.AppendAllText(_outcomeLogPath,
+                $"{GetInstanceID()},{episodeIndex},{outcome},{myStepCount}\n");
+        }
+        catch { }
+    }
+
     private void HandleCollision(GameObject collidedObject)
     {
         if (isCollided) return;
@@ -492,6 +540,9 @@ public class VesselAgent : Agent
 
         if (isVessel || isObstacle)
         {
+            LogOutcome(isVessel ? "collision_vessel" : "collision_obstacle");
+            outcomeLogged = true;
+
             isCollided = true;
             AddReward(collisionPenalty);
             EndEpisode();
@@ -519,7 +570,7 @@ public class VesselAgent : Agent
         float goalDistance = toGoal.magnitude;
         float goalAngle = Vector3.SignedAngle(transform.forward, toGoal, Vector3.up);
 
-        sensor.AddObservation(Mathf.Clamp(goalDistance / maxMapDistance, 0f, 1f));       // Goal distance (0~1 정규화)
+        sensor.AddObservation(goalDistance / (goalDistance + goalNormK));               // Goal distance (비선형 d/(d+k), [0,1) saturate 없음)
         sensor.AddObservation(goalAngle / 180f);                                       // Goal angle
         sensor.AddObservation(vesselDynamics.CurrentSpeed / vesselDynamics.maxSpeed);  // Linear velocity
         sensor.AddObservation(vesselDynamics.YawRate / vesselDynamics.MaxYawRate);    // Angular velocity (실제 최대 yawRate로 정규화)

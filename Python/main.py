@@ -593,12 +593,14 @@ def log_and_save(step, start_step, total_agents, last_env_actions, policy, optim
 
 
 def main():
-    # 재현성을 위한 random seed 고정
-    random.seed(42)
-    np.random.seed(42)
-    torch.manual_seed(42)
+    # 재현성을 위한 random seed 고정 (VESSEL_SEED로 multi-seed 비교 가능, 기본 42)
+    _seed = int(os.environ.get('VESSEL_SEED', '42'))
+    random.seed(_seed)
+    np.random.seed(_seed)
+    torch.manual_seed(_seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(42)
+        torch.cuda.manual_seed(_seed)
+    print(f"[INFO] Random seed = {_seed}", flush=True)
 
     print("=" * 80)
     print("[START] Vessel ML-Agent Training (Multi-Instance)")

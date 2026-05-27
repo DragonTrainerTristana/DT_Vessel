@@ -62,7 +62,7 @@ OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POS
 # ============================================================================
 # Scale (C#의 GlobalScale과 반드시 일치해야 함)
 # ============================================================================
-VESSEL_SCALE = 0.1              # 배 자체 크기 (길이/속도/센서)
+VESSEL_SCALE = 0.2              # 0.3→0.2 (C# GlobalScale와 동기화. 0.3은 충돌 78% 학습불가였음). COMM_RANGE=2100×0.2=420m 자동. MAP_SCALE 0.1 유지
 MAP_SCALE = 0.1                 # VESSEL_SCALE과 통일 (센서↔맵 스케일 정합, C# GlobalScale.MAP_SCALE과 일치)
 
 # ============================================================================
@@ -72,14 +72,14 @@ def _env_float(key, default):
     v = os.environ.get(key)
     return float(v) if v is not None else default
 
-COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 280 * VESSEL_SCALE) # 통신 범위 28m (= C# COLREGS_DETECTION, 통신정보→COLREGs 보상 환원)
+COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 210m (이전 140m에서 1.5배; C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 28m)과는 분리)
 MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N (=1: nearest-1, =4: sum-of-4)
 MSG_ANNEAL_STEPS = 500000       # 메시지 기여도 0→1 선형 증가 스텝 수 (Phase 2 전환 안정화)
 MSG_LR_SCALE = 3.0              # MessageActor 학습률 배수 (untrained → 빠르게 학습)
 COLREGS_LOSS_COEF = 0.1         # COLREGs classifier auxiliary loss 계수
 
 # Terminal reward 판별 threshold (C# collisionPenalty=-100, spinningPenalty=-80 기준)
-COLLISION_REWARD_THRESHOLD = -90   # collision: reward < -90
+COLLISION_REWARD_THRESHOLD = -150  # collision: reward < -150 (collisionPenalty -300과 짝. 충돌 종료~-300≪-150, 정상종료~±2 → 분류 신뢰)
 SPINNING_REWARD_THRESHOLD = -50    # spinning: -90 < reward < -50
 
 # ============================================================================
@@ -87,7 +87,7 @@ SPINNING_REWARD_THRESHOLD = -50    # spinning: -90 < reward < -50
 # ============================================================================
 # Phase 1: USE_COMMUNICATION = False (자기 obs만으로 기본 navigation 학습)
 # Phase 2: USE_COMMUNICATION = True (msg 통신 추가해서 fine-tune)
-USE_COMMUNICATION = True        # 통신 ON (MSG_DIM=6, Phase 분리 없이 from-scratch)
+USE_COMMUNICATION = _env_str('VESSEL_USE_COMM', '1') == '1'   # 통신 ON/OFF (env 토글: ON vs OFF 비교용. 기본 ON)
 
 # ============================================================================
 # Training Mode

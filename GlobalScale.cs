@@ -18,7 +18,7 @@ public static class GlobalScale
     // 두 스케일을 분리한 이유: 월드맵이 큰데 spawn zone까지 배 스케일로 줄이면
     // 배들이 한 점에 몰려 학습 분포 벗어남.
     // ========================================================================
-    public const float VESSEL_SCALE = 0.1f;
+    public const float VESSEL_SCALE = 0.2f;   // 0.3→0.2 (0.3은 진짜충돌률 ~78%로 학습불가였음. 0.1=충돌0/0.3=78% 사이 학습가능 regime 탐색). Python 동기화 필수
     public const float MAP_SCALE = 0.1f;   // VESSEL_SCALE과 통일 (센서↔맵 스케일 정합: dual-scale 불일치 제거)
 
     // Simulation Mode: 세계지도 ship traffic 시뮬레이션 전용
@@ -32,6 +32,11 @@ public static class GlobalScale
     // 런타임 시각화 전역 off: goal line, detection sphere, trajectory line 등 모두 꺼짐
     public static readonly bool SHOW_RUNTIME_GIZMOS = false;
 
+    // 통신/레이더 "범위" 원만 표시 (배당 wire circle 2개 → 가벼움, 렉 없음).
+    // 무거운 360 감지선(SHOW_DEBUG_RAYS)·trajectory(SHOW_RUNTIME_GIZMOS)와 독립 토글.
+    // 에디터에서 학습 관찰 시 ON. Scene 뷰(또는 Game 뷰 상단 Gizmos 버튼)에서 보임.
+    public static readonly bool SHOW_RANGE_GIZMOS = true;
+
     // ===== Base values (원본 스케일) =====
     public const float BASE_LENGTH = 10f;
     public const float BASE_BEAM = 2f;
@@ -40,7 +45,7 @@ public static class GlobalScale
     public const float BASE_DECEL = 0.2f;
     public const float BASE_BRAKE = 1f;
 
-    public const float BASE_RADAR_RANGE = 80f;     // 200→80 (×0.1=8m, spawn zone 10m의 0.8배)
+    public const float BASE_RADAR_RANGE = 280f;    // 400→280 (×0.3=84m, 배 간격~87m 바로 아래). 부분관측 생성→통신이 먼 배 정보 메우게. dist/range 정규화 자동→from-scratch
     public const float BASE_GOAL_REACHED = 15f;
     public const float BASE_WAYPOINT_REACHED = 20f;
     public const float BASE_PROXIMITY_THRESHOLD = 50f;
@@ -48,6 +53,10 @@ public static class GlobalScale
 
     // 맵/spawn 관련 (MAP_SCALE 대상)
     public const float BASE_MAP_DISTANCE = 200f;          // 1000→200 (×0.1=20m, goal obs 정규화 분모: 검증2에서 실측 확정)
+    // goal distance obs 비선형 정규화 d/(d+k) 상수. 선형 분모(MAP_DISTANCE=20)는 실제 목표거리(중앙값 ~160 world units)의
+    // 1/8이라 63% saturate였음 → 비선형으로 교체. k=로컬 항해 특성거리. ×MAP_SCALE=150 world units(측정 중앙값 부근).
+    // d/(d+k)는 hard saturate가 없어 맵 스케일이 커져도 안 깨짐(원거리는 1.0에 점근, 근거리는 gradient 유지).
+    public const float BASE_GOAL_NORM_K = 1500f;          // ×0.1=150 world units
     public const float BASE_MIN_GOAL_DISTANCE = 25f;      // 50→25 (×0.1=2.5m, γ horizon 내 도달)
     public const float BASE_NAVMESH_SNAP_RADIUS = 100f;
     public const float BASE_SPAWNZONE_RADIUS = 100f;      // 300→100 (×0.1=10m, radar 8m의 ~1.25배)
@@ -64,7 +73,8 @@ public static class GlobalScale
     public const float BASE_AUTOPILOT_COMM = 100f;
     public const float BASE_AUTOPILOT_GOAL = 10f;
 
-    public const float BASE_COLREGS_DETECTION = 280f;     // 200→280 (×0.1=28m = COMM_RANGE: 통신정보→COLREGs 보상 환원 필수)
+    public const float BASE_COMM_RANGE = 2100f;           // 통신 파트너/시각화 범위 (×0.1=210m, 이전 140m에서 1.5배). Python COMM_RANGE와 매칭. 아래 COLREGS_DETECTION(보상)과 분리
+    public const float BASE_COLREGS_DETECTION = BASE_RADAR_RANGE;  // 레이더 범위와 동일 (×0.1=40m). 윈도우 ~31s → 시간상수(21s) 재산정 검토 필요
     public const float BASE_RULE_17B_DIST = 90f;          // 30→90 (×0.1=9m, COLREGS_DETECTION 확대 비율)
     public const float BASE_RULE_17C_DIST = 45f;          // 15→45 (×0.1=4.5m)
     public const float BASE_SAFE_PASSING = 60f;           // 20→60 (×0.1=6m)
@@ -74,13 +84,14 @@ public static class GlobalScale
     public const float BASE_DCPA_RISK = 120f;             // 50→120 (×0.1=12m, COLREGS의 ~43%)
 
     // COLREGs 시간상수 (초). 거리·속도가 둘 다 VESSEL_SCALE → 상쇄되어 스케일 불변.
-    // COLREGS_DETECTION 28m / closing speed ~1.3m/s ≈ 21s 감지윈도우 기준 재산정
-    // (기존 60/30/20/10s는 윈도우보다 커서 규칙 게이팅이 항상 참 → 붕괴였음)
-    public const float BASE_EARLY_ACTION_TIME = 15f;
-    public const float BASE_SUBSTANTIAL_ACTION_TIME = 8f;
-    public const float BASE_RULE_17B_TIME = 5f;
-    public const float BASE_RULE_17C_TIME = 2.5f;
-    public const float BASE_TCPA_RISK_DENOM = 21f;
+    // COLREGS_DETECTION 40m / closing speed ~1.3m/s ≈ 31s 감지윈도우 기준 재산정 (28m→40m, ×1.43)
+    //   closing 1.3 = maxSpeed 0.5 × speedMultiplier 평균 1.3 → 두 배 정면 합산 ≈ 1.3
+    //   (시간상수 < 윈도우(31s) 유지해야 단계 게이팅 작동; 넘으면 감지 즉시 전단계 발동 → 붕괴)
+    public const float BASE_EARLY_ACTION_TIME = 21.5f;        // 15 × 40/28
+    public const float BASE_SUBSTANTIAL_ACTION_TIME = 11.5f;  // 8 × 40/28
+    public const float BASE_RULE_17B_TIME = 7f;               // 5 × 40/28
+    public const float BASE_RULE_17C_TIME = 3.5f;             // 2.5 × 40/28
+    public const float BASE_TCPA_RISK_DENOM = 30f;            // 21 × 40/28 (≈ 40/1.3 윈도우)
 
     // ===== Scaled values (Awake에서 사용) =====
     public const float LENGTH = BASE_LENGTH * VESSEL_SCALE;
@@ -105,6 +116,7 @@ public static class GlobalScale
 
     // 맵/spawn 영역 (MAP_SCALE) ← 월드맵 scale에 따라 조정
     public const float MAP_DISTANCE = BASE_MAP_DISTANCE * MAP_SCALE;
+    public const float GOAL_NORM_K = BASE_GOAL_NORM_K * MAP_SCALE;   // 비선형 goal dist 정규화 d/(d+k)
     public const float MIN_GOAL_DISTANCE = BASE_MIN_GOAL_DISTANCE * MAP_SCALE;
     public const float NAVMESH_SNAP_RADIUS = BASE_NAVMESH_SNAP_RADIUS * MAP_SCALE;
     public const float SPAWNZONE_RADIUS = BASE_SPAWNZONE_RADIUS * MAP_SCALE;
@@ -116,6 +128,7 @@ public static class GlobalScale
     public const float AUTOPILOT_COMM = BASE_AUTOPILOT_COMM * VESSEL_SCALE;
     public const float AUTOPILOT_GOAL = BASE_AUTOPILOT_GOAL * VESSEL_SCALE;
 
+    public const float COMM_RANGE = BASE_COMM_RANGE * VESSEL_SCALE;
     public const float COLREGS_DETECTION = BASE_COLREGS_DETECTION * VESSEL_SCALE;
     public const float RULE_17B_DIST = BASE_RULE_17B_DIST * VESSEL_SCALE;
     public const float RULE_17C_DIST = BASE_RULE_17C_DIST * VESSEL_SCALE;
@@ -140,8 +153,10 @@ public static class GlobalScale
     // SIMULATION_MODE: 0 = ML-Agents 무한 (goal/collision 외엔 안 끝남)
     public const int BASE_MAX_EPISODE_STEPS = 15000;
     // 학습 안전망: SIMULATION_MODE(무한)에서도 rollout 오염·배회 정체 방지용 유한 상한.
-    // 목표 최대거리 ~20m / step이동 ~0.013m ≈ 1540 step의 ~2.6배 마진. (무한→유한, MaxStep 늘리기 아님)
-    public const int TRAINING_MAX_STEPS = 4000;
+    // ⚠️ 실측: 목표거리 실제 ~100-225m (옛 "~20m" 가정 틀림). step이동=속도1×0.04s=0.04m/step.
+    //   → 225m 직선=5625step, 곡선경로 여유까지 12000. (4000은 ~160m 직선이 한계라 먼 목표 물리적 도달 불가→timeout)
+    //   VESSEL_MAX_STEP env로 override 가능 (재빌드 없이 튜닝).
+    public const int TRAINING_MAX_STEPS = 12000;
     public const int MAX_EPISODE_STEPS = SIMULATION_MODE
         ? 0
         : (int)(BASE_MAX_EPISODE_STEPS * (MAP_SCALE / VESSEL_SCALE));

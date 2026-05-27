@@ -18,7 +18,9 @@ cd "$(dirname "$0")"
 mkdir -p logs
 
 # ⬇⬇⬇ 빌드한 exe 경로로 교체 (또는 export VESSEL_ENV_PATH=... 후 실행) ⬇⬇⬇
-ENV_PATH="${VESSEL_ENV_PATH:-PASTE_BUILD_EXE_PATH_HERE}"
+ENV_PATH="${VESSEL_ENV_PATH:-c:/Users/sengh/Dropbox/Private_Paper_Project/Vessel/Vessel_MLAgent/Build/0526_ver5/Vessel_MLAgent.exe}"
+# 신뢰 outcome 로그 per-run 절대경로 (C#이 씀, Windows 스타일 경로 필요)
+OUTDIR="c:/Users/sengh/OneDrive/Desktop/Github/MyUnity/Vessel/Vessel_MLAgent/Assets/Scripts/Python/logs"
 
 if [ ! -f "$ENV_PATH" ]; then
     echo "[ERROR] Build exe not found: $ENV_PATH"
@@ -27,8 +29,8 @@ if [ ! -f "$ENV_PATH" ]; then
 fi
 
 # ── 튜닝 가능 ───────────────────────────────────────────────────────────────
-RUN_STEP=30000        # run당 step 수 (from-scratch, step 0~30K; 파이프라인 점검/빠른 sweep)
-NUM_ENVS=2            # run당 Unity 인스턴스 (6 run × 2 = 12 instance; 무거우면 1로)
+RUN_STEP=200000       # run당 step 수 (MaxStep 12000 항해정상화 후 MSG_DIM별 outcome 비교)
+NUM_ENVS=1            # run당 Unity 인스턴스 (6 run × 1 = 6 instance; NUM_ENVS=2는 GPU 포화 확인됨)
 N_EPOCH=2
 DIMS=(2 4 6 8 10 12)
 PORTS=(5000 5100 5200 5300 5400 5500)
@@ -55,6 +57,7 @@ for i in "${!DIMS[@]}"; do
     VESSEL_NUM_ENVS=$NUM_ENVS \
     VESSEL_N_EPOCH=$N_EPOCH \
     VESSEL_ENV_PATH="$ENV_PATH" \
+    VESSEL_OUTCOME_LOG="$OUTDIR/outcomes_dim${d}.csv" \
     nohup python main.py > "logs/sweep_dim${d}.log" 2>&1 &
 
     PID=$!
