@@ -45,19 +45,20 @@ RADAR_SECTORS = 30              # Radar 섹터 수 (360 ray → 12°씩 30섹터
 STATE_SIZE = RADAR_SECTORS      # Radar state 크기 (섹터 압축; 360 → 30, C# GlobalScale.RADAR_SECTORS와 반드시 일치)
 GOAL_SIZE = 2                   # Goal (distance, angle)
 SELF_STATE_SIZE = 4             # Self state (speed, yaw_rate, heading, rudder) - 네트워크 입력용
-COLREGS_SIZE = 5                # COLREGs one-hot (None, HeadOn, CrossingStandOn, CrossingGiveWay, Overtaking)
+ARPA_SIZE = 21                  # ARPA top-3 접점 × 7 feature (label-blind 충돌기하). COLREGs one-hot 대체. C# GlobalScale.ARPA_OBS_SIZE와 일치
+COLREGS_SIZE = 0               # 정책 입력에서 제거 (vessel-label leak). 보상 shaping(특권정보)으로만 사용, obs/net 경로 제외
 MSG_DIM = _env_int('VESSEL_MSG_DIM', 6)   # 메시지 차원 (env override 가능)
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
 FRAMES = 3                      # Frame stacking 개수
 
-# Unity에서 보내는 관측값 구조 (radar 360→30 섹터 압축, 나머지 불변):
-# [0:30]    Radar (30 섹터 min-distance)
+# Unity에서 보내는 관측값 구조 (radar 360→30 섹터 압축, ARPA 21D 추가, COLREGs 제거):
+# [0:30]    Radar (30 섹터 min-distance)  ← 유일하게 frame-stack 대상
 # [30:32]   Goal (distance, angle)
 # [32:36]   Self state (speed, yaw_rate, heading, rudder)
-# [36:41]   COLREGs (5D one-hot)
-# [41:43]   Position (x, z) - 통신 범위 계산용, 학습 제외
+# [36:57]   ARPA (top-3 접점 × 7: sin,cos,range,closing,dcpa,tcpa,valid) ← single-frame
+# [57:59]   Position (x, z) - 통신 범위 계산용, 학습 제외
 POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학습 제외
-OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + COLREGS_SIZE + POSITION_SIZE  # 43D
+OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + ARPA_SIZE + POSITION_SIZE  # 59D
 
 # ============================================================================
 # Scale (C#의 GlobalScale과 반드시 일치해야 함)
@@ -74,9 +75,17 @@ def _env_float(key, default):
 
 COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 210m (이전 140m에서 1.5배; C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 28m)과는 분리)
 MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N (=1: nearest-1, =4: sum-of-4)
-MSG_ANNEAL_STEPS = 500000       # 메시지 기여도 0→1 선형 증가 스텝 수 (Phase 2 전환 안정화)
-MSG_LR_SCALE = 3.0              # MessageActor 학습률 배수 (untrained → 빠르게 학습)
-COLREGS_LOSS_COEF = 0.1         # COLREGs classifier auxiliary loss 계수
+MSG_ANNEAL_STEPS = 0            # 죽은 코드 (annealing 폐기, 통신 즉시 100%). 0으로 무력화
+MSG_LR_SCALE = _env_float('VESSEL_MSG_LR', 1.0)   # 3.0→1.0 (zero-init으로 0에서 자라는 구조: 빠른 LR은 노이즈만↑). env override
+COLREGS_LOSS_COEF = 0.0         # COLREGs classifier 제거 (label leak). 0으로 무력화
+# 메시지 L2 정규화: 통신이 쓸모없으면 메시지를 0으로 우아하게 수렴(불안정 붕괴 방지).
+# 통신이 도움되면 페널티 무릅쓰고 nonzero 유지 → "comm 유용성 자가검증". env로 튜닝.
+MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.001)
+# 메시지 게이트 개방 페널티: ControlActor/Critic의 others_msg = msg * sigmoid(msg_gate),
+# gate 초기 닫힘(-3). "무시"를 *학습된 안정 평형*으로 만들어 value-of-information≥0를 수렴까지 보장
+# (zero-init은 init-time 성질일 뿐 — 메시지가 0에서 자라는 걸 못 막음이 H1a 위배 진단의 핵심).
+# 메시지가 advantage를 유의하게 줄일 때만 gate가 열림. 너무 크면 H1b(도움 regime) 통신 죽임 → env 튜닝.
+MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.02)
 
 # Terminal reward 판별 threshold (C# collisionPenalty=-100, spinningPenalty=-80 기준)
 COLLISION_REWARD_THRESHOLD = -150  # collision: reward < -150 (collisionPenalty -300과 짝. 충돌 종료~-300≪-150, 정상종료~±2 → 분류 신뢰)
@@ -92,7 +101,7 @@ USE_COMMUNICATION = _env_str('VESSEL_USE_COMM', '1') == '1'   # 통신 ON/OFF (e
 # ============================================================================
 # Training Mode
 # ============================================================================
-LOAD_MODEL = False              # from-scratch: 옛 모델 dual-scale 호환 불가 → 미로드 (reward_rms도 자동 미로드, 새 통계 시작)
+LOAD_MODEL = (_env_str('VESSEL_LOAD_MODEL', '0') == '1')   # env로 켜면 MODEL_PATH 로드(관찰/이어학습용). 기본 from-scratch
 TRAIN_MODE = True               # 학습 모드
 _default_model_path = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
 MODEL_PATH = _env_str('VESSEL_MODEL_PATH', _default_model_path)
@@ -128,7 +137,7 @@ UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격 (N_STEP)
 USE_EDITOR = _env_str('VESSEL_USE_EDITOR', '1') == '1'          # 기본 ON (편집 즉시 반영)
 NUM_ENVS = 1 if USE_EDITOR else _env_int('VESSEL_NUM_ENVS', 2)  # 에디터=1, 빌드=병렬
 BASE_PORT = _env_int('VESSEL_BASE_PORT', 5004)   # env override 가능 (병렬 학습 시 충돌 회피)
-TIME_SCALE = 100.0              # 시뮬레이션 속도 (headless 빌드용)
+TIME_SCALE = _env_float('VESSEL_TIME_SCALE', 100.0)   # 시뮬 속도. 관찰 시 VESSEL_TIME_SCALE=2~3 (천천히 보이게)
 _default_env_path = r"c:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0424\Vessel_MLAgent.exe"
 ENV_PATH = _env_str('VESSEL_ENV_PATH', _default_env_path)   # Server build 경로로 env override 가능
 
