@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────
+# Vessel ML-Agent .gitignore
+# git root = Assets/Scripts/. C# 코드(+ .cs.meta / 폴더.meta)는 추적,
+# Python 학습/로그/시각화 산출물과 OS 잡파일은 제외.
+# ─────────────────────────────────────────────────────────────
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS / 에디터 잡파일
+.DS_Store
+Thumbs.db
+
+# 학습 로그·ground-truth 로그·데이터 (per-run 재생성)
+Python/logs/
+*.log
+*.csv
+
+# 시각화 스크립트 (프로젝트 규칙: plot/그래프 생성 스크립트는 GitHub에 안 올림)
+Python/plot_*.py
+Python/gen_*graphs*.py
+Python/mock_*.py
+Python/something.md
+
+# Claude Code 로컬 설정·연구 노트(CLAUDE.md)·에이전트 정의 — 공개 repo 제외(로컬 전용)
+.claude/
+
+# 모델·피규어·궤적 데이터 (Assets 밖이 정석이나 가드)
+models/
+figures/
+trajectory_data/
+
+# 임시/우발 산출물
+Python/C*Temprisk_calc.py
+
+# Unity .meta: 코드 자산(.cs)·폴더 .meta만 추적, 나머지 비자산 .meta는 노이즈라 제외
+# (이미 추적 중인 .cs.meta / 폴더.meta 는 gitignore 영향 없음 — tracked 유지)
+*.py.meta
+*.md.meta
+*.txt.meta
+*.sh.meta
+*.ps1.meta
+*.bat.meta
+*.tex.meta
+*.csv.meta
+*.log.meta
