@@ -25,6 +25,9 @@ Python/gen_*graphs*.py
 Python/mock_*.py
 Python/something.md
 
+# 로컬 전용 분석 스크립트 — 공개 repo 제외
+Python/analyze_mixed.py
+
 # Claude Code 로컬 설정·연구 노트(CLAUDE.md)·에이전트 정의 — 공개 repo 제외(로컬 전용)
 .claude/
 
@@ -47,3 +50,8 @@ Python/C*Temprisk_calc.py
 *.tex.meta
 *.csv.meta
 *.log.meta
+
+# 추적 안 하는 폴더의 Unity 디렉터리 .meta (logs/trajectory_data/Vessel_Training)
+Python/logs.meta
+Python/trajectory_data.meta
+Vessel_Training.meta

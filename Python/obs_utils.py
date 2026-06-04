@@ -3,38 +3,35 @@ Observation 파싱 및 통신 유틸리티 함수
 main.py와 test.py에서 공통으로 사용 — 중복 제거
 """
 import numpy as np
-from config import STATE_SIZE, COMM_RANGE, MAX_COMM_PARTNERS
+from config import STATE_SIZE, ARPA_SIZE, COMM_RANGE, MAX_COMM_PARTNERS
 
 
 def parse_observation(obs_raw):
     """
-    43D observation 파싱 (STATE_SIZE=30 기준, 인덱스는 STATE_SIZE로 자동 산출):
-    [0:30]    Radar (360 ray → 30 섹터 min-distance, 12°)
-    [30:32]   Goal (distance, angle)
-    [32:36]   Self state (speed, yaw_rate, heading, rudder)
-    [36:41]   COLREGs (5D one-hot)
-    [41:43]   Position (x, z) - 통신 범위 계산용, 학습 제외
+    390D observation 파싱 (STATE_SIZE=360 raw ray 기준, 인덱스는 STATE_SIZE로 자동 산출):
+    [0:360]    Radar (360 raw ray min-distance, 1°) ← frame-stack 대상. Python RadarEncoder가 Conv1D로 압축.
+    [360:362]  Goal (distance, angle)
+    [362:366]  Self state (speed, yaw_rate, heading, rudder)
+    [366:387]  ARPA (top-3 접점 × 7: sin,cos,range,closing,dcpa,tcpa,valid) ← label-blind 충돌기하
+    [387:389]  Position (x, z) - 통신 범위 계산용, 학습 제외
+    [389]      Situation (COLREGs 상황 0~4) - MoE 라우터 전용, 학습 feature 제외
+    ★구버전 빌드 호환: situation 슬롯 없으면 0(None)으로 폴백 → USE_MOE=0/단일 head로 동작.
     """
     idx = STATE_SIZE  # 360
     state = obs_raw[:idx]
 
-    goal_distance = obs_raw[idx]
-    goal_angle = obs_raw[idx + 1]
-    speed = obs_raw[idx + 2]
-    yaw_rate = obs_raw[idx + 3]
-    heading = obs_raw[idx + 4]
-    rudder = obs_raw[idx + 5]
+    goal = np.array(obs_raw[idx:idx + 2], dtype=np.float32)            # 2D
+    self_state = np.array(obs_raw[idx + 2:idx + 6], dtype=np.float32)  # 4D (speed, yaw, heading, rudder)
+    arpa = np.array(obs_raw[idx + 6:idx + 6 + ARPA_SIZE], dtype=np.float32)  # 21D
+    _p = idx + 6 + ARPA_SIZE
+    position = obs_raw[_p:_p + 2]                                      # x, z
+    # situation: MoE 라우팅 인덱스. 구버전 59D 빌드면 슬롯 부재 → 0(None) 폴백(역호환).
+    situation = int(round(float(obs_raw[_p + 2]))) if len(obs_raw) > _p + 2 else 0
 
-    goal = np.array([goal_distance, goal_angle], dtype=np.float32)
-    self_state = np.array([speed, yaw_rate, heading, rudder], dtype=np.float32)  # 4D
-    colregs = obs_raw[idx + 6:idx + 11]
-    position = obs_raw[idx + 11:idx + 13]  # x, z (통신 범위 계산용)
+    # 네트워크 입력 (position·situation 제외) = STATE_SIZE(360) + 2 + 4 + ARPA_SIZE = 387D (radar는 RadarEncoder가 Conv1D 압축)
+    obs_full = np.concatenate([state, goal, self_state, arpa])
 
-    # 전체 observation (position 제외) = 371D
-    obs_full = np.concatenate([state, [goal_distance, goal_angle, speed, yaw_rate,
-                                        heading, rudder], colregs])
-
-    return state, goal, self_state, colregs, obs_full, position
+    return state, goal, self_state, arpa, obs_full, position, situation
 
 
 def get_comm_partners(my_id, my_pos, all_positions):

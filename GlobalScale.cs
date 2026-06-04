@@ -103,7 +103,8 @@ public static class GlobalScale
 
     // 배 센서/물리 (VESSEL_SCALE)
     public const float RADAR_RANGE = BASE_RADAR_RANGE * VESSEL_SCALE;
-    public const int RADAR_SECTORS = 30;   // radar 360 ray → 30섹터(12°) min-distance 압축 (obs 최소화; 스케일 무관, config.py STATE_SIZE와 일치)
+    public const int RADAR_RAYS    = 360;  // ★radar raw ray 수 = obs로 송신하는 radar 차원 (2026-06-04: min-pool 제거, Python RadarEncoder가 Conv1D 압축). config.py STATE_SIZE와 일치
+    public const int RADAR_SECTORS = 30;   // (legacy) GetSectorMinDistances용 — obs엔 더는 안 쓰임. 360 ray→30섹터 min-pool
     public const float GOAL_REACHED = BASE_GOAL_REACHED * VESSEL_SCALE;
     public const float WAYPOINT_REACHED = BASE_WAYPOINT_REACHED * VESSEL_SCALE;
     public const float PROXIMITY_THRESHOLD = BASE_PROXIMITY_THRESHOLD * VESSEL_SCALE;
@@ -134,6 +135,8 @@ public static class GlobalScale
     public const float RULE_17C_DIST = BASE_RULE_17C_DIST * VESSEL_SCALE;
     public const float SAFE_PASSING = BASE_SAFE_PASSING * VESSEL_SCALE;
     public const float CRITICAL_CPA = BASE_CRITICAL_CPA * VESSEL_SCALE;
+    // near-miss 진단 임계(로그 전용): 이 거리 미만으로 타선 접근한 결정 수를 셈 → 충돌 직전 위험노출 측정.
+    public const float NEAR_MISS_DIST = SAFE_PASSING;   // = 6m (BASE 60×0.1). ★보상 절대 비연결(제약3)
     public const float EFFECTIVE_SPEED_MIN = BASE_EFFECTIVE_SPEED_MIN * VESSEL_SCALE;
     public const float MIN_SPEED_REDUCTION = BASE_MIN_SPEED_REDUCTION * VESSEL_SCALE;
     public const float DCPA_RISK = BASE_DCPA_RISK * VESSEL_SCALE;
@@ -145,6 +148,29 @@ public static class GlobalScale
     public const float RULE_17C_TIME = BASE_RULE_17C_TIME;
     public const float TCPA_RISK_DENOM = BASE_TCPA_RISK_DENOM;
 
+    // 타속(steering-gear rudder rate, °/s). 각도/초 차원 → 스케일 불변(시간상수 그룹과 동일).
+    // full hard-over(30°→-30°=60°) 소요 = 60/RUDDER_RATE초. decision(0.4s)당 RUDDER_RATE×0.4°만 이동.
+    // 권장 12 (허용 8~18). VESSEL_RUDDER_RATE env로 재빌드 없이 override(VesselAgent.Initialize 주입).
+    public const float RUDDER_RATE = 12.0f;
+
+    // ===== ARPA (label-blind radar 추적) =====
+    // 레이더 거리상(raw hit point)만으로 접점을 시간 추적 → 상대속도/TCPA/DCPA 추정.
+    // vessel/obstacle 구분 불가(라벨 비노출). obs로 들어가는 충돌 기하의 유일한 출처.
+    public const int   ARPA_K             = 3;    // 관측에 넣는 top-K 위험 접점 수
+    public const int   ARPA_FEATURES_PER  = 7;    // 접점당 feature 수 (sin,cos,range,closing,dcpa,tcpa,valid)
+    public const int   ARPA_OBS_SIZE      = ARPA_K * ARPA_FEATURES_PER; // 21
+    public const float ARPA_RANGE_GAP_FRAC = 0.15f; // 인접 ray 거리차가 radarRange의 이 비율 이내면 같은 접점
+    public const int   ARPA_MIN_RAYS      = 2;    // 접점 최소 ray 수 (노이즈 단일 ray 제거)
+    public const float ARPA_GATE_FRAC     = 0.06f;// association gate의 radarRange 비례 항
+    public const int   ARPA_MAX_MISS      = 3;    // 연속 miss 이 횟수 초과 시 track 폐기
+    public const int   ARPA_MAX_TRACKS    = 12;   // 동시 추적 track 상한 (근거리 우선)
+    public const float ARPA_VEL_EMA       = 0.4f; // 추정 속도 EMA 계수 (양자화 노이즈 완화)
+    public const float ARPA_CPA_EMA       = 0.4f; // tcpa/dcpa EMA 계수
+    public const int   ARPA_MIN_AGE       = 2;    // validFlag=1 되는 최소 track age (속도 수렴 후)
+    public const float ARPA_SPEED_NORM    = 4f * MAX_SPEED; // closing rate 정규화 분모 (최대 closing 1.8+1.8 커버)
+    public const float ARPA_TCPA_CAP      = TCPA_RISK_DENOM; // tcpa 정규화 cap
+    public const float ARPA_DCPA_DENOM    = DCPA_RISK;       // dcpa risk 분모
+
     // Rigidbody mass 스케일 (volume, s³)
     public const float MASS_SCALE = VESSEL_SCALE * VESSEL_SCALE * VESSEL_SCALE;
 
@@ -154,9 +180,9 @@ public static class GlobalScale
     public const int BASE_MAX_EPISODE_STEPS = 15000;
     // 학습 안전망: SIMULATION_MODE(무한)에서도 rollout 오염·배회 정체 방지용 유한 상한.
     // ⚠️ 실측: 목표거리 실제 ~100-225m (옛 "~20m" 가정 틀림). step이동=속도1×0.04s=0.04m/step.
-    //   → 225m 직선=5625step, 곡선경로 여유까지 12000. (4000은 ~160m 직선이 한계라 먼 목표 물리적 도달 불가→timeout)
-    //   VESSEL_MAX_STEP env로 override 가능 (재빌드 없이 튜닝).
-    public const int TRAINING_MAX_STEPS = 12000;
+    //   → 225m 직선=5625step. 12000→16000으로 상향: crossing 모드(목표=대각선 최대거리, ~500m)는 곡선 회피경로까지 여유 필요.
+    //   16000×0.04×1m/s = 640m 예산. VESSEL_MAX_STEP env로 더 올림 가능(재빌드 없이; corner 목표가 멀면 20000).
+    public const int TRAINING_MAX_STEPS = 16000;
     public const int MAX_EPISODE_STEPS = SIMULATION_MODE
         ? 0
         : (int)(BASE_MAX_EPISODE_STEPS * (MAP_SCALE / VESSEL_SCALE));

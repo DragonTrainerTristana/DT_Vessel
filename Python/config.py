@@ -41,24 +41,26 @@ def _env_str(key, default):
 # ============================================================================
 # Network Architecture (GitHub 방식 - 메시지 교환)
 # ============================================================================
-RADAR_SECTORS = 30              # Radar 섹터 수 (360 ray → 12°씩 30섹터 min-distance 압축, obs 최소화)
-STATE_SIZE = RADAR_SECTORS      # Radar state 크기 (섹터 압축; 360 → 30, C# GlobalScale.RADAR_SECTORS와 반드시 일치)
+RADAR_RAYS = 360                # ★Radar raw ray 수 (2026-06-04: C# min-pool 제거, 360 ray 그대로 송신 → Python Conv1D 학습압축)
+STATE_SIZE = RADAR_RAYS         # Radar state 크기 = raw ray 360 (압축은 networks.RadarEncoder가 담당). C# GlobalScale.RADAR_RAYS와 반드시 일치
 GOAL_SIZE = 2                   # Goal (distance, angle)
 SELF_STATE_SIZE = 4             # Self state (speed, yaw_rate, heading, rudder) - 네트워크 입력용
 ARPA_SIZE = 21                  # ARPA top-3 접점 × 7 feature (label-blind 충돌기하). COLREGs one-hot 대체. C# GlobalScale.ARPA_OBS_SIZE와 일치
 COLREGS_SIZE = 0               # 정책 입력에서 제거 (vessel-label leak). 보상 shaping(특권정보)으로만 사용, obs/net 경로 제외
 MSG_DIM = _env_int('VESSEL_MSG_DIM', 6)   # 메시지 차원 (env override 가능)
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
-FRAMES = 3                      # Frame stacking 개수
+FRAMES = 3                      # Frame stacking 개수 (radar에만 적용 → RadarEncoder 입력 채널 = FRAMES)
 
-# Unity에서 보내는 관측값 구조 (radar 360→30 섹터 압축, ARPA 21D 추가, COLREGs 제거):
-# [0:30]    Radar (30 섹터 min-distance)  ← 유일하게 frame-stack 대상
-# [30:32]   Goal (distance, angle)
-# [32:36]   Self state (speed, yaw_rate, heading, rudder)
-# [36:57]   ARPA (top-3 접점 × 7: sin,cos,range,closing,dcpa,tcpa,valid) ← single-frame
-# [57:59]   Position (x, z) - 통신 범위 계산용, 학습 제외
+# Unity에서 보내는 관측값 구조 (radar 360 raw ray 송신 → Python RadarEncoder가 압축, ARPA 21D, COLREGs 제거):
+# [0:360]    Radar (360 raw ray min-distance, 1°)  ← 유일하게 frame-stack 대상(×3)
+# [360:362]  Goal (distance, angle)
+# [362:366]  Self state (speed, yaw_rate, heading, rudder)
+# [366:387]  ARPA (top-3 접점 × 7: sin,cos,range,closing,dcpa,tcpa,valid) ← single-frame
+# [387:389]  Position (x, z) - 통신 범위 계산용, 학습 제외
+# [389:390]  Situation (COLREGs 상황 0~4) - MoE 라우터 전용, 학습 feature 제외 (position처럼)
 POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학습 제외
-OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + ARPA_SIZE + POSITION_SIZE  # 59D
+SITUATION_SIZE = 1              # COLREGs 상황 라우팅 인덱스 (0~4). MoE 라우터 전용 — 네트워크 feature 입력 제외
+OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + ARPA_SIZE + POSITION_SIZE + SITUATION_SIZE  # 390D
 
 # ============================================================================
 # Scale (C#의 GlobalScale과 반드시 일치해야 함)
@@ -86,6 +88,47 @@ MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.001)
 # (zero-init은 init-time 성질일 뿐 — 메시지가 0에서 자라는 걸 못 막음이 H1a 위배 진단의 핵심).
 # 메시지가 advantage를 유의하게 줄일 때만 gate가 열림. 너무 크면 H1b(도움 regime) 통신 죽임 → env 튜닝.
 MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.02)
+
+# ============================================================================
+# 위치 grounding + Attention 집계 (sum/mean 대체)
+# ============================================================================
+# receiver의 [self_state ⊕ goal ⊕ arpa]로 query, 각 partner의 [상대위치(sin,cos,거리) ⊕ msg]로
+# key/value → softmax 가중선택(sum의 무차별 합 대신 "누가·어디서·지금 얼마나 중요한지" 반영).
+# 출력차원 dv=MSG_DIM이라 ControlActor/Critic의 게이트·fc2 메시지슬롯 *불변*(인터페이스 동일, 연산만 추가).
+# v_proj zero-init → context=0 at init → comm-ON이 comm-OFF와 정확히 같은 출발선(H1a value-of-info≥0).
+# ⚠️ rollout(aggregate_single)·update(aggregate_batch) 동일 함수형이라 PPO ratio 유효.
+# 기본 OFF(=기존 sum) → 켜기 전 빌드/baseline과 100% 동일(anti-rigging). H1b regime에서 ON 비교.
+USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '0') == '1'
+ATTN_DIM = _env_int('VESSEL_ATTN_DIM', 32)   # attention query/key 내부차원 (head 1개)
+
+# ============================================================================
+# Intent self-supervised (메시지 = sender의 미래의도; Phase 2)
+# ============================================================================
+# 메시지 latent이 sender의 *미래 K-step 궤적/heading*을 디코드가능하게 인코딩하도록 self-supervised
+# 보조손실을 건다 → ARPA(등속가정)가 구조적으로 못 주는 *미래 maneuver* 정보를 담아 시간축에서 비잉여.
+# ★self-prediction(자기 미래를 자기 메시지로 예측): receiver step과 정렬 → 파트너 정렬 silent-failure 0.
+# ★라벨 = trajectory에서 추출한 *실제 미래변위*(self-supervised), reward·advantage와 완전분리 = anti-rigging.
+# ★정책/가치 경로 무오염(별도 IntentDecoder head). receiver는 여전히 게이트로 메시지 무시 가능 = H1a 보존.
+# default 0.0 = OFF = 기존과 비트동일(IntentDecoder 미호출, own_future 미계산).
+INTENT_COEF = _env_float('VESSEL_INTENT_COEF', 0.0)
+INTENT_K = _env_int('VESSEL_INTENT_K', 3)            # 예측 미래시점 개수 (h=HORIZON×{1..K})
+INTENT_HORIZON = _env_int('VESSEL_INTENT_HORIZON', 12)  # 시점 간격(step). 12/24/36 = 1.2/2.4/3.6초(0.4s/결정)
+INTENT_POS_SCALE = _env_float('VESSEL_INTENT_POS_SCALE', 56.0)  # 변위 정규화(≈radar 56m); 디코더 타깃 O(1)화
+
+# ============================================================================
+# COLREGs Mixture-of-Experts (상황별 정책 head hard-routing)
+# ============================================================================
+# Unity가 판정한 COLREGs 상황(cachedDangerSituation, obs[389]=마지막 슬롯, 0~4)으로 정책 head를 hard-route.
+#   0=None(조우없음/항해) 1=HeadOn 2=CrossingStandOn 3=CrossingGiveWay 4=Overtaking (COLREGsHandler enum 일치).
+# 공유 backbone(radar/ARPA 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
+#   단일 정책이 4상황의 상충하는 회피규칙(head-on→우현 / stand-on→유지 / give-way→우현+감속 / overtake→keep clear)을
+#   평균내며 간섭하는 걸 방지 → 상황별 전문화.
+# ★default OFF = 단일 head(기존 단일망과 *비트동일*, 기존 체크포인트 strict 로드 가능) = 공정 baseline.
+#   MoE가 단일망을 ground-truth로 이겨야 진짜(anti-rigging). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
+# ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
+#   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
+USE_MOE = _env_str('VESSEL_USE_MOE', '0') == '1'
+NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
 
 # Terminal reward 판별 threshold (C# collisionPenalty=-100, spinningPenalty=-80 기준)
 COLLISION_REWARD_THRESHOLD = -150  # collision: reward < -150 (collisionPenalty -300과 짝. 충돌 종료~-300≪-150, 정상종료~±2 → 분류 신뢰)
@@ -182,6 +225,14 @@ def get_config_dict():
         'state_size': STATE_SIZE,
         'observation_size': OBSERVATION_SIZE,
         'msg_dim': MSG_DIM,
+        'use_communication': USE_COMMUNICATION,
+        'use_moe': USE_MOE,
+        'num_colregs_situations': NUM_COLREGS_SITUATIONS,
+        'use_attention': USE_ATTENTION,
+        'attn_dim': ATTN_DIM,
+        'intent_coef': INTENT_COEF,
+        'intent_k': INTENT_K,
+        'intent_horizon': INTENT_HORIZON,
         'continuous_action_size': CONTINUOUS_ACTION_SIZE,
         'frames': FRAMES,
         'learning_rate': LEARNING_RATE,

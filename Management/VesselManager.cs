@@ -328,6 +328,15 @@ public class VesselManager : MonoBehaviour
         return bestIndex;
     }
 
+    private static int _crossingGoalMode = -1;
+    /// <summary>VESSEL_CROSSING=1 → 스폰에서 "가장 먼" 목표 배정. 경로가 중심에서 교차(4-way) → Type B 협응충돌 유도 → 통신 검증용. 기본 OFF.</summary>
+    private bool UseCrossingGoals()
+    {
+        if (_crossingGoalMode < 0)
+            _crossingGoalMode = (System.Environment.GetEnvironmentVariable("VESSEL_CROSSING") == "1") ? 1 : 0;
+        return _crossingGoalMode == 1;
+    }
+
     private void AssignGoalForVessel(GameObject vessel, Transform spawnPoint)
     {
         // goalPoints가 설정되어 있으면 사용, 없으면 spawnPoints 사용 (호환성)
@@ -336,8 +345,23 @@ public class VesselManager : MonoBehaviour
         Transform goalPoint = null;
         int goalIndex = 0;
 
+        // ── 4-way 교차 모드(VESSEL_CROSSING=1): 스폰에서 거리가 가장 먼 목표 배정 → 경로가 중심 교차 ──
+        // (초기/respawn 모두 이 함수를 거치므로 매 에피소드 적용됨)
+        if (UseCrossingGoals())
+        {
+            float maxD = -1f;
+            string sName = spawnPoint.name;
+            for (int i = 0; i < availableGoals.Count; i++)
+            {
+                Transform p = availableGoals[i];
+                if (p == spawnPoint || p.name == sName) continue;
+                float d = Vector3.Distance(spawnPoint.position, p.position);
+                if (d > maxD) { maxD = d; goalPoint = p; goalIndex = i; }   // 가장 먼 = 반대편
+            }
+        }
+
         // 인덱스 매칭: spawnPoints[i] → goalPoints[i] (Inspector에서 크로스 페어링)
-        if (goalPoints.Count > 0 && goalPoints.Count == spawnPoints.Count)
+        if (goalPoint == null && goalPoints.Count > 0 && goalPoints.Count == spawnPoints.Count)
         {
             int spawnIdx = spawnPoints.IndexOf(spawnPoint);
             if (spawnIdx >= 0)

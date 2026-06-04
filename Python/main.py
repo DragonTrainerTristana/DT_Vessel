@@ -167,10 +167,16 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     p_arpas_tensor = torch.as_tensor(experiences['partner_arpas'], dtype=torch.float32, device=DEVICE)
     p_masks_tensor = torch.as_tensor(experiences['partner_masks'], dtype=torch.float32, device=DEVICE).unsqueeze(-1)  # [N,K,1]
     p_relpos_tensor = torch.as_tensor(experiences['partner_relpos'], dtype=torch.float32, device=DEVICE)  # [N,K,3] 위치 grounding
+    # ★ intent self-supervised 미래라벨 [N,1,K*3] (INTENT_COEF=0이면 zeros → 미사용)
+    own_future_tensor = torch.as_tensor(experiences['own_future'], dtype=torch.float32, device=DEVICE).unsqueeze(1)
+    own_future_mask_tensor = torch.as_tensor(experiences['own_future_mask'], dtype=torch.float32, device=DEVICE).unsqueeze(1)
+    # ★ COLREGs 상황 [N] (MoE head 라우팅; rollout 저장값 그대로 → 동일 head 재라우팅 = PPO ratio 유효)
+    situations_tensor = torch.as_tensor(experiences['situations'], dtype=torch.long, device=DEVICE)
 
     total_policy_loss = 0
     total_value_loss = 0
     total_entropy_loss = 0
+    total_intent_loss = 0
     total_loss = 0
     num_updates = 0
     grad_norm = 0.0
@@ -198,11 +204,15 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             batch_p_arpas = p_arpas_tensor[batch_indices]
             batch_p_masks = p_masks_tensor[batch_indices]
             batch_p_relpos = p_relpos_tensor[batch_indices]
+            batch_own_future = own_future_tensor[batch_indices]
+            batch_own_future_mask = own_future_mask_tensor[batch_indices]
+            batch_situations = situations_tensor[batch_indices]
 
-            values, logprobs, dist_entropy, msg_reg = policy.evaluate_actions(
+            values, logprobs, dist_entropy, msg_reg, intent_loss = policy.evaluate_actions(
                 batch_states, batch_goals, batch_self_states, batch_arpa,
                 batch_p_states, batch_p_goals, batch_p_selfs, batch_p_arpas, batch_p_masks,
-                batch_p_relpos, batch_actions
+                batch_p_relpos, batch_actions, batch_own_future, batch_own_future_mask,
+                situation=batch_situations
             )
 
             values = values.squeeze(-1).squeeze(-1)
@@ -224,6 +234,10 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             if USE_COMMUNICATION:
                 gate_open = torch.sigmoid(policy.ctr_actor.msg_gate) + torch.sigmoid(policy.critic.msg_gate)
                 loss = loss + MSG_GATE_COEF * gate_open
+            # ★ intent self-supervised 손실 (ON·COEF>0만): 메시지가 sender 미래의도 인코딩하도록.
+            #   별도 head라 정책/가치 무오염; OFF/COEF=0이면 intent_loss=0 → loss 불변(비트동일).
+            if USE_COMMUNICATION and INTENT_COEF > 0.0:
+                loss = loss + INTENT_COEF * intent_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -233,6 +247,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
             total_policy_loss += policy_loss.item()
             total_value_loss += value_loss.item()
             total_entropy_loss += entropy_loss.item()
+            total_intent_loss += float(intent_loss)
             total_loss += loss.item()
             num_updates += 1
 
@@ -245,6 +260,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
         writer.add_scalar('Loss/Policy', avg_policy_loss, total_steps)
         writer.add_scalar('Loss/Value', avg_value_loss, total_steps)
         writer.add_scalar('Loss/Entropy', avg_entropy_loss, total_steps)
+        writer.add_scalar('Loss/Intent', total_intent_loss / num_updates, total_steps)
         writer.add_scalar('Loss/Total', avg_total_loss, total_steps)
 
         with open(training_log_file, 'a', newline='') as f:
@@ -258,6 +274,7 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     del states_tensor, goals_tensor, self_states_tensor, arpa_tensor
     del actions_tensor, old_logprobs_tensor, returns_tensor, advantages_tensor
     del p_states_tensor, p_goals_tensor, p_selfs_tensor, p_arpas_tensor, p_masks_tensor, p_relpos_tensor
+    del own_future_tensor, own_future_mask_tensor, situations_tensor
     del experiences   # numpy dict 사본도 즉시 해제 (RAM 7-10GB 누적 방지)
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -295,6 +312,7 @@ def collect_observations(env, env_idx, behavior_name, frame_stack):
         batch_self_states = []
         batch_arpas = []
         batch_positions = {}
+        batch_situations = []   # COLREGs 상황(0~4) — MoE 라우팅(agent_id_list 정렬)
         agent_id_list = []
         global_id_list = []
         rewards = []
@@ -302,7 +320,7 @@ def collect_observations(env, env_idx, behavior_name, frame_stack):
         # enumerate로 직접 인덱스 사용 (O(n) -> O(1))
         for idx, agent_id in enumerate(agent_ids):
             obs_raw = decision_steps.obs[0][idx]
-            state, goal, self_state, arpa, _, position = parse_observation(obs_raw)
+            state, goal, self_state, arpa, _, position, situation = parse_observation(obs_raw)
 
             global_id = f"env{env_idx}_{agent_id}"
             state_stacked = frame_stack.update(agent_id, state)
@@ -312,6 +330,7 @@ def collect_observations(env, env_idx, behavior_name, frame_stack):
             batch_self_states.append(self_state)
             batch_arpas.append(arpa)
             batch_positions[agent_id] = position
+            batch_situations.append(situation)
             agent_id_list.append(agent_id)
             global_id_list.append(global_id)
             rewards.append(decision_steps.reward[idx])
@@ -350,6 +369,8 @@ def collect_observations(env, env_idx, behavior_name, frame_stack):
             'global_id_list': global_id_list,
             'comm_partners': comm_partners,
             'comm_relpos': comm_relpos,
+            'batch_positions': batch_positions,
+            'batch_situations': batch_situations,
             'rewards': rewards,
             'decision_steps': decision_steps,
             'terminal_steps': terminal_steps,
@@ -484,13 +505,16 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
         arpa_tensor = torch.as_tensor(np.array(env_data['batch_arpas']), dtype=torch.float32, device=DEVICE).unsqueeze(0)
 
         # ★ comm_partners와 agent_id_list를 forward에 전달 (rollout others_msg = nearest-K sum) ★
+        # ★ situation: COLREGs 상황(0~4)으로 MoE head 라우팅. 저장값과 동일 → update 재라우팅 정합(PPO).
+        situation_tensor = torch.as_tensor(env_data['batch_situations'], dtype=torch.long, device=DEVICE).unsqueeze(0)
         with torch.no_grad():
             values, actions, logprobs, means, msg, others_msg = policy.forward(
                 states_tensor, goals_tensor, self_states_tensor, arpa_tensor,
                 return_msg=True,
                 comm_partners=env_data['comm_partners'],
                 agent_id_list=env_data['agent_id_list'],
-                comm_relpos=env_data['comm_relpos']
+                comm_relpos=env_data['comm_relpos'],
+                situation=situation_tensor
             )
 
         env_actions = np.asarray(actions.squeeze(0).cpu().detach())
@@ -523,22 +547,27 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
 
             # 통신 파트너 obs 수집 (nearest-K, zero-pad). rollout others_msg와 동일 파트너 집합.
             partners = comm_partners.get(agent_id_list[i], [])
-            pidx = [agent_id_to_idx[p] for p in partners if p in agent_id_to_idx][:MAX_COMM_PARTNERS]
             relpos_arr = env_data['comm_relpos'].get(agent_id_list[i])
+            # ★ kept_pos: partners 중 agent_id_to_idx 생존 *위치* — pidx와 relpos를 같은 위치에서 추출해
+            #   정렬을 구성적으로 보장(rollout _get_others_msg와 동일 규약; 중간 파트너 필터돼도 relpos[j]↔obs[j] 불변).
+            #   현재 partners ⊆ agent_id_list라 필터 no-op(kept_pos=전체) → 기존 동작과 비트 동일.
+            kept_pos = [k for k, p in enumerate(partners) if p in agent_id_to_idx][:MAX_COMM_PARTNERS]
+            pidx = [agent_id_to_idx[partners[k]] for k in kept_pos]
             p_states = np.zeros((MAX_COMM_PARTNERS, state_dim), dtype=np.float32)
             p_goals = np.zeros((MAX_COMM_PARTNERS, GOAL_SIZE), dtype=np.float32)
             p_selfs = np.zeros((MAX_COMM_PARTNERS, SELF_STATE_SIZE), dtype=np.float32)
             p_arpas = np.zeros((MAX_COMM_PARTNERS, ARPA_SIZE), dtype=np.float32)
             p_mask = np.zeros((MAX_COMM_PARTNERS,), dtype=np.float32)
             p_relpos = np.zeros((MAX_COMM_PARTNERS, 3), dtype=np.float32)
-            for j, pj in enumerate(pidx):
+            for j, k in enumerate(kept_pos):
+                pj = pidx[j]
                 p_states[j] = env_data['batch_states'][pj]
                 p_goals[j] = env_data['batch_goals'][pj]
                 p_selfs[j] = env_data['batch_self_states'][pj]
                 p_arpas[j] = env_data['batch_arpas'][pj]
                 p_mask[j] = 1.0
-                if relpos_arr is not None and j < len(relpos_arr):
-                    p_relpos[j] = relpos_arr[j]
+                if relpos_arr is not None and k < len(relpos_arr):
+                    p_relpos[j] = relpos_arr[k]
 
             memory.add_agent_experience(
                 global_id,
@@ -551,7 +580,9 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
                 False,
                 env_values[i, 0],
                 env_logprobs[i, 0],
-                p_states, p_goals, p_selfs, p_arpas, p_mask, p_relpos
+                p_states, p_goals, p_selfs, p_arpas, p_mask, p_relpos,
+                np.asarray(env_data['batch_positions'][agent_id_list[i]], dtype=np.float32),
+                int(env_data['batch_situations'][i])
             )
 
         # Unity로 보낼 action 준비 (dict 사용으로 O(1) 검색)
