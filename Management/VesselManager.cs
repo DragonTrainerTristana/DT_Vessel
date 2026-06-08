@@ -443,9 +443,6 @@ public class VesselManager : MonoBehaviour
             VesselAgent agent = vessel.GetComponent<VesselAgent>();
             if (agent != null)
             {
-                agent.goalPointName = goalPoint.name;
-                agent.goalPointIndex = goalIndex;
-
                 if (waypoints != null && waypoints.Count > 0) agent.SetWaypoints(waypoints);
                 else agent.SetGoal(goalPos);
             }
@@ -476,16 +473,6 @@ public class VesselManager : MonoBehaviour
         }
     }
 
-    void OnDrawGizmos()
-    {
-        // Gizmos 비활성화
-    }
-
-    public void ChangeVesselCount(int newCount)
-    {
-        vesselCount = Mathf.Clamp(newCount, 1, spawnPoints.Count);
-        InitializeVessels();
-    }
 
     public void RespawnVessel(GameObject vessel)
     {
