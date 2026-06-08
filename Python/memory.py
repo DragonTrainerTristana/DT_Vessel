@@ -16,7 +16,6 @@ class AgentMemory:
         self.states = []          # [frames * STATE_SIZE]
         self.goals = []           # [2]
         self.self_states = []     # [4]
-        self.arpas = []           # [21] - label-blind 충돌기하
         self.actions = []         # [action_size]
         self.rewards = []         # scalar
         self.dones = []           # bool
@@ -26,28 +25,26 @@ class AgentMemory:
         self.partner_states = []
         self.partner_goals = []
         self.partner_selfs = []
-        self.partner_arpas = []
         self.partner_masks = []   # [K] (1=유효 파트너, 0=padding)
         self.partner_relpos = []  # [K,3] 상대방위(sin,cos)+거리 (위치 grounding)
         self.positions = []       # [2] 자기 위치(x,z) — intent 미래라벨 계산용(get_all_experiences)
         self.situations = []      # scalar COLREGs 상황(0~4) — MoE head 라우팅(rollout==update 동일 라우팅용)
 
     def clear(self):
-        for lst in (self.states, self.goals, self.self_states, self.arpas,
+        for lst in (self.states, self.goals, self.self_states,
                     self.actions, self.rewards, self.dones, self.values, self.logprobs,
                     self.partner_states, self.partner_goals, self.partner_selfs,
-                    self.partner_arpas, self.partner_masks, self.partner_relpos, self.positions,
+                    self.partner_masks, self.partner_relpos, self.positions,
                     self.situations):
             lst.clear()
 
-    def add(self, state, goal, self_state, arpa, action, reward, done, value, logprob,
-            partner_states, partner_goals, partner_selfs, partner_arpas, partner_mask, partner_relpos,
+    def add(self, state, goal, self_state, action, reward, done, value, logprob,
+            partner_states, partner_goals, partner_selfs, partner_mask, partner_relpos,
             position, situation):
         """새로운 경험 추가 (episode_done 게이트 제거 - 모든 경험 누적, 경계는 dones[]가 표시)"""
         self.states.append(state)
         self.goals.append(goal)
         self.self_states.append(self_state)
-        self.arpas.append(arpa)
         self.actions.append(action)
         self.rewards.append(reward)
         self.dones.append(done)
@@ -56,7 +53,6 @@ class AgentMemory:
         self.partner_states.append(partner_states)
         self.partner_goals.append(partner_goals)
         self.partner_selfs.append(partner_selfs)
-        self.partner_arpas.append(partner_arpas)
         self.partner_masks.append(partner_mask)
         self.partner_relpos.append(partner_relpos)
         self.positions.append(position)
@@ -83,15 +79,15 @@ class Memory:
             agent_memory.clear()
         self.agent_memories.clear()
 
-    def add_agent_experience(self, agent_id, state, goal, self_state, arpa,
+    def add_agent_experience(self, agent_id, state, goal, self_state,
                              action, reward, done, value, logprob,
-                             partner_states, partner_goals, partner_selfs, partner_arpas, partner_mask,
+                             partner_states, partner_goals, partner_selfs, partner_mask,
                              partner_relpos, position, situation):
         if agent_id not in self.agent_memories:
             self.agent_memories[agent_id] = AgentMemory()
         self.agent_memories[agent_id].add(
-            state, goal, self_state, arpa, action, reward, done, value, logprob,
-            partner_states, partner_goals, partner_selfs, partner_arpas, partner_mask, partner_relpos,
+            state, goal, self_state, action, reward, done, value, logprob,
+            partner_states, partner_goals, partner_selfs, partner_mask, partner_relpos,
             position, situation
         )
 
@@ -99,17 +95,17 @@ class Memory:
         """
         모든 에이전트의 경험을 하나의 배치로 통합 (GAE는 에이전트별 계산).
 
-        Returns dict: states/goals/self_states/arpas/actions/rewards/dones/values/logprobs/returns
-                      + partner_states/partner_goals/partner_selfs/partner_arpas/partner_masks
+        Returns dict: states/goals/self_states/actions/rewards/dones/values/logprobs/returns
+                      + partner_states/partner_goals/partner_selfs/partner_masks
         """
         from functions import calculate_returns
         from config import (DISCOUNT_FACTOR, GAE_LAMBDA,
                             INTENT_COEF, INTENT_K, INTENT_HORIZON, INTENT_POS_SCALE)
         import math
 
-        states, goals, self_states, arpas = [], [], [], []
+        states, goals, self_states = [], [], []
         actions, rewards, dones, values, logprobs = [], [], [], [], []
-        p_states, p_goals, p_selfs, p_arpas, p_masks, p_relpos = [], [], [], [], [], []
+        p_states, p_goals, p_selfs, p_masks, p_relpos = [], [], [], [], []
         own_future, own_future_mask = [], []
         sits = []
         returns = []
@@ -160,7 +156,6 @@ class Memory:
             states.extend(agent_memory.states)
             goals.extend(agent_memory.goals)
             self_states.extend(agent_memory.self_states)
-            arpas.extend(agent_memory.arpas)
             actions.extend(agent_memory.actions)
             rewards.extend(agent_memory.rewards)
             dones.extend(agent_memory.dones)
@@ -169,7 +164,6 @@ class Memory:
             p_states.extend(agent_memory.partner_states)
             p_goals.extend(agent_memory.partner_goals)
             p_selfs.extend(agent_memory.partner_selfs)
-            p_arpas.extend(agent_memory.partner_arpas)
             p_masks.extend(agent_memory.partner_masks)
             p_relpos.extend(agent_memory.partner_relpos)
             own_future.extend(fut)
@@ -184,7 +178,6 @@ class Memory:
             'states': _arr(states),
             'goals': _arr(goals),
             'self_states': _arr(self_states),
-            'arpas': _arr(arpas),
             'actions': _arr(actions),
             'rewards': _arr(rewards),
             'dones': _arr(dones),
@@ -194,7 +187,6 @@ class Memory:
             'partner_states': _arr(p_states),
             'partner_goals': _arr(p_goals),
             'partner_selfs': _arr(p_selfs),
-            'partner_arpas': _arr(p_arpas),
             'partner_masks': _arr(p_masks),
             'partner_relpos': _arr(p_relpos),
             'own_future': _arr(own_future),
