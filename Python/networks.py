@@ -1,43 +1,44 @@
 """
 Vessel Navigation Policy Network
 - MessageActor: observation → 6D message
-- ControlActor: observation + others_msg → action
-- Critic: observation → value
+- ControlActor: observation + gate·others_msg → action
+- Critic: observation + gate·others_msg → value
 
 PPO 구현은 CleanRL 방식을 따름 (검증된 구현)
 
-obs 계약(390D 중 네트워크 입력 387D): radar(360 raw ray, frame-stack ×3 → RadarEncoder Conv1D 압축) + goal(2) + self(4) + ARPA(21).
-COLREGs one-hot/auxiliary classifier는 제거됨(vessel-label leak). 충돌 기하는 label-blind ARPA(21D)로 들어옴.
-★radar: 2026-06-04부터 C# min-pool(360→30) 제거 → 360 raw ray를 RadarEncoder(Conv1D 원형패딩)가 학습형 압축(256D).
+obs 계약(369D 중 네트워크 입력 366D): radar(360 raw ray, frame-stack ×3 → RadarEncoder Conv1D 압축) + goal(2) + self(4).
+ARPA 제거(2026-06-05): 충돌 기하는 360 raw ray + frame-stack(RadarEncoder Conv1D가 bearing-rate 학습)이 대체. COLREGs one-hot도 제거됨(vessel-label leak).
+★radar: C# min-pool(360→30) 제거 → 360 raw ray를 RadarEncoder(Conv1D 원형패딩)가 학습형 압축(RADAR_FEAT_DIM, 기본 30D = 옛 섹터수와 동일 차원이되 학습형).
 
 ★ 통신 credit assignment 수정 (이전 버그):
 이전 evaluate_actions는 PPO 배치가 n_agent=1이라 straight-through self-loop만 타서
 sender→receiver gradient가 0이었음. 이제 파트너 obs를 저장해두고 update 때 MessageActor를
-파트너 obs로 재실행(masked-sum)하여 "내 메시지가 옆 배 회피를 도왔나" gradient가 흐르게 함.
+파트너 obs로 재실행(rollout과 동일 집계: sum/mean/scale/attention/pos_ground 미러)하여
+"내 메시지가 옆 배 회피를 도왔나" gradient가 흐르게 함.
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
-from config import (STATE_SIZE, ARPA_SIZE, USE_COMMUNICATION,
+from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     SELF_STATE_SIZE, GOAL_SIZE, USE_ATTENTION, ATTN_DIM,
                     INTENT_COEF, INTENT_K, USE_MOE, NUM_COLREGS_SITUATIONS)
 
 
 class RadarEncoder(nn.Module):
-    """360 raw ray(원형 각도 거리 프로파일)를 *학습형 신경망*으로 256D 압축.
+    """360 raw ray(원형 각도 거리 프로파일)를 *학습형 신경망*으로 RADAR_FEAT_DIM(기본 30) 압축.
 
     ★C# min-pool(360 ray→30 섹터, 고정·정보손실) 제거 → 모든 ray가 신경망에 들어와
-      "무엇을 남길지"를 학습으로 결정(정보손실 없는 제대로 된 압축, 2026-06-04 설계변경).
+      "무엇을 남길지"를 학습으로 결정(고정 min-pool과 같은 30D로 압축하되 학습형이라 손실 최소화).
     구조 = Conv1D(원형 padding) × 3 + FC:
       - 입력 [M, frames, n_rays]: **frames=시간축을 입력 채널로** → 같은 ray bin의 프레임간
         변화(=bearing-rate, COLREGs 핵심)를 conv가 직접 본다.
       - padding_mode='circular': ray 359 ↔ ray 0 인접(각도 wrap) 존중 → 정면 가로지르는 물체 보존.
       - stride-2 ×3로 360→180→90→45 다운샘플(학습형 pooling, min-pool 아님).
-    ★출력 256D = 기존 radar_fc(Linear)와 동일 인터페이스 → fc2·메시지게이트·MoE·attention·critic
-      전부 불변(blast radius = radar 전단부에 한정). 각 네트워크가 독립 인스턴스 보유(기존 radar_fc와 동일).
+    ★출력 out_dim(=RADAR_FEAT_DIM) = 다운스트림 fc2 입력. 각 네트워크가 독립 인스턴스 보유.
+      차원 변경 시 fc2 weight shape 변경 → from-scratch 필요. VESSEL_RADAR_FEAT_DIM로 튜닝.
     """
-    def __init__(self, frames, n_rays, out_dim=256):
+    def __init__(self, frames, n_rays, out_dim=RADAR_FEAT_DIM):
         super(RadarEncoder, self).__init__()
         self.frames = frames
         self.n_rays = n_rays
@@ -85,7 +86,7 @@ class GroundedAttention(nn.Module):
     """
     위치 grounding + single-head attention 집계 (sum/mean 대체).
 
-    - query : receiver의 [self_state ⊕ goal ⊕ arpa] (= 내 상황) → q_proj
+    - query : receiver의 [self_state ⊕ goal] (= 내 상황) → q_proj
     - key/value : 각 partner의 [relpos(sin,cos,거리) ⊕ msg] (= 어디서 온 어떤 의도) → k_proj/v_proj
     - context = Σ_j softmax(q·k/√d)_j · v_j   (sum의 무차별 합 대신 가중선택)
 
@@ -137,7 +138,7 @@ class GroundedAttention(nn.Module):
 class MessageActor(nn.Module):
     """
     각 에이전트의 observation을 msg_dim 메시지로 압축
-    radar(섹터압축) → MLP → FC 후 tanh로 메시지 생성
+    radar(360 raw ray → RadarEncoder Conv1D 압축) → MLP → FC 후 tanh로 메시지 생성
     """
     def __init__(self, frames, msg_dim):
         super(MessageActor, self).__init__()
@@ -145,9 +146,9 @@ class MessageActor(nn.Module):
         self.msg_dim = msg_dim
 
         # Radar feature extraction: 360 raw ray → 학습형 Conv1D 압축(원형 padding). min-pool 제거(2026-06-04).
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, 256)
-        # 256 + goal(2) + self_state(4) + arpa(21) = 283
-        self.fc2 = nn.Linear(256 + 2 + 4 + ARPA_SIZE, 128)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)
+        # RADAR_FEAT_DIM + goal(2) + self_state(4)
+        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4, 128)
         self.msg_out = nn.Linear(128, msg_dim)
         # ★생산측 zero-init: 메시지가 step1부터 0에서 학습되게(소비측 fc2 zero-init과 짝).
         #   → comm-ON이 init에서 메시지=0 → comm-OFF와 *정확히* 동일 출발선(H1a 진짜 동등).
@@ -155,13 +156,12 @@ class MessageActor(nn.Module):
             self.msg_out.weight.zero_()
             self.msg_out.bias.zero_()
 
-    def forward(self, x, goal, self_state, arpa):
+    def forward(self, x, goal, self_state):
         """
         Args:
             x: [batch, n_agent, frames * STATE_SIZE]
             goal: [batch, n_agent, 2]
             self_state: [batch, n_agent, 4]
-            arpa: [batch, n_agent, 21]
         Returns:
             msg: [batch, n_agent, msg_dim]
         """
@@ -169,10 +169,9 @@ class MessageActor(nn.Module):
 
         goal_flat = goal.reshape(batch_size * n_agent, -1)
         self_state_flat = self_state.reshape(batch_size * n_agent, -1)
-        arpa_flat = arpa.reshape(batch_size * n_agent, -1)
 
-        a = self.radar_encoder(x)   # [B*N, 256] (post-ReLU)
-        a = torch.cat((a, goal_flat, self_state_flat, arpa_flat), dim=-1)
+        a = self.radar_encoder(x)   # [B*N, RADAR_FEAT_DIM] (post-ReLU)
+        a = torch.cat((a, goal_flat, self_state_flat), dim=-1)
         a = F.relu(self.fc2(a))
 
         msg = torch.tanh(self.msg_out(a))  # bounded [-1, 1]
@@ -192,9 +191,9 @@ class ControlActor(nn.Module):
         self.use_moe = USE_MOE                         # COLREGs 상황별 정책 head 라우팅
         self.num_experts = NUM_COLREGS_SITUATIONS      # 5 (None/HeadOn/StandOn/GiveWay/Overtaking)
 
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, 256)  # 360 raw ray → 학습형 Conv1D 압축(2026-06-04)
-        # 256 + goal(2) + self_state(4) + arpa(21) + others_msg(msg_dim)
-        self.fc2 = nn.Linear(256 + 2 + 4 + ARPA_SIZE + msg_dim, 128)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)  # 360 raw ray → 학습형 Conv1D 압축
+        # RADAR_FEAT_DIM + goal(2) + self_state(4) + others_msg(msg_dim)
+        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4 + msg_dim, 128)
         # ★메시지 슬라이스 zero-init: comm-ON을 comm-OFF와 정확히 같은 출발선에(value-of-information≥0 보장).
         #   도움될 때만 가중치가 0에서 자람. comm-OFF 경로는 zeros 입력이라 불변(anti-rigging 100% 안전).
         with torch.no_grad():
@@ -233,18 +232,17 @@ class ControlActor(nn.Module):
                 self.head_logstd = nn.ParameterList(
                     [nn.Parameter(torch.full((1, action_size), -0.5)) for _ in range(self.num_experts)])
 
-    def _backbone(self, x, goal, self_state, arpa, others_msg):
+    def _backbone(self, x, goal, self_state, others_msg):
         """공유 backbone: obs+통신 → z(128D). USE_MOE 무관 공통(인지·통신 융합)."""
         batch_size, n_agent, _ = x.shape
         goal_flat = goal.reshape(batch_size * n_agent, -1)
         self_state_flat = self_state.reshape(batch_size * n_agent, -1)
-        arpa_flat = arpa.reshape(batch_size * n_agent, -1)
         # ★게이트 적용: 도움될 때만 메시지가 흐름. rollout(forward)·update(get_logprob_entropy) 모두
         #   이 backbone을 거치므로 게이트가 양쪽에 동일 적용 → PPO ratio 정합성 구조적 보장.
         others_msg_flat = (others_msg * torch.sigmoid(self.msg_gate)).reshape(batch_size * n_agent, -1)
 
-        a = self.radar_encoder(x)   # [B*N, 256] (post-ReLU)
-        a = torch.cat((a, goal_flat, self_state_flat, arpa_flat, others_msg_flat), dim=-1)
+        a = self.radar_encoder(x)   # [B*N, RADAR_FEAT_DIM] (post-ReLU)
+        a = torch.cat((a, goal_flat, self_state_flat, others_msg_flat), dim=-1)
         z = torch.tanh(self.fc2(a))   # [B*N, 128] 공유 embedding
         return z, batch_size, n_agent
 
@@ -270,12 +268,12 @@ class ControlActor(nn.Module):
                 logstd[mask] = self.head_logstd[k].expand(int(mask.sum()), -1)
         return mean, logstd
 
-    def forward(self, x, goal, self_state, arpa, others_msg, situation=None):
+    def forward(self, x, goal, self_state, others_msg, situation=None):
         """
         Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act]
         situation: [b,n] or [b,n,1] (COLREGs 0~4). USE_MOE=1일 때 head 라우팅. None/USE_MOE=0이면 단일 head.
         """
-        z, batch_size, n_agent = self._backbone(x, goal, self_state, arpa, others_msg)
+        z, batch_size, n_agent = self._backbone(x, goal, self_state, others_msg)
         sit_flat = situation.reshape(-1) if situation is not None else None
         action_mean, action_logstd = self._head(z, sit_flat)
 
@@ -296,10 +294,10 @@ class ControlActor(nn.Module):
         action_mean = action_mean.view(batch_size, n_agent, -1)
         return action, logprob, action_mean
 
-    def get_logprob_entropy(self, x, goal, self_state, arpa, others_msg, action, situation=None):
+    def get_logprob_entropy(self, x, goal, self_state, others_msg, action, situation=None):
         """PPO 업데이트용: 주어진 action의 log_prob과 entropy 계산.
         ★situation은 rollout에서 저장된 값 → forward와 *동일* head 라우팅 → old_logprob 정합(PPO ratio 유효)."""
-        z, batch_size, n_agent = self._backbone(x, goal, self_state, arpa, others_msg)
+        z, batch_size, n_agent = self._backbone(x, goal, self_state, others_msg)
         sit_flat = situation.reshape(-1) if situation is not None else None
         action_mean, action_logstd = self._head(z, sit_flat)
         action_flat = action.reshape(batch_size * n_agent, -1)
@@ -334,11 +332,11 @@ class Critic(nn.Module):
         self.use_moe = USE_MOE
         self.num_experts = NUM_COLREGS_SITUATIONS
 
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, 256)  # 360 raw ray → 학습형 Conv1D 압축(2026-06-04)
-        # 256 + goal(2) + self_state(4) + arpa(21) + [situation one-hot(num_experts) if MoE] + others_msg(msg_dim)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)  # 360 raw ray → 학습형 Conv1D 압축
+        # RADAR_FEAT_DIM + goal(2) + self_state(4) + [situation one-hot(num_experts) if MoE] + others_msg(msg_dim)
         # ⚠️ situation one-hot은 *메시지 앞*에 삽입 → 메시지가 항상 cat 마지막 → zero-init [:, -msg_dim:] 불변.
         _extra = self.num_experts if self.use_moe else 0
-        self.fc2 = nn.Linear(256 + 2 + 4 + ARPA_SIZE + _extra + msg_dim, 128)
+        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4 + _extra + msg_dim, 128)
         # ★메시지 슬라이스 zero-init (ControlActor와 동일 이유): critic이 노이즈 메시지에 조건화되는 것 방지.
         with torch.no_grad():
             self.fc2.weight[:, -msg_dim:].zero_()
@@ -346,14 +344,13 @@ class Critic(nn.Module):
         self.msg_gate = nn.Parameter(torch.tensor(-3.0))
         self.value_out = nn.Linear(128, 1)
 
-    def forward(self, x, goal, self_state, arpa, others_msg, situation=None):
+    def forward(self, x, goal, self_state, others_msg, situation=None):
         batch_size, n_agent, _ = x.shape
         goal_flat = goal.reshape(batch_size * n_agent, -1)
         self_state_flat = self_state.reshape(batch_size * n_agent, -1)
-        arpa_flat = arpa.reshape(batch_size * n_agent, -1)
         others_msg_flat = (others_msg * torch.sigmoid(self.msg_gate)).reshape(batch_size * n_agent, -1)
 
-        v = self.radar_encoder(x)   # [B*N, 256] (post-ReLU)
+        v = self.radar_encoder(x)   # [B*N, RADAR_FEAT_DIM] (post-ReLU)
         if self.use_moe:
             # 상황 one-hot 조건화(가치도 상황 인지). situation 없으면 zeros(robust). msg 앞에 삽입.
             if situation is not None:
@@ -361,9 +358,9 @@ class Critic(nn.Module):
                 sit_onehot = F.one_hot(sit, self.num_experts).float()
             else:
                 sit_onehot = v.new_zeros(batch_size * n_agent, self.num_experts)
-            v = torch.cat((v, goal_flat, self_state_flat, arpa_flat, sit_onehot, others_msg_flat), dim=-1)
+            v = torch.cat((v, goal_flat, self_state_flat, sit_onehot, others_msg_flat), dim=-1)
         else:
-            v = torch.cat((v, goal_flat, self_state_flat, arpa_flat, others_msg_flat), dim=-1)
+            v = torch.cat((v, goal_flat, self_state_flat, others_msg_flat), dim=-1)
         v = F.relu(self.fc2(v))
         v = self.value_out(v)
         return v.view(batch_size, n_agent, 1)
@@ -375,7 +372,7 @@ class CNNPolicy(nn.Module):
 
     흐름:
     1. 모든 에이전트의 obs → MessageActor → 각자의 msg_dim 메시지
-    2. 통신 파트너(범위 내 nearest-K) 메시지 합 = others_msg
+    2. 통신 파트너(범위 내 nearest-K) 메시지 집계(sum/mean/scale/attention, VESSEL_AGG_MODE·VESSEL_USE_ATTENTION·VESSEL_POS_GROUND) = others_msg
     3. 자기 obs + others_msg → ControlActor → 행동
     4. Critic → 가치 추정
     """
@@ -400,10 +397,10 @@ class CNNPolicy(nn.Module):
         )
 
         # ★ 위치 grounding + attention 집계 (sum의 상위호환; VESSEL_USE_ATTENTION=1일 때만 사용).
-        #   query=receiver[self,goal,arpa], key/value=[relpos⊕msg] → softmax 가중선택.
+        #   query=receiver[self,goal], key/value=[relpos⊕msg] → softmax 가중선택.
         #   출력차원 msg_dim → 게이트/fc2 불변. v_proj zero-init → context=0 at init(H1a).
         self.use_attention = USE_ATTENTION
-        _query_in = SELF_STATE_SIZE + GOAL_SIZE + ARPA_SIZE   # 4+2+21 = 27
+        _query_in = SELF_STATE_SIZE + GOAL_SIZE   # 4+2 = 6
         self.attn = GroundedAttention(msg_dim, self.relpos_dim, _query_in, ATTN_DIM)
 
         # ★ intent self-supervised 디코더 (Phase 2): 메시지가 sender 미래의도를 담게 강제.
@@ -413,7 +410,7 @@ class CNNPolicy(nn.Module):
         self.intent_decoder = IntentDecoder(msg_dim, INTENT_K)
 
     def _get_others_msg(self, msg, comm_partners=None, agent_id_list=None, comm_relpos=None,
-                        self_state=None, goal=None, arpa=None):
+                        self_state=None, goal=None):
         """메시지 교환 로직 (rollout, annealing 없음 - 즉시 100%)
 
         env override:
@@ -423,7 +420,7 @@ class CNNPolicy(nn.Module):
           VESSEL_NEAREST_SCALE: float, default 0 (>0이면 'scale' 자동 활성)
           VESSEL_MSG_GAIN: float, default 1.0 (최종 결과 gating 계수)
         ⚠️ evaluate_actions의 update-time 집계와 동일해야 PPO ratio 유효 (attention/pos_ground/sum 각각 미러).
-        self_state/goal/arpa는 attention query용(receiver 상황). rollout forward가 전달.
+        self_state/goal은 attention query용(receiver 상황). rollout forward가 전달.
         """
         import os as _os
         agg_mode = _os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
@@ -454,10 +451,10 @@ class CNNPolicy(nn.Module):
                     continue
                 if (self.use_attention and comm_relpos is not None and agent_id in comm_relpos
                         and self_state is not None):
-                    # ★ 위치 grounding + attention: query=receiver[self,goal,arpa], kv=[relpos⊕msg]
+                    # ★ 위치 grounding + attention: query=receiver[self,goal], kv=[relpos⊕msg]
                     rp = torch.as_tensor(comm_relpos[agent_id][kept_pos], dtype=torch.float32, device=msg.device)  # [K,3]
                     msg_p = msg[0, partner_indices, :]                                                       # [K,6]
-                    q_in = torch.cat([self_state[0, i], goal[0, i], arpa[0, i]], dim=-1)                     # [27]
+                    q_in = torch.cat([self_state[0, i], goal[0, i]], dim=-1)                                 # [6]
                     s = self.attn.aggregate_single(q_in, rp, msg_p)                                          # [6]
                 elif self.pos_ground and comm_relpos is not None and agent_id in comm_relpos:
                     # 위치 grounding: [상대방위·거리 + 메시지] → encoder → mean
@@ -482,7 +479,7 @@ class CNNPolicy(nn.Module):
             others_msg = others_msg * msg_gain
         return others_msg
 
-    def forward(self, x, goal, self_state, arpa,
+    def forward(self, x, goal, self_state,
                 return_msg=False, comm_partners=None, agent_id_list=None, comm_relpos=None,
                 situation=None):
         """
@@ -493,29 +490,29 @@ class CNNPolicy(nn.Module):
             x = x.unsqueeze(1)
             goal = goal.unsqueeze(1)
             self_state = self_state.unsqueeze(1)
-            arpa = arpa.unsqueeze(1)
 
         # 1. 메시지 생성
-        msg = self.msg_actor(x, goal, self_state, arpa)
-        # 2. 메시지 교환 (grounding 시 comm_relpos, attention 시 self_state/goal/arpa를 query로)
+        msg = self.msg_actor(x, goal, self_state)
+        # 2. 메시지 교환 (grounding 시 comm_relpos, attention 시 self_state/goal을 query로)
         others_msg = self._get_others_msg(msg, comm_partners, agent_id_list, comm_relpos,
-                                          self_state=self_state, goal=goal, arpa=arpa)
+                                          self_state=self_state, goal=goal)
         # 3. 행동 (situation으로 상황별 head 라우팅)
-        action, logprob, mean = self.ctr_actor(x, goal, self_state, arpa, others_msg, situation)
+        action, logprob, mean = self.ctr_actor(x, goal, self_state, others_msg, situation)
         # 4. 가치 (situation one-hot 조건화)
-        value = self.critic(x, goal, self_state, arpa, others_msg, situation)
+        value = self.critic(x, goal, self_state, others_msg, situation)
 
         if return_msg:
             return value, action, logprob, mean, msg, others_msg
         return value, action, logprob, mean
 
-    def evaluate_actions(self, x, goal, self_state, arpa,
-                         partner_x, partner_goal, partner_self, partner_arpa, partner_mask,
+    def evaluate_actions(self, x, goal, self_state,
+                         partner_x, partner_goal, partner_self, partner_mask,
                          partner_relpos, action, own_future=None, own_future_mask=None, situation=None):
         """
         PPO 업데이트용. ★통신 sender→receiver gradient 수정★
         통신 ON이면 파트너 obs로 MessageActor를 재실행(미분가능)하여 others_msg를 재구성.
-        masked-sum 집계 = rollout _get_others_msg의 'sum'과 동일 → PPO ratio(old_logprob) 유효.
+        집계(sum/mean/scale/attention/pos_ground)는 rollout _get_others_msg와 동일 함수형으로
+        미러링 → PPO ratio(old_logprob) 유효. (아래 분기는 _get_others_msg와 1:1 대응)
         MessageActor는 공유 가중치 → 파트너 메시지의 gradient가 sender 학습으로 흐름.
 
         ★Phase2 intent: own_future(=내 미래 K-step 변위/heading, self-supervised 라벨)가 주어지고
@@ -529,7 +526,6 @@ class CNNPolicy(nn.Module):
             x = x.unsqueeze(1)
             goal = goal.unsqueeze(1)
             self_state = self_state.unsqueeze(1)
-            arpa = arpa.unsqueeze(1)
             action = action.unsqueeze(1)
 
         if USE_COMMUNICATION:
@@ -542,11 +538,11 @@ class CNNPolicy(nn.Module):
             if nearest_scale > 0:
                 agg_mode = 'scale'
 
-            msg_part = self.msg_actor(partner_x, partner_goal, partner_self, partner_arpa)  # [N,K,6]
+            msg_part = self.msg_actor(partner_x, partner_goal, partner_self)  # [N,K,6]
             Kc = partner_mask.sum(dim=1, keepdim=True).clamp(min=1.0)                       # [N,1,1] 실제 파트너 수
             if self.use_attention and partner_relpos is not None:
                 # ★ 위치 grounding + attention (rollout aggregate_single과 동일 함수형 → PPO ratio 유효)
-                q_in = torch.cat([self_state, goal, arpa], dim=-1)                            # [N,1,27]
+                q_in = torch.cat([self_state, goal], dim=-1)                                  # [N,1,6]
                 others_msg = self.attn.aggregate_batch(q_in, partner_relpos, msg_part, partner_mask)  # [N,1,6]
             elif self.pos_ground and partner_relpos is not None:
                 # 위치 grounding: [상대방위·거리 + 메시지] → encoder → masked mean
@@ -570,7 +566,7 @@ class CNNPolicy(nn.Module):
         # ★ intent self-supervised 손실: 내 obs로 own msg 재생성 → 미래의도 예측 → MSE(라벨=실제 미래변위).
         #   USE_COMMUNICATION·INTENT_COEF>0·own_future 제공 시에만. 정책/가치 경로와 독립(별도 head).
         if USE_COMMUNICATION and self.intent_coef > 0.0 and own_future is not None:
-            own_msg = self.msg_actor(x, goal, self_state, arpa)        # [N,1,msg_dim]
+            own_msg = self.msg_actor(x, goal, self_state)              # [N,1,msg_dim]
             pred = self.intent_decoder(own_msg)                        # [N,1,K*3]
             if own_future_mask is None:
                 own_future_mask = torch.ones_like(own_future)
@@ -580,7 +576,7 @@ class CNNPolicy(nn.Module):
             intent_loss = torch.zeros((), device=x.device)
 
         logprob, entropy, _ = self.ctr_actor.get_logprob_entropy(
-            x, goal, self_state, arpa, others_msg, action, situation
+            x, goal, self_state, others_msg, action, situation
         )
-        value = self.critic(x, goal, self_state, arpa, others_msg, situation)
+        value = self.critic(x, goal, self_state, others_msg, situation)
         return value, logprob, entropy, msg_reg, intent_loss

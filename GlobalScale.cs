@@ -45,10 +45,9 @@ public static class GlobalScale
     public const float BASE_DECEL = 0.2f;
     public const float BASE_BRAKE = 1f;
 
-    public const float BASE_RADAR_RANGE = 280f;    // 400→280 (×0.3=84m, 배 간격~87m 바로 아래). 부분관측 생성→통신이 먼 배 정보 메우게. dist/range 정규화 자동→from-scratch
+    public const float BASE_RADAR_RANGE = 280f;    // ×VESSEL_SCALE 0.2=56m. 부분관측 생성→통신이 먼 배 정보 메우게. dist/range 정규화 자동→from-scratch
     public const float BASE_GOAL_REACHED = 15f;
     public const float BASE_WAYPOINT_REACHED = 20f;
-    public const float BASE_PROXIMITY_THRESHOLD = 50f;
     public const float BASE_RAY_HEIGHT = 1f;
 
     // 맵/spawn 관련 (MAP_SCALE 대상)
@@ -73,15 +72,15 @@ public static class GlobalScale
     public const float BASE_AUTOPILOT_COMM = 100f;
     public const float BASE_AUTOPILOT_GOAL = 10f;
 
-    public const float BASE_COMM_RANGE = 2100f;           // 통신 파트너/시각화 범위 (×0.1=210m, 이전 140m에서 1.5배). Python COMM_RANGE와 매칭. 아래 COLREGS_DETECTION(보상)과 분리
-    public const float BASE_COLREGS_DETECTION = BASE_RADAR_RANGE;  // 레이더 범위와 동일 (×0.1=40m). 윈도우 ~31s → 시간상수(21s) 재산정 검토 필요
-    public const float BASE_RULE_17B_DIST = 90f;          // 30→90 (×0.1=9m, COLREGS_DETECTION 확대 비율)
-    public const float BASE_RULE_17C_DIST = 45f;          // 15→45 (×0.1=4.5m)
-    public const float BASE_SAFE_PASSING = 60f;           // 20→60 (×0.1=6m)
-    public const float BASE_CRITICAL_CPA = 30f;           // 10→30 (×0.1=3m)
+    public const float BASE_COMM_RANGE = 2100f;           // 통신 파트너/시각화 범위 (×VESSEL_SCALE 0.2=420m). Python COMM_RANGE와 매칭. 아래 COLREGS_DETECTION(보상)과 분리
+    public const float BASE_COLREGS_DETECTION = BASE_RADAR_RANGE;  // 레이더 범위와 동일 (×VESSEL_SCALE 0.2=56m). 윈도우 ~31s → 시간상수(21s) 재산정 검토 필요
+    public const float BASE_RULE_17B_DIST = 90f;          // 30→90 (×VESSEL_SCALE 0.2=18m, COLREGS_DETECTION 확대 비율)
+    public const float BASE_RULE_17C_DIST = 45f;          // 15→45 (×VESSEL_SCALE 0.2=9m)
+    public const float BASE_SAFE_PASSING = 60f;           // 20→60 (×VESSEL_SCALE 0.2=12m)
+    public const float BASE_CRITICAL_CPA = 30f;           // 10→30 (×VESSEL_SCALE 0.2=6m)
     public const float BASE_EFFECTIVE_SPEED_MIN = 3.5f;
     public const float BASE_MIN_SPEED_REDUCTION = 0.5f;
-    public const float BASE_DCPA_RISK = 120f;             // 50→120 (×0.1=12m, COLREGS의 ~43%)
+    public const float BASE_DCPA_RISK = 120f;             // 50→120 (×VESSEL_SCALE 0.2=24m, COLREGS의 ~43%)
 
     // COLREGs 시간상수 (초). 거리·속도가 둘 다 VESSEL_SCALE → 상쇄되어 스케일 불변.
     // COLREGS_DETECTION 40m / closing speed ~1.3m/s ≈ 31s 감지윈도우 기준 재산정 (28m→40m, ×1.43)
@@ -104,10 +103,8 @@ public static class GlobalScale
     // 배 센서/물리 (VESSEL_SCALE)
     public const float RADAR_RANGE = BASE_RADAR_RANGE * VESSEL_SCALE;
     public const int RADAR_RAYS    = 360;  // ★radar raw ray 수 = obs로 송신하는 radar 차원 (2026-06-04: min-pool 제거, Python RadarEncoder가 Conv1D 압축). config.py STATE_SIZE와 일치
-    public const int RADAR_SECTORS = 30;   // (legacy) GetSectorMinDistances용 — obs엔 더는 안 쓰임. 360 ray→30섹터 min-pool
     public const float GOAL_REACHED = BASE_GOAL_REACHED * VESSEL_SCALE;
     public const float WAYPOINT_REACHED = BASE_WAYPOINT_REACHED * VESSEL_SCALE;
-    public const float PROXIMITY_THRESHOLD = BASE_PROXIMITY_THRESHOLD * VESSEL_SCALE;
     public const float RAY_HEIGHT = BASE_RAY_HEIGHT * VESSEL_SCALE;
 
     // 배들 간 거리 (VESSEL_SCALE)
@@ -136,7 +133,7 @@ public static class GlobalScale
     public const float SAFE_PASSING = BASE_SAFE_PASSING * VESSEL_SCALE;
     public const float CRITICAL_CPA = BASE_CRITICAL_CPA * VESSEL_SCALE;
     // near-miss 진단 임계(로그 전용): 이 거리 미만으로 타선 접근한 결정 수를 셈 → 충돌 직전 위험노출 측정.
-    public const float NEAR_MISS_DIST = SAFE_PASSING;   // = 6m (BASE 60×0.1). ★보상 절대 비연결(제약3)
+    public const float NEAR_MISS_DIST = SAFE_PASSING;   // = 12m (BASE 60×VESSEL_SCALE 0.2). ★보상 절대 비연결(제약3)
     public const float EFFECTIVE_SPEED_MIN = BASE_EFFECTIVE_SPEED_MIN * VESSEL_SCALE;
     public const float MIN_SPEED_REDUCTION = BASE_MIN_SPEED_REDUCTION * VESSEL_SCALE;
     public const float DCPA_RISK = BASE_DCPA_RISK * VESSEL_SCALE;
@@ -152,24 +149,6 @@ public static class GlobalScale
     // full hard-over(30°→-30°=60°) 소요 = 60/RUDDER_RATE초. decision(0.4s)당 RUDDER_RATE×0.4°만 이동.
     // 권장 12 (허용 8~18). VESSEL_RUDDER_RATE env로 재빌드 없이 override(VesselAgent.Initialize 주입).
     public const float RUDDER_RATE = 12.0f;
-
-    // ===== ARPA (label-blind radar 추적) =====
-    // 레이더 거리상(raw hit point)만으로 접점을 시간 추적 → 상대속도/TCPA/DCPA 추정.
-    // vessel/obstacle 구분 불가(라벨 비노출). obs로 들어가는 충돌 기하의 유일한 출처.
-    public const int   ARPA_K             = 3;    // 관측에 넣는 top-K 위험 접점 수
-    public const int   ARPA_FEATURES_PER  = 7;    // 접점당 feature 수 (sin,cos,range,closing,dcpa,tcpa,valid)
-    public const int   ARPA_OBS_SIZE      = ARPA_K * ARPA_FEATURES_PER; // 21
-    public const float ARPA_RANGE_GAP_FRAC = 0.15f; // 인접 ray 거리차가 radarRange의 이 비율 이내면 같은 접점
-    public const int   ARPA_MIN_RAYS      = 2;    // 접점 최소 ray 수 (노이즈 단일 ray 제거)
-    public const float ARPA_GATE_FRAC     = 0.06f;// association gate의 radarRange 비례 항
-    public const int   ARPA_MAX_MISS      = 3;    // 연속 miss 이 횟수 초과 시 track 폐기
-    public const int   ARPA_MAX_TRACKS    = 12;   // 동시 추적 track 상한 (근거리 우선)
-    public const float ARPA_VEL_EMA       = 0.4f; // 추정 속도 EMA 계수 (양자화 노이즈 완화)
-    public const float ARPA_CPA_EMA       = 0.4f; // tcpa/dcpa EMA 계수
-    public const int   ARPA_MIN_AGE       = 2;    // validFlag=1 되는 최소 track age (속도 수렴 후)
-    public const float ARPA_SPEED_NORM    = 4f * MAX_SPEED; // closing rate 정규화 분모 (최대 closing 1.8+1.8 커버)
-    public const float ARPA_TCPA_CAP      = TCPA_RISK_DENOM; // tcpa 정규화 cap
-    public const float ARPA_DCPA_DENOM    = DCPA_RISK;       // dcpa risk 분모
 
     // Rigidbody mass 스케일 (volume, s³)
     public const float MASS_SCALE = VESSEL_SCALE * VESSEL_SCALE * VESSEL_SCALE;

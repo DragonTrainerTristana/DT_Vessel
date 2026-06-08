@@ -31,7 +31,6 @@ public class VesselAutoPilot : MonoBehaviour
     private List<Vector3> waypoints;
     private int currentWaypointIndex = 0;
     private bool useWaypoints = false;
-    private Vector3 finalGoalPosition;
 
     [Header("References")]
     public VesselDynamics dynamics;
@@ -47,13 +46,6 @@ public class VesselAutoPilot : MonoBehaviour
     private Rigidbody rb;
     private bool initialized = false;
 
-    // Trajectory
-    private List<Vector3> trajectoryPoints = new List<Vector3>();
-    private float trajectoryInterval = 0.5f;
-    private float lastTrajectoryTime;
-
-    public List<Vector3> TrajectoryPoints => trajectoryPoints;
-
     void Awake()
     {
         // Prefab Inspector 값 무시하고 GlobalScale로 강제 덮어쓰기
@@ -66,7 +58,6 @@ public class VesselAutoPilot : MonoBehaviour
     void Start()
     {
         EnsureInitialized();
-        lastTrajectoryTime = Time.time;
     }
 
     /// <summary>
@@ -133,7 +124,6 @@ public class VesselAutoPilot : MonoBehaviour
         waypoints = new List<Vector3>(newWaypoints);
         currentWaypointIndex = 0;
         useWaypoints = true;
-        finalGoalPosition = waypoints[waypoints.Count - 1];
 
         goalPosition = waypoints[0];
         hasGoal = true;
@@ -152,8 +142,6 @@ public class VesselAutoPilot : MonoBehaviour
     void FixedUpdate()
     {
         if (!hasGoal || hasArrived || hasCollided) return;
-
-        RecordTrajectory();
 
         // 현재 waypoint / final goal 도달 판정
         float distanceToGoal = Vector3.Distance(transform.position, goalPosition);
@@ -183,15 +171,6 @@ public class VesselAutoPilot : MonoBehaviour
         NavigateToGoal();
 
         dynamics.UpdateDynamics(Time.fixedDeltaTime);
-    }
-
-    private void RecordTrajectory()
-    {
-        if (Time.time - lastTrajectoryTime >= trajectoryInterval)
-        {
-            trajectoryPoints.Add(transform.position);
-            lastTrajectoryTime = Time.time;
-        }
     }
 
     private void NavigateToGoal()
