@@ -205,8 +205,8 @@ public class VesselAgent : Agent
         if (!string.IsNullOrEmpty(envFFC) && float.TryParse(envFFC, out float parsedFFC) && parsedFFC >= 0f)
             farFieldCoef = parsedFFC;
         string envRR = System.Environment.GetEnvironmentVariable("VESSEL_RISK_RANGE");
-        if (!string.IsNullOrEmpty(envRR) && float.TryParse(envRR, out float parsedRR) && parsedRR > 0f)
-            riskRange = parsedRR;
+        if (!string.IsNullOrEmpty(envRR) && float.TryParse(envRR, out float parsedRiskR) && parsedRiskR > 0f)
+            riskRange = parsedRiskR;
 
         // VESSEL_PROX_RAMP_COEF / _DIST env: terminal-proximity ramp (terminal-magnitude fix).
         //   기본 0=off(안전). <0이면 발화. 시험권장 -2.5 (p_eq ~6%→~2%, EV math 산정). dist 기본=DCPA_RISK(24m).
