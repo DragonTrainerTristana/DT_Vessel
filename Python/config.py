@@ -2,12 +2,12 @@
 Vessel Navigation ML-Agent Configuration
 하이퍼파라미터 및 환경 설정
 
-병렬 학습 시 환경변수 override 가능:
+병렬 학습 시 환경변수 override 가능 (부분 목록 — 통신/attention/MoE/intent/보상 레버 전체는 CLAUDE.md env 토글 표 참조):
     VESSEL_MSG_DIM        MSG_DIM (default 6)
     VESSEL_COMM_FOLDER    COMM_FOLDER (default COMM_YES_PHASE3_NEW)
     VESSEL_BASE_PORT      BASE_PORT (default 5004)
     VESSEL_RUN_STEP       RUN_STEP (default 30000000)
-    VESSEL_START_STEP     START_STEP (default 3220000)
+    VESSEL_START_STEP     START_STEP (default 0, from-scratch)
     VESSEL_MODEL_PATH     MODEL_PATH (절대 경로)
     VESSEL_ENV_PATH       Unity build exe 경로 (default 0424)
     VESSEL_NUM_ENVS       NUM_ENVS (default 2, 에디터 모드면 무시되고 1)
@@ -43,24 +43,27 @@ def _env_str(key, default):
 # ============================================================================
 RADAR_RAYS = 360                # ★Radar raw ray 수 (2026-06-04: C# min-pool 제거, 360 ray 그대로 송신 → Python Conv1D 학습압축)
 STATE_SIZE = RADAR_RAYS         # Radar state 크기 = raw ray 360 (압축은 networks.RadarEncoder가 담당). C# GlobalScale.RADAR_RAYS와 반드시 일치
+# ★RadarEncoder 신경망 압축 출력 차원 (2026-06-08: 360 ray → 30D 학습형 압축).
+#   옛 min-pool은 360→30섹터 *고정·데이터손실*. 신경망은 30D로 압축하되 "무엇을 남길지" 학습 → 손실 최소화.
+#   기본 30(옛 섹터수와 동일 차원). VESSEL_RADAR_FEAT_DIM로 override(예: 256 = 차원 비교 실험). 변경 시 from-scratch.
+RADAR_FEAT_DIM = _env_int('VESSEL_RADAR_FEAT_DIM', 30)
 GOAL_SIZE = 2                   # Goal (distance, angle)
 SELF_STATE_SIZE = 4             # Self state (speed, yaw_rate, heading, rudder) - 네트워크 입력용
-ARPA_SIZE = 21                  # ARPA top-3 접점 × 7 feature (label-blind 충돌기하). COLREGs one-hot 대체. C# GlobalScale.ARPA_OBS_SIZE와 일치
 COLREGS_SIZE = 0               # 정책 입력에서 제거 (vessel-label leak). 보상 shaping(특권정보)으로만 사용, obs/net 경로 제외
 MSG_DIM = _env_int('VESSEL_MSG_DIM', 6)   # 메시지 차원 (env override 가능)
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
 FRAMES = 3                      # Frame stacking 개수 (radar에만 적용 → RadarEncoder 입력 채널 = FRAMES)
 
-# Unity에서 보내는 관측값 구조 (radar 360 raw ray 송신 → Python RadarEncoder가 압축, ARPA 21D, COLREGs 제거):
+# Unity에서 보내는 관측값 구조 (radar 360 raw ray 송신 → Python RadarEncoder가 압축; ARPA 제거 2026-06-05):
 # [0:360]    Radar (360 raw ray min-distance, 1°)  ← 유일하게 frame-stack 대상(×3)
 # [360:362]  Goal (distance, angle)
 # [362:366]  Self state (speed, yaw_rate, heading, rudder)
-# [366:387]  ARPA (top-3 접점 × 7: sin,cos,range,closing,dcpa,tcpa,valid) ← single-frame
-# [387:389]  Position (x, z) - 통신 범위 계산용, 학습 제외
-# [389:390]  Situation (COLREGs 상황 0~4) - MoE 라우터 전용, 학습 feature 제외 (position처럼)
+# [366:368]  Position (x, z) - 통신 범위 계산용, 학습 제외
+# [368:369]  Situation (COLREGs 상황 0~4) - MoE 라우터 전용, 학습 feature 제외 (position처럼)
+# ★ARPA(구 [366:387]) 제거: 충돌기하는 360 raw ray + frame-stack(RadarEncoder Conv1D가 bearing-rate 학습)이 대체
 POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학습 제외
 SITUATION_SIZE = 1              # COLREGs 상황 라우팅 인덱스 (0~4). MoE 라우터 전용 — 네트워크 feature 입력 제외
-OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + ARPA_SIZE + POSITION_SIZE + SITUATION_SIZE  # 390D
+OBSERVATION_SIZE = STATE_SIZE + GOAL_SIZE + SELF_STATE_SIZE + POSITION_SIZE + SITUATION_SIZE  # 369D
 
 # ============================================================================
 # Scale (C#의 GlobalScale과 반드시 일치해야 함)
@@ -77,9 +80,7 @@ def _env_float(key, default):
 
 COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 210m (이전 140m에서 1.5배; C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 28m)과는 분리)
 MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N (=1: nearest-1, =4: sum-of-4)
-MSG_ANNEAL_STEPS = 0            # 죽은 코드 (annealing 폐기, 통신 즉시 100%). 0으로 무력화
 MSG_LR_SCALE = _env_float('VESSEL_MSG_LR', 1.0)   # 3.0→1.0 (zero-init으로 0에서 자라는 구조: 빠른 LR은 노이즈만↑). env override
-COLREGS_LOSS_COEF = 0.0         # COLREGs classifier 제거 (label leak). 0으로 무력화
 # 메시지 L2 정규화: 통신이 쓸모없으면 메시지를 0으로 우아하게 수렴(불안정 붕괴 방지).
 # 통신이 도움되면 페널티 무릅쓰고 nonzero 유지 → "comm 유용성 자가검증". env로 튜닝.
 MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.001)
@@ -92,7 +93,7 @@ MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.02)
 # ============================================================================
 # 위치 grounding + Attention 집계 (sum/mean 대체)
 # ============================================================================
-# receiver의 [self_state ⊕ goal ⊕ arpa]로 query, 각 partner의 [상대위치(sin,cos,거리) ⊕ msg]로
+# receiver의 [self_state ⊕ goal]로 query, 각 partner의 [상대위치(sin,cos,거리) ⊕ msg]로
 # key/value → softmax 가중선택(sum의 무차별 합 대신 "누가·어디서·지금 얼마나 중요한지" 반영).
 # 출력차원 dv=MSG_DIM이라 ControlActor/Critic의 게이트·fc2 메시지슬롯 *불변*(인터페이스 동일, 연산만 추가).
 # v_proj zero-init → context=0 at init → comm-ON이 comm-OFF와 정확히 같은 출발선(H1a value-of-info≥0).
@@ -105,7 +106,7 @@ ATTN_DIM = _env_int('VESSEL_ATTN_DIM', 32)   # attention query/key 내부차원 
 # Intent self-supervised (메시지 = sender의 미래의도; Phase 2)
 # ============================================================================
 # 메시지 latent이 sender의 *미래 K-step 궤적/heading*을 디코드가능하게 인코딩하도록 self-supervised
-# 보조손실을 건다 → ARPA(등속가정)가 구조적으로 못 주는 *미래 maneuver* 정보를 담아 시간축에서 비잉여.
+# 보조손실을 건다 → radar+frame-stack(관측된 운동학)이 구조적으로 못 주는 *미래 maneuver* 정보를 담아 시간축에서 비잉여.
 # ★self-prediction(자기 미래를 자기 메시지로 예측): receiver step과 정렬 → 파트너 정렬 silent-failure 0.
 # ★라벨 = trajectory에서 추출한 *실제 미래변위*(self-supervised), reward·advantage와 완전분리 = anti-rigging.
 # ★정책/가치 경로 무오염(별도 IntentDecoder head). receiver는 여전히 게이트로 메시지 무시 가능 = H1a 보존.
@@ -120,7 +121,7 @@ INTENT_POS_SCALE = _env_float('VESSEL_INTENT_POS_SCALE', 56.0)  # 변위 정규�
 # ============================================================================
 # Unity가 판정한 COLREGs 상황(cachedDangerSituation, obs[389]=마지막 슬롯, 0~4)으로 정책 head를 hard-route.
 #   0=None(조우없음/항해) 1=HeadOn 2=CrossingStandOn 3=CrossingGiveWay 4=Overtaking (COLREGsHandler enum 일치).
-# 공유 backbone(radar/ARPA 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
+# 공유 backbone(radar 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
 #   단일 정책이 4상황의 상충하는 회피규칙(head-on→우현 / stand-on→유지 / give-way→우현+감속 / overtake→keep clear)을
 #   평균내며 간섭하는 걸 방지 → 상황별 전문화.
 # ★default OFF = 단일 head(기존 단일망과 *비트동일*, 기존 체크포인트 strict 로드 가능) = 공정 baseline.
@@ -169,7 +170,7 @@ MAX_GRAD_NORM = 0.5             # Gradient clipping norm
 # ============================================================================
 RUN_STEP = _env_int('VESSEL_RUN_STEP', 30000000) if TRAIN_MODE else 0   # env override 가능
 MAX_STEPS = RUN_STEP            # main.py가 start_step + MAX_STEPS 까지 학습
-UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격 (N_STEP)
+UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격
 
 # ============================================================================
 # Unity Environment
@@ -210,14 +211,7 @@ if not os.path.exists(SAVE_PATH):
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
-# ============================================================================
-# Aliases (backward compatibility)
-# ============================================================================
-N_STEP = BATCH_SIZE
-VALUE_LOSS_COEF = CRITIC_LOSS_WEIGHT
-ENTROPY_COEF = ENTROPY_BONUS
-GRAD_CLIP_MAX_NORM = MAX_GRAD_NORM
-MSG_ACTION_SPACE = MSG_DIM  # backward compatibility
+VALUE_LOSS_COEF = CRITIC_LOSS_WEIGHT   # main.py PPO total-loss에서 사용 (CRITIC_LOSS_WEIGHT alias)
 
 def get_config_dict():
     """설정을 딕셔너리로 반환 (로깅용)"""
