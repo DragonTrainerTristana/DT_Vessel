@@ -423,4 +423,35 @@ public class COLREGsHandler
         return (Mathf.Clamp01(risk), situation);
     }
 
+    /// <summary>
+    /// Far-field 충돌코스 risk (nearRange~farRange 띠). 근거리 CalculateRiskWithSituation과 분리된
+    /// 가벼운 버전(상황 분류·가중치·AnalyzeSituation 없음). band 밖이거나 이탈(rawTCPA&lt;0)이면 0.
+    /// 거리로 *부드럽게* 정규화(1-dist/farRange) → 먼 배일수록 작은 risk. additive 조기회피 보상용.
+    /// </summary>
+    public static float CalculateFarFieldRisk(
+        Vector3 myPosition, Vector3 myForward, float mySpeed,
+        Vector3 otherPosition, Vector3 otherForward, float otherSpeed,
+        float nearRange, float farRange)
+    {
+        Vector3 toOther = otherPosition - myPosition;
+        float distance = toOther.magnitude;
+        // band (nearRange, farRange] 밖은 제외 (근거리는 별도 처리, farRange 밖은 무시)
+        if (distance <= nearRange || distance > farRange) return 0f;
+
+        Vector3 myVelocity = myForward.normalized * mySpeed;
+        Vector3 otherVelocity = otherForward.normalized * otherSpeed;
+
+        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+        if (rawTCPA < 0f) return 0f;   // 이탈/통과 → 위험 없음
+
+        float tcpa = Mathf.Max(0f, rawTCPA);
+        float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);
+
+        float distanceRisk = 1.0f - Mathf.Clamp01(distance / farRange);   // 부드러운 거리 정규화(먼 배=작음)
+        float tcpaRisk = 1.0f / (1.0f + tcpa / GlobalScale.TCPA_RISK_DENOM);
+        float dcpaRisk = 1.0f - Mathf.Clamp01(dcpa / GlobalScale.DCPA_RISK);
+
+        return Mathf.Clamp01(distanceRisk * 0.3f + tcpaRisk * 0.4f + dcpaRisk * 0.3f);
+    }
+
 }
