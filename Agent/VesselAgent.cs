@@ -138,6 +138,15 @@ public class VesselAgent : Agent
     //   comm ON/OFF 동일(risk=privileged ground-truth, 메시지 무관) = anti-rigging 안전.
     private bool  enableSpeedAvoidUnlock = false;   // VESSEL_SPEED_AVOID_UNLOCK=1
     private float speedUnlockRiskGate   = 0.3f;     // 언락 발화 risk 게이트(VESSEL_SPEED_UNLOCK_GATE). 실질충돌코스만
+    // ── ★ Far-field 조기회피 보상 (CTDE-lite, env, 기본 OFF=현재와 비트동일) ──
+    //   목적: 레이더 안 줄이고 통신을 가치있게. 보상이 56m(=레이더)만 보던 걸, 56m~riskRange 먼 배의
+    //   충돌코스 risk *합*이 줄어들 때(=조기회피) carrot로 보상. comm-ON은 옆 배가 전한 먼 위협에 미리
+    //   행동→far risk↓→보상; comm-OFF는 못 봐서 보너스만 적게(★벌점 X=baseline 안 무너짐, carrot).
+    //   "줄어듦만 보상"이라 정지/farming 무의미. LOS 가림 제외. comm ON/OFF 동일 coef = anti-rigging.
+    private float farFieldCoef = 0f;     // VESSEL_FARFIELD_COEF (기본 0=off). >0이면 carrot 발화
+    private float riskRange = 0f;        // VESSEL_RISK_RANGE (Initialize에서 COLREGS_DETECTION으로 기본=띠없음)
+    private float cachedFarRiskSum = 0f; // 이번 프레임 56m~riskRange 먼 배 risk 합(UpdateDangerCache가 채움)
+    private float prevFarRiskSum = -1f;  // 직전 프레임 far risk 합 (carrot용, 에피소드 -1 sentinel)
     // ── circling/near-miss 진단 instrumentation (★로그 전용, 보상 절대 비연결 — 제약3 spinning 탐지킬 금지) ──
     private Vector3 episodeSpawnPos;
     private Vector3 lastPathPos;
@@ -187,6 +196,17 @@ public class VesselAgent : Agent
             speedUnlockRiskGate = parsedSUG;
         // VESSEL_LOS_GATE env: 가림막 실험 시 1 (가려진 위협은 보상 제외 = anti-rigging).
         losGate = System.Environment.GetEnvironmentVariable("VESSEL_LOS_GATE") == "1";
+
+        // ★ VESSEL_FARFIELD_COEF / VESSEL_RISK_RANGE env: far-field 조기회피 carrot(CTDE-lite).
+        //   기본 coef 0 = off(현재와 비트동일). riskRange 기본 = COLREGS_DETECTION(56m) = 띠 없음 → far합 항상 0.
+        //   riskRange를 통신범위(420m 등)로 키우고 coef>0면 56m 밖 먼 배 조기회피가 보상됨(통신 가치 창출).
+        riskRange = GlobalScale.COLREGS_DETECTION;
+        string envFFC = System.Environment.GetEnvironmentVariable("VESSEL_FARFIELD_COEF");
+        if (!string.IsNullOrEmpty(envFFC) && float.TryParse(envFFC, out float parsedFFC) && parsedFFC >= 0f)
+            farFieldCoef = parsedFFC;
+        string envRR = System.Environment.GetEnvironmentVariable("VESSEL_RISK_RANGE");
+        if (!string.IsNullOrEmpty(envRR) && float.TryParse(envRR, out float parsedRR) && parsedRR > 0f)
+            riskRange = parsedRR;
 
         // VESSEL_PROX_RAMP_COEF / _DIST env: terminal-proximity ramp (terminal-magnitude fix).
         //   기본 0=off(안전). <0이면 발화. 시험권장 -2.5 (p_eq ~6%→~2%, EV math 산정). dist 기본=DCPA_RISK(24m).
@@ -365,6 +385,8 @@ public class VesselAgent : Agent
         cachedDangerousVessel = null;
         cachedDangerRisk = 0f;
         cachedDangerSituation = COLREGsHandler.CollisionSituation.None;
+        cachedFarRiskSum = 0f;
+        prevFarRiskSum = -1f;   // far-field carrot: 첫 프레임 스킵 sentinel (prevDcpa 패턴)
 
         // 메트릭/early-avoid 초기화 (이전 에피소드 잔존값 제거)
         prevDcpa = -1f;
@@ -465,6 +487,17 @@ public class VesselAgent : Agent
             float shapedRisk = Mathf.Pow(cachedDangerRisk, colcourseExp);
             AddReward(collisionCourseCoef * shapedRisk);
         }
+
+        // 0-3c. ★ Far-field 조기회피 carrot (CTDE-lite, 기본 off). 56m~riskRange 먼 배 risk *합*이
+        //   줄어들 때(=먼 위협을 미리 회피)만 보상 → comm-ON이 옆 배가 전한 먼 위협에 조기행동하게.
+        //   carrot(보너스)이라 baseline 벌점 X(보너스만 못 받음). "줄어듦만" → 정지/farming 무의미.
+        //   UpdateDangerCache(477)가 cachedFarRiskSum을 채움. 첫 프레임(prev=-1)은 스킵.
+        if (farFieldCoef > 0f && prevFarRiskSum >= 0f)
+        {
+            float farGain = prevFarRiskSum - cachedFarRiskSum;   // + = 먼 위협 줄임(조기회피)
+            if (farGain > 0f) AddReward(farFieldCoef * farGain);
+        }
+        prevFarRiskSum = cachedFarRiskSum;
 
         // 0-3b. ★ Terminal-proximity ramp (terminal-magnitude fix, 기본 off — env 토글).
         //   목적: 희소 -300 충돌 종료를 *확실·저분산*의 거리×접근속도 그라디언트로 변환.
@@ -934,6 +967,7 @@ public class VesselAgent : Agent
         cachedDangerRisk = 0f;
         cachedDangerSituation = COLREGsHandler.CollisionSituation.None;
         currentMinVesselDist = float.MaxValue;   // 진단: 이번 프레임 최근접 타선거리(near-miss 측정)
+        cachedFarRiskSum = 0f;                    // far-field 조기회피: 이번 프레임 먼 배 risk 합 리셋
 
         if (cachedVessels == null) return;
 
@@ -967,6 +1001,17 @@ public class VesselAgent : Agent
 
             // ★ LOS 게이트: 가려진 위협은 보상 risk에서 제외 (레이더로 못 보는 걸로 안 벌줌)
             if (losGate && occluded) continue;
+
+            // ★ Far-field 조기회피: 56m~riskRange 먼 배의 충돌코스 risk 합산(근거리 max와 분리, 띠 disjoint).
+            //   coef 0(기본)이면 스킵 → 비트동일·비용0. occluded는 위에서 이미 continue됨(LOS 일관).
+            if (farFieldCoef > 0f)
+            {
+                cachedFarRiskSum += COLREGsHandler.CalculateFarFieldRisk(
+                    transform.position, transform.forward, vesselDynamics.CurrentSpeed,
+                    otherVessel.transform.position, otherVessel.transform.forward,
+                    otherVessel.vesselDynamics.CurrentSpeed,
+                    GlobalScale.COLREGS_DETECTION, riskRange);
+            }
 
             var (risk, situation) = COLREGsHandler.CalculateRiskWithSituation(
                 transform.position, transform.forward, vesselDynamics.CurrentSpeed,
