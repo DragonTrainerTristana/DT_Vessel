@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class VesselDynamics : MonoBehaviour
 {
-    // 선박 종류마다 달라질 수 있음. (이거는 어떻게 러닝해야 하는가? 그냥 통일해도 될까?)
+    // 선박 물리 파라미터 (GlobalScale로 Awake에서 통일 적용).
     // ※ 1/10 스케일 (2026-04-24): 원본 length=10, beam=2, maxSpeed=5, accel/decel/brake
     public float length = 1.0f;
     public float beam = 0.2f;           // 선박 폭
@@ -39,8 +39,6 @@ public class VesselDynamics : MonoBehaviour
     public float RudderAngle { get { return rudderAngle; } }
     public float CommandedRudderAngle { get { return commandedRudderAngle; } }
     public float YawRate { get { return yawRate; } }
-    public bool IsBraking { get { return isBraking; } }
-    public Vector3 Velocity { get { return rb != null ? rb.linearVelocity : Vector3.zero; } }
 
     // 실제 최대 yaw rate (°/s): speedRatio=1일 때 최대값
     public float MaxYawRate { get { return maxTurnRate * rudderEffectiveness * (10.0f / length) * (beam / 2.0f); } }

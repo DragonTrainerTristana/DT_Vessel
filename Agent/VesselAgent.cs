@@ -9,10 +9,6 @@ using Unity.MLAgents.Policies;
 
 public class VesselAgent : Agent
 {
-    // Collider → VesselAgent O(1) 조회. Radar의 GetComponent 360회/vessel 제거용.
-    private static readonly Dictionary<Collider, VesselAgent> _colliderToAgent = new Dictionary<Collider, VesselAgent>();
-    public static bool IsVesselCollider(Collider c) => c != null && _colliderToAgent.ContainsKey(c);
-
     public VesselDynamics vesselDynamics;
 
     [Header("Episode Settings")]
@@ -21,25 +17,22 @@ public class VesselAgent : Agent
     public float arrivalReward = 100.0f;          // 도착 보상 강화
     public float goalDistanceCoef = 1.0f;         // 0.5 → 1.0 (progress 보상 강화)
     public float collisionPenalty = -300.0f;       // -100→-300 (충돌 종료가 reward 분류에서 절대 안 묻히게 + 회피 압력↑). threshold -150과 짝
-    public float colregsRewardCoef = 0.45f;       // COLREGs 보상 계수 (1.5x = Phase 3)
+    public float colregsRewardCoef = 0.45f;       // COLREGs 보상 계수 (1x=0.30, 1.5x=0.45). Initialize에서 VESSEL_COLREGS_COEF로 override
     public bool enableColregsReward = true;       // COLREGs 활성화 (우현 보상 제거됨, 좌현 패널티만)
-    public float angleRewardCoef = 0.5f;          // 목적지 방향 보상 계수 (강화: 0.2 → 0.5)
+    public float angleRewardCoef = 0.15f;         // 목적지 방향 보상 계수. ★실제 기본값은 Initialize에서 0.15로 강제(rush>avoid 수정: 0.5→0.15)
     public float forwardSpeedBonus = 0.1f;        // 전진 보상 (강화: 0.05 → 0.1)
 
-    public float timePenalty = -0.1f;             // 매 스텝마다 패널티 (강화: -0.03 → -0.1, 빙빙 방지)
+    public float timePenalty = -0.07f;            // 매 스텝마다 패널티. ★실제 기본값은 Initialize에서 -0.07로 강제(회피 detour 완화: -0.1→-0.07)
 
     // Low speed penalty - 제자리 정지 방지
     public float lowSpeedThreshold = 0.2f;        // 20% maxSpeed 미만이면 패널티 (COLREGs 감속과 호환)
     public float lowSpeedPenalty = -0.15f;        // 저속 패널티 (강화: -0.1 → -0.15)
 
     public float goalReachedDistance = 1.5f;    // 1/10 스케일 (원본 15m)
-    public float maxMapDistance = 100f;          // 맵 최대 거리 (goal distance 정규화용, 1/10 스케일) - 비선형 전환으로 미사용
     public float goalNormK = 150f;               // goal dist 비선형 정규화 d/(d+k) 상수 (Initialize에서 GlobalScale로 override)
 
     public Vector3 goalPosition;
     public bool hasGoal = false;
-    public string goalPointName;
-    public int goalPointIndex;
     private float previousDistanceToGoal;
 
     [Header("Waypoint Navigation")]
@@ -48,7 +41,6 @@ public class VesselAgent : Agent
     public float waypointReachedDistance = 2f;      // 중간 웨이포인트 도달 거리 (1/10 스케일, 원본 20m)
     public float intermediateWaypointReward = 15f;   // 중간 도착 보상 (보상값 - 스케일 무관)
     private bool useWaypoints = false;
-    private Vector3 finalGoalPosition;               // 최종 목적지 (웨이포인트 리스트의 마지막)
 
     private bool isCollided = false;
 
@@ -71,12 +63,6 @@ public class VesselAgent : Agent
     public int radarObsSize = 360;    // radar obs 차원 = raw ray 360 (2026-06-04: min-pool 제거, Python RadarEncoder가 압축). Initialize에서 GlobalScale로 override
     public LayerMask radarDetectionLayers;
 
-    [Header("Communication Settings")]
-    public int maxCommunicationPartners = 4;
-
-    [Header("Coordinate Settings")]
-    public Vector3 originReference = Vector3.zero;
-
     // COLREGs Rule 17 추적: 3개 Dictionary → struct 1개 Dictionary (해시조회 75%↓, 메모리 3배↓)
     private struct PrevVesselState
     {
@@ -88,10 +74,6 @@ public class VesselAgent : Agent
     private Dictionary<GameObject, PrevVesselState> prevVesselStates;
     private float lastTrackingTime;
 
-    [Header("COLREGs Caching")]
-    private Dictionary<GameObject, COLREGsHandler.CollisionSituation> cachedSituations;
-    private int cacheFrame = -1;
-
     // Per-frame 캐시: 가장 위험한 선박 계산 결과 (CollectObservations + CalculateReward 공유)
     private int dangerCacheFrame = -1;
     private VesselAgent cachedDangerousVessel;
@@ -99,10 +81,9 @@ public class VesselAgent : Agent
     private COLREGsHandler.CollisionSituation cachedDangerSituation;
 
     [Header("Proximity Penalty (전방 장애물 회피)")]
-    public float proximityThreshold = 5f;           // Initialize에서 radarRange×0.25로 override (30m@0.3)
+    public float proximityThreshold = 5f;           // Initialize에서 radarRange×0.35로 override (관측 줄여도 회피 반응거리 보존)
     public float proximityPenaltyCoef = -2.0f;      // -1.0→-2.0 (근접 시 돌진 보상 ~+1.3 확실히 이김). Initialize 강제
     public int proximitySectorAngle = 135;           // ±45→±135 (충돌 45%가 측면. 전방+측면 270° 커버, 후방 제외). Initialize 강제
-    private float previousFrontMinDist = float.MaxValue;
 
     [Header("Smoothness Reward")]
     // ⚠️ comm ON/OFF 비교 공정성 위해 항상 ON (보상은 두 조건 동일, 통신은 정보만 차이).
@@ -113,7 +94,7 @@ public class VesselAgent : Agent
     private float previousCommandedRudder = 0f;     // 이전 프레임의 명령 타각 (논제 메트릭용)
     private float episodeCommandVar = 0f;           // 명령 타각 변화 누적(통신 ON/OFF 비교 — 슬루에도 안 죽는 의도 메트릭)
 
-    [Header("ARPA + Fuel/Early-Avoid Reward (연료 논제)")]
+    [Header("Fuel/Early-Avoid Reward (연료 논제)")]
     public float fuelCoef = -0.02f;                 // 연료 프록시 패널티(thrust²+0.5·turn²/step). 멀리서 부드러운 회피 유도
     public float earlyAvoidCoef = 0.3f;             // 조기 회피 보상: 멀리서 DCPA를 벌릴 때(+). 회피 EV를 +로 전환
     // ★ Dense 충돌코스 페널티: U자 회귀(수렴하며 회피를 돌진에 양보) 방지. true risk 기반, 매 스텝.
@@ -128,8 +109,7 @@ public class VesselAgent : Agent
     //   VESSEL_PROX_RAMP_DIST env(기본 24m=DCPA_RISK). 이 거리부터 ramp 시작(0) → 0거리에서 최대.
     private float proxRampCoef = 0f;      // 0=off. <0이면 발화. proximity²·closing01에 곱.
     private float proxRampDist = 24f;     // ramp 시작 거리(m). Initialize에서 GlobalScale.DCPA_RISK로 강제.
-    private float lastTrackTime;                    // ARPA decision 간격(Time.time) 측정용
-    private float prevDcpa = -1f;                   // 직전 프레임 가장 위험한 접점 DCPA (early-avoid용)
+    private float prevDcpa = -1f;                   // 직전 프레임 가장 위험한 위협 DCPA (early-avoid 보상용, COLREGsHandler 기반)
     // ── per-episode 메트릭 누적 (VESSEL_METRIC_LOG ground-truth, comm ON/OFF 연료 비교) ──
     private float episodeFuel = 0f;
     private float episodeRudderVar = 0f;
@@ -254,7 +234,6 @@ public class VesselAgent : Agent
             colregsRewardCoef = pColregsCoef;
 
         radarObsSize = GlobalScale.RADAR_RAYS;   // 360 raw ray (min-pool 제거)
-        maxMapDistance = GlobalScale.MAP_DISTANCE;
         goalNormK = GlobalScale.GOAL_NORM_K;
         goalReachedDistance = GlobalScale.GOAL_REACHED;
         waypointReachedDistance = GlobalScale.WAYPOINT_REACHED;
@@ -264,13 +243,13 @@ public class VesselAgent : Agent
         collisionPenalty = -300.0f;     // prefab(-100) 무시 강제. 충돌 분류 신뢰화(≪-150) + 회피 압력↑
 
         // 에디터 학습 시 BehaviorParameters Inspector 수동 세팅 불필요:
-        // obs 차원을 GlobalScale 기준으로 강제. radarObsSize(360) + 30 (= goal2 + self4 + ARPA21 + position2 + situation1) = 390D.
-        // COLREGs one-hot 제거(vessel-label leak), ARPA 21D로 대체. situation1 = MoE 라우터(0~4). config.py OBSERVATION_SIZE와 일치.
+        // obs 차원을 GlobalScale 기준으로 강제. radarObsSize(360) + 9 (= goal2 + self4 + position2 + situation1) = 369D.
+        // ARPA 제거(2026-06-05): 충돌기하는 360 raw ray + frame-stack(RadarEncoder)이 학습. situation1 = MoE 라우터(0~4). config.py OBSERVATION_SIZE와 일치.
         // 프레임 스태킹은 Python(frame_stack.py)이 담당하므로 Unity 스택은 1로 고정.
         var behaviorParams = GetComponent<BehaviorParameters>();
         if (behaviorParams != null)
         {
-            behaviorParams.BrainParameters.VectorObservationSize = radarObsSize + 2 + 4 + GlobalScale.ARPA_OBS_SIZE + 2 + 1;
+            behaviorParams.BrainParameters.VectorObservationSize = radarObsSize + 2 + 4 + 2 + 1;
             behaviorParams.BrainParameters.NumStackedVectorObservations = 1;
         }
 
@@ -327,22 +306,11 @@ public class VesselAgent : Agent
         prevVesselStates = new Dictionary<GameObject, PrevVesselState>();
         lastTrackingTime = Time.time;
 
-        // COLREGs 캐싱 초기화
-        cachedSituations = new Dictionary<GameObject, COLREGsHandler.CollisionSituation>();
+        // danger 캐시 초기화
         dangerCacheFrame = -1;
         cachedDangerousVessel = null;
         cachedDangerRisk = 0f;
         cachedDangerSituation = COLREGsHandler.CollisionSituation.None;
-
-        // Radar의 GetComponent 제거용 static dict 등록
-        var myCollider = GetComponent<Collider>();
-        if (myCollider != null) _colliderToAgent[myCollider] = this;
-    }
-
-    void OnDestroy()
-    {
-        var myCollider = GetComponent<Collider>();
-        if (myCollider != null) _colliderToAgent.Remove(myCollider);
     }
 
     public override void OnEpisodeBegin()
@@ -388,9 +356,6 @@ public class VesselAgent : Agent
         prevVesselStates.Clear();
         lastTrackingTime = Time.time;
 
-        // Proximity penalty 초기화
-        previousFrontMinDist = float.MaxValue;
-
         // Smoothness reward 초기화
         previousRudderAngle = 0f;
         previousCommandedRudder = 0f;
@@ -401,9 +366,7 @@ public class VesselAgent : Agent
         cachedDangerRisk = 0f;
         cachedDangerSituation = COLREGsHandler.CollisionSituation.None;
 
-        // ARPA 추적/메트릭 초기화 (이전 에피소드 phantom 속도 제거)
-        lastTrackTime = Time.time;
-        if (radar != null) radar.ResetTracks();
+        // 메트릭/early-avoid 초기화 (이전 에피소드 잔존값 제거)
         prevDcpa = -1f;
         episodeFuel = 0f;
         episodeRudderVar = 0f;
@@ -552,7 +515,7 @@ public class VesselAgent : Agent
         // 2. COLREGs compliance (위험도 기반)
         CalculateColregsReward();
 
-        // 3. Smoothness reward (Phase 2 전용)
+        // 3. Smoothness reward (comm ON/OFF 항상 동일 적용 — 공정성)
         CalculateSmoothnessReward();
 
         // 추적 시간 업데이트
@@ -736,7 +699,7 @@ public class VesselAgent : Agent
     }
 
     /// <summary>
-    /// Phase 2 전용: 타각 변화에 대한 부드러움 패널티
+    /// 타각 변화에 대한 부드러움 패널티 (comm ON/OFF 항상 동일 — 보상 공정성, 통신은 정보만 차이)
     /// </summary>
     private void CalculateSmoothnessReward()
     {
@@ -763,7 +726,7 @@ public class VesselAgent : Agent
     }
 
     /// <summary>
-    /// 전방 장애물 근접 패널티 (±45° 섹터 기반)
+    /// 전방+측면 장애물 근접 패널티 (±proximitySectorAngle° 섹터, Initialize에서 135로 강제 → ±135° 270° 커버)
     /// </summary>
     private void CalculateProximityReward()
     {
@@ -777,8 +740,6 @@ public class VesselAgent : Agent
             float normalizedProximity = 1.0f - (frontMinDist / proximityThreshold); // 0~1
             AddReward(proximityPenaltyCoef * normalizedProximity);
         }
-
-        previousFrontMinDist = frontMinDist;
     }
 
     void OnCollisionEnter(Collision collision)
@@ -867,9 +828,9 @@ public class VesselAgent : Agent
 
         if (!hasGoal)
         {
-            // 390D = radar(360 raw ray) + goal(2) + self(4) + ARPA(21) + position(2) + situation(1)
+            // 369D = radar(360 raw ray) + goal(2) + self(4) + position(2) + situation(1)
             // ⚠️ zero-fill 개수는 VectorObservationSize와 정확히 일치해야 함(불일치 시 ML-Agents 연결 shape 에러)
-            for (int i = 0; i < radarObsSize + 2 + 4 + GlobalScale.ARPA_OBS_SIZE + 2 + 1; i++) sensor.AddObservation(0f);
+            for (int i = 0; i < radarObsSize + 2 + 4 + 2 + 1; i++) sensor.AddObservation(0f);
             return;
         }
 
@@ -895,38 +856,18 @@ public class VesselAgent : Agent
         sensor.AddObservation(headingNormalized / 180f);                               // Heading (-1 ~ 1)
         sensor.AddObservation(vesselDynamics.RudderAngle / vesselDynamics.maxTurnRate); // Rudder angle
 
-        // ========== 3. ARPA (21D, label-blind 충돌 기하) ==========
-        // 레이더 추적으로 추정한 top-3 접점의 [sin,cos 방위, range, closing, dcpa, tcpa, valid].
-        // ⚠️ vessel/obstacle 구분 안 함(라벨 비노출). UpdateDangerCache는 여기서 호출하지 않음
-        //    (그 함수는 상대 vessel 실제상태를 읽어 leak → 보상 경로 전용으로만 유지).
-        float arpaDt = Mathf.Clamp(Time.time - lastTrackTime, 1e-3f, 5f);
-        lastTrackTime = Time.time;
-        float[] arpa = radar.UpdateTracks(transform.position, transform.forward,
-                                          vesselDynamics.CurrentSpeed, arpaDt);
-        sensor.AddObservation(arpa);   // 21D
-
-        // ========== 4. Position (2D) - 통신 범위 계산용, 학습에서 제외 ==========
+        // ========== 3. Position (2D) - 통신 범위 계산용, 학습에서 제외 ==========
         sensor.AddObservation(transform.position.x);
         sensor.AddObservation(transform.position.z);
 
-        // ========== 5. Situation (1D) - COLREGs MoE 라우터, 학습 feature 제외 ==========
+        // ========== 4. Situation (1D) - COLREGs MoE 라우터, 학습 feature 제외 ==========
         // cachedDangerSituation = 최고위험 위협 1척의 COLREGs 상황(0=None,1=HeadOn,2=StandOn,3=GiveWay,4=Overtaking).
         // ⚠️ 보상이 채우는 캐시라 여기선 1스텝 stale(UpdateDangerCache는 보상경로 전용, leak 방지 — obs path 미호출).
         //   COLREGs 상황은 초 단위 유지라 0.4s 지연 무시 가능. Python이 MoE head 라우팅에만 사용(네트워크 feature 아님).
         sensor.AddObservation((float)(int)cachedDangerSituation);
 
-        // 총 관측 차원: 360 (radar raw ray) + 2 (goal) + 4 (self) + 21 (ARPA) + 2 (position) + 1 (situation) = 390D
+        // 총 관측 차원: 360 (radar raw ray) + 2 (goal) + 4 (self) + 2 (position) + 1 (situation) = 369D
         // position·situation은 Python 라우팅/통신 계산용으로만 사용 (네트워크 입력 제외)
-    }
-
-    public Vector3 WorldToLocalPosition(Vector3 worldPos)
-    {
-        return worldPos - originReference;
-    }
-
-    public Vector3 LocalToWorldPosition(Vector3 localPos)
-    {
-        return localPos + originReference;
     }
 
     public void SetGoal(Vector3 position)
@@ -950,7 +891,6 @@ public class VesselAgent : Agent
         waypoints = new List<Vector3>(newWaypoints);
         currentWaypointIndex = 0;
         useWaypoints = true;
-        finalGoalPosition = waypoints[waypoints.Count - 1];
 
         // 첫 웨이포인트를 목표로 설정
         SetGoal(waypoints[0]);
@@ -966,9 +906,6 @@ public class VesselAgent : Agent
         {
             goalPosition = waypoints[currentWaypointIndex];
             previousDistanceToGoal = Vector3.Distance(transform.position, goalPosition);
-
-            // proximity 리셋 (새 웨이포인트 향해 방향 전환)
-            previousFrontMinDist = float.MaxValue;
         }
     }
 
@@ -982,48 +919,6 @@ public class VesselAgent : Agent
         {
             Debug.LogError($"[FixedUpdate] {gameObject.name}: {e.Message}\n{e.StackTrace}");
         }
-    }
-
-    void OnDrawGizmos()
-    {
-        // Gizmos 비활성화 (Scene 뷰에서 Gizmos 토글로 제어)
-    }
-
-    public void SetRadarRange(float range)
-    {
-        radarRange = range;
-        if (radar != null) radar.radarRange = range;
-    }
-
-    public void SetRadarDetectionLayers(LayerMask layers)
-    {
-        radarDetectionLayers = layers;
-        if (radar != null) radar.detectionLayers = layers;
-    }
-
-    private COLREGsHandler.CollisionSituation GetCachedSituation(VesselAgent otherVessel)
-    {
-        // 새 프레임이면 캐시 초기화
-        if (Time.frameCount != cacheFrame)
-        {
-            cachedSituations.Clear();
-            cacheFrame = Time.frameCount;
-        }
-
-        GameObject otherVesselObj = otherVessel.gameObject;
-
-        // 캐시에 없으면 계산 후 저장
-        if (!cachedSituations.ContainsKey(otherVesselObj))
-        {
-            var situation = COLREGsHandler.AnalyzeSituation(
-                transform.position, transform.forward, vesselDynamics.CurrentSpeed,
-                otherVessel.transform.position, otherVessel.transform.forward,
-                otherVessel.vesselDynamics.CurrentSpeed
-            );
-            cachedSituations[otherVesselObj] = situation;
-        }
-
-        return cachedSituations[otherVesselObj];
     }
 
     /// <summary>
