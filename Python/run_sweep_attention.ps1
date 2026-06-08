@@ -29,7 +29,7 @@ param(
 if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (59D positions 빌드 필요)"; exit 1 }
 
 # arm 정의: tag, comm, agg, attention, intent(Phase2 self-supervised coef), radar(빈문자=완전관측 baseline)
-# ★검증됨(코드): VESSEL_RADAR_RANGE는 obs(레이더/ARPA)만 축소, 보상은 전체선박 privileged 56m → radar<56이면
+# ★검증됨(코드): VESSEL_RADAR_RANGE는 obs(레이더)만 축소, 보상은 전체선박 privileged 56m → radar<56이면
 #   (radar,56] 띠 위협이 "보상은 알지만 obs는 못 봄" = CTDE 격차가 *이미* 생김(재빌드 불필요).
 $arms = @(
   @{Name="refOFF";    Comm=0; Agg="sum";  Attn=0; Intent=0;    Radar=""},            # 완전관측 최선 baseline (anti-rigging 기준)
@@ -39,6 +39,10 @@ $arms = @(
   @{Name="redINTENT"; Comm=1; Agg="mean"; Attn=1; Intent=0.05; Radar="$RadarReduced"}  # +intent(미래의도, 시간축) ★Phase2
 )
 $seeds = @(42, 43, 44)
+
+# ★RUN_STEP 명시 필수: 미설정 시 config.py 기본 30,000,000(30M)으로 돌아 며칠간 안 멈춤(2026-06-03 실측버그).
+#   rushfix/moe/sweep 런처와 동일 1M 깊이. 자식 프로세스(run_experiment.ps1)가 spawn 시점 env 상속.
+$env:VESSEL_RUN_STEP = "1000000"
 
 $port = 5400
 foreach ($arm in $arms) {
@@ -59,6 +63,7 @@ foreach ($arm in $arms) {
 Remove-Item Env:\VESSEL_USE_ATTENTION -ErrorAction SilentlyContinue
 Remove-Item Env:\VESSEL_INTENT_COEF -ErrorAction SilentlyContinue
 Remove-Item Env:\VESSEL_RADAR_RANGE -ErrorAction SilentlyContinue
+Remove-Item Env:\VESSEL_RUN_STEP -ErrorAction SilentlyContinue
 Write-Host "`n15 runs (5 arm x 3 seed). ★동시 15개는 이 머신 과부하 → arm 2~3개씩 나눠 돌리세요(refOFF+redOFF 먼저, 그다음 redATTN/redINTENT)."
 Write-Host "★재빌드 불필요(intent·attention 전부 Python; CTDE 격차도 radar env만으로 생김). 기존 0601 빌드로 즉시."
 Write-Host "분석(수렴 후): python analyze_run.py `"$(Split-Path $Exe -Parent)\results`"  (arm별 vColl/fuel/near-miss 비교)"
