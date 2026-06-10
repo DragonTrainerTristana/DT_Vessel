@@ -19,10 +19,11 @@ sender→receiver gradient가 0이었음. 이제 파트너 obs를 저장해두�
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from torch.distributions import Normal
 from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     SELF_STATE_SIZE, GOAL_SIZE, USE_ATTENTION, ATTN_DIM,
-                    INTENT_COEF, INTENT_K, USE_MOE, NUM_COLREGS_SITUATIONS)
+                    INTENT_COEF, INTENT_K, USE_MOE, NUM_COLREGS_SITUATIONS, MAX_COMM_PARTNERS)
 
 
 class RadarEncoder(nn.Module):
@@ -435,8 +436,40 @@ class CNNPolicy(nn.Module):
             return torch.zeros_like(msg)
 
         if comm_partners is not None and agent_id_list is not None:
-            others_msg = torch.zeros_like(msg)
             id_to_idx = {aid: idx for idx, aid in enumerate(agent_id_list)}
+
+            # ★ attention 벡터화 경로 (per-agent 파이썬 루프 제거 → GPU 커널 런치 급감, 6-way 병렬 회복).
+            #   update의 evaluate_actions와 *동일한 aggregate_batch* 사용 → PPO mirror 구조적 보장.
+            #   파트너 인덱스 행렬을 CPU에서 1회 구성(가벼움) → gather + aggregate_batch 1회(GPU 벡터연산).
+            #   per-agent aggregate_single 루프와 수치 동일(softmax가 padding을 -inf 마스킹).
+            if self.use_attention and comm_relpos is not None and self_state is not None:
+                Kmax = MAX_COMM_PARTNERS
+                idx_mat = np.zeros((n_agent, Kmax), dtype=np.int64)
+                mask_mat = np.zeros((n_agent, Kmax), dtype=np.float32)
+                relpos_mat = np.zeros((n_agent, Kmax, self.relpos_dim), dtype=np.float32)
+                for i, agent_id in enumerate(agent_id_list):
+                    partners = comm_partners.get(agent_id, [])
+                    if not partners or agent_id not in comm_relpos:
+                        continue
+                    rp = comm_relpos[agent_id]   # [K_actual, relpos_dim]
+                    kept_pos = [k for k, p in enumerate(partners) if p in id_to_idx][:Kmax]
+                    for j, k in enumerate(kept_pos):
+                        idx_mat[i, j] = id_to_idx[partners[k]]
+                        mask_mat[i, j] = 1.0
+                        if k < len(rp):
+                            relpos_mat[i, j] = rp[k]
+                idx_t = torch.as_tensor(idx_mat, device=msg.device)                              # [N,Kmax]
+                mask_t = torch.as_tensor(mask_mat, device=msg.device).unsqueeze(-1)              # [N,Kmax,1]
+                relpos_t = torch.as_tensor(relpos_mat, dtype=torch.float32, device=msg.device)  # [N,Kmax,R]
+                msg_part = msg[0][idx_t] * mask_t                                                # [N,Kmax,M] (padding=0)
+                q_in = torch.cat([self_state[0], goal[0]], dim=-1).unsqueeze(1)                  # [N,1,Q]
+                others = self.attn.aggregate_batch(q_in, relpos_t, msg_part, mask_t)            # [N,1,M]
+                others_msg = others.transpose(0, 1).contiguous()                                # [1,N,M]
+                if msg_gain != 1.0:
+                    others_msg = others_msg * msg_gain
+                return others_msg
+
+            others_msg = torch.zeros_like(msg)
             for i, agent_id in enumerate(agent_id_list):
                 partners = comm_partners.get(agent_id, [])
                 if not partners:
