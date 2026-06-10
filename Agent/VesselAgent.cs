@@ -490,12 +490,13 @@ public class VesselAgent : Agent
 
         // 0-3c. ★ Far-field 조기회피 carrot (CTDE-lite, 기본 off). 56m~riskRange 먼 배 risk *합*이
         //   줄어들 때(=먼 위협을 미리 회피)만 보상 → comm-ON이 옆 배가 전한 먼 위협에 조기행동하게.
-        //   carrot(보너스)이라 baseline 벌점 X(보너스만 못 받음). "줄어듦만" → 정지/farming 무의미.
-        //   UpdateDangerCache(477)가 cachedFarRiskSum을 채움. 첫 프레임(prev=-1)은 스킵.
+        //   ★×speedRatio (near earlyAvoid와 동일): 감속으로 far-risk 줄여 따먹는 걸 차단 → 전진하며
+        //   *돌려서* 회피해야 보상 = 먼 배 방위를 알아야 함 = 메시지(통신) 필요 → 게이트 개방 유도.
+        //   carrot이라 baseline 벌점 X. UpdateDangerCache(477)가 cachedFarRiskSum 채움. 첫 프레임(prev=-1) 스킵.
         if (farFieldCoef > 0f && prevFarRiskSum >= 0f)
         {
             float farGain = prevFarRiskSum - cachedFarRiskSum;   // + = 먼 위협 줄임(조기회피)
-            if (farGain > 0f) AddReward(farFieldCoef * farGain);
+            if (farGain > 0f) AddReward(farFieldCoef * farGain * speedRatio);
         }
         prevFarRiskSum = cachedFarRiskSum;
 
