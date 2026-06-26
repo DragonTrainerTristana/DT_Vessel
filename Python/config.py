@@ -78,17 +78,19 @@ def _env_float(key, default):
     v = os.environ.get(key)
     return float(v) if v is not None else default
 
-COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 210m (이전 140m에서 1.5배; C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 28m)과는 분리)
-MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N (=1: nearest-1, =4: sum-of-4)
+COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 420m (C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 56m)과는 분리)
+# ★4→8 (2026-06-12): nearest-4는 레이더(56m) 근방 배만 잡아 far-band(56~420m) 위협 대부분이 통신 도달
+#   불가였음(활성 씬 16척, 밴드 점유 8~10척 실측). far 정보는 *먼* 파트너가 가져야 의미 → 캡 확대.
+#   비용: partner obs 메모리 ~2×, attention K 2×(벡터화로 수용 가능). env로 튜닝.
+MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 8)   # nearest-N within COMM_RANGE
 MSG_LR_SCALE = _env_float('VESSEL_MSG_LR', 1.0)   # 3.0→1.0 (zero-init으로 0에서 자라는 구조: 빠른 LR은 노이즈만↑). env override
 # 메시지 L2 정규화: 통신이 쓸모없으면 메시지를 0으로 우아하게 수렴(불안정 붕괴 방지).
 # 통신이 도움되면 페널티 무릅쓰고 nonzero 유지 → "comm 유용성 자가검증". env로 튜닝.
 MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.001)
-# 메시지 게이트 개방 페널티: ControlActor/Critic의 others_msg = msg * sigmoid(msg_gate),
-# gate 초기 닫힘(-3). "무시"를 *학습된 안정 평형*으로 만들어 value-of-information≥0를 수렴까지 보장
-# (zero-init은 init-time 성질일 뿐 — 메시지가 0에서 자라는 걸 못 막음이 H1a 위배 진단의 핵심).
-# 메시지가 advantage를 유의하게 줄일 때만 gate가 열림. 너무 크면 H1b(도움 regime) 통신 죽임 → env 튜닝.
-MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.02)
+# 메시지 게이트 개방 페널티 — ★기본 0 (2026-06-12 채널동결 fix): 0.02 + 닫힌 init(−3) 조합은 채널
+# grad가 항등 0인 상태에서 페널티만 작용해 게이트를 −8까지 단조 폐쇄(흡수상태, 체크포인트 실측).
+# 게이트는 이제 중립 init(0)의 자유 다이얼(networks.py) — 페널티는 ablation용으로만 env 재활성.
+MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.0)
 
 # ============================================================================
 # 위치 grounding + Attention 집계 (sum/mean 대체)
@@ -96,7 +98,7 @@ MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.02)
 # receiver의 [self_state ⊕ goal]로 query, 각 partner의 [상대위치(sin,cos,거리) ⊕ msg]로
 # key/value → softmax 가중선택(sum의 무차별 합 대신 "누가·어디서·지금 얼마나 중요한지" 반영).
 # 출력차원 dv=MSG_DIM이라 ControlActor/Critic의 게이트·fc2 메시지슬롯 *불변*(인터페이스 동일, 연산만 추가).
-# v_proj zero-init → context=0 at init → comm-ON이 comm-OFF와 정확히 같은 출발선(H1a value-of-info≥0).
+# v_proj 소진폭 init(×0.1, 2026-06-12 fix) — zero-init은 직렬 곱 새들로 채널을 영구 동결시켰음(실측).
 # ⚠️ rollout(aggregate_single)·update(aggregate_batch) 동일 함수형이라 PPO ratio 유효.
 # 기본 OFF(=기존 sum) → 켜기 전 빌드/baseline과 100% 동일(anti-rigging). H1b regime에서 ON 비교.
 USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '0') == '1'
@@ -115,6 +117,80 @@ INTENT_COEF = _env_float('VESSEL_INTENT_COEF', 0.0)
 INTENT_K = _env_int('VESSEL_INTENT_K', 3)            # 예측 미래시점 개수 (h=HORIZON×{1..K})
 INTENT_HORIZON = _env_int('VESSEL_INTENT_HORIZON', 12)  # 시점 간격(step). 12/24/36 = 1.2/2.4/3.6초(0.4s/결정)
 INTENT_POS_SCALE = _env_float('VESSEL_INTENT_POS_SCALE', 56.0)  # 변위 정규화(≈radar 56m); 디코더 타깃 O(1)화
+
+# ============================================================================
+# Threat-relay self-supervised (메시지 = sender가 본 제3 위협 기하; L1, Phase 2)
+# ============================================================================
+# 메시지 latent이 sender의 *ego-radar가 본 top-K 최근접 위협*의 기하(방위·거리·closing)를
+# 디코드가능하게 인코딩하도록 self-supervised 보조손실을 건다 → occlusion(VESSEL_LOS_GATE)으로
+# receiver가 못 보는 제3 위협을 sender 메시지로 복원 가능 → 통신이 *필수*가 되는 CTDE-lite regime.
+# ★라벨 = sender 자기 ego-radar 360 ray의 top-K 최근접 위협 [sin방위,cos방위,거리/maxrange,closing].
+#   privileged 아님 — occlusion으로 가린 위협은 ray에 막혀 안 잡힘 = sender가 실제 본 것만(정직, anti-rigging).
+# ★reward·advantage와 완전분리(self-supervised) = anti-rigging. 별도 ThreatDecoder head → 정책/가치 무오염.
+# ★receiver는 게이트로 메시지 무시 가능 = H1a 보존. MessageActor로만 gradient.
+# default 0.0 = OFF = 기존과 비트동일(ThreatDecoder 미호출, own_threat 라벨 미계산).
+THREAT_COEF = _env_float('VESSEL_THREAT_COEF', 0.0)
+THREAT_K = _env_int('VESSEL_THREAT_K', 3)            # 복원할 top-K 최근접 위협 개수 (거리순)
+
+# ============================================================================
+# Goal-broadcast self-supervised (메시지 = sender의 목적지/의도; L4, Phase 2)
+# ============================================================================
+# ★사용자 핵심 비전(2026-06-16): 통신 거리(420m) >> 레이더(56m)라 56~420m 배는 "레이더로 못 보지만
+#   통신으로 잡히는" 배 = 정보 비대칭 *이미 존재*(섬/occlusion 불요). 그 먼 배들의 *목적지/진로*를
+#   통신으로 알면 "쟤는 저리 가니까 나는 미리 살짝" 멀리서 부드럽게 협응(COLREGs↑·연료↓·궤적smooth↑).
+# ★메시지 latent이 sender의 *목적지(goal: 거리·방위)*를 디코드가능하게 인코딩하도록 self-supervised.
+#   라벨 = sender 자기 goal(obs에 이미 있음 → 별도 라벨·재빌드 불요, self-prediction). reward 비연결=anti-rigging.
+# ★별도 GoalDecoder head → 정책/가치 무오염(H1a 보존). receiver는 게이트로 무시 가능.
+# default 0.0 = OFF = 비트동일(GoalDecoder 미호출).
+GOAL_COMM_COEF = _env_float('VESSEL_GOAL_COMM_COEF', 0.0)
+
+# ============================================================================
+# Role-broadcast self-supervised (메시지 = sender의 COLREGs 상황/역할; Phase 2)
+# ============================================================================
+# ★사용자 비전(C): 통신으로 "누가 양보(give-way)·누가 직진(stand-on)"을 미리 공유 → COLREGs 협응↑.
+#   메시지 latent이 sender의 *COLREGs 상황/역할(situation: 0~4)*을 디코드가능하게 인코딩하도록 self-supervised
+#   분류손실(cross-entropy)을 건다. situation = sender가 본 가장 위험한 배와의 상황(MoE 라우터와 동일 ground-truth).
+# ★receiver가 attention으로 sender 역할을 알면 협응: "쟤가 give-way(3)니 난 stand-on(직진) 유지",
+#   "쟤가 head-on(1)이니 나도 우현" — 메시지에 역할 인코딩 → fc2가 학습으로 활용(Threat/GoalDecoder 동일 원리).
+# ★라벨 = sender 자기 situation(이미 obs/메모리·evaluate_actions 인자 → 별도 라벨 텐서·재빌드 불요, self-prediction).
+#   reward·advantage와 완전분리(self-supervised) = anti-rigging. 별도 RoleDecoder head → 정책/가치 무오염(H1a 보존).
+# ★comm-OFF는 others_msg≡0이라 RoleDecoder 무영향(불변). receiver는 게이트로 무시 가능 = H1a 보존.
+# default 0.0 = OFF = 비트동일(RoleDecoder 미호출, situation 라벨 미사용).
+ROLE_COMM_COEF = _env_float('VESSEL_ROLE_COMM_COEF', 0.0)
+
+# ============================================================================
+# ★C5c: 수신측 decode-in-policy (2026-06-22, 4차 논검 진단)
+# ============================================================================
+# ★근본 진단: 기존 aux decoder(intent/threat/goal/role)는 전부 own_msg=msg_actor()를 재실행 →
+#   gradient가 *생산자(MessageActor)*에게만 흐름. 수신자 정책(ControlActor)이 others_msg를 *쓰도록*
+#   강제하는 loss 항이 없었음 = "채널이 z 인코딩"과 "정책이 z 사용"의 구조적 단절(C5c). 채널이 LIVE여도
+#   수신정책엔 약한 암묵 PPO 신호만 → density regime서 comm 무승부의 binding 원인(체크포인트·코드 실증).
+# ★fix: ControlActor.consumer_decoder가 backbone z(=fc2(...,gated others_msg))로 *파트너 의도(goal)*를
+#   복원 → MSE 손실이 fc2 메시지슬라이스로 흘러 "수신 정책이 파트너 의도를 표상"하게 강제(수신측 gradient).
+#   producer측 GoalDecoder(메시지에 자기 goal 인코딩)와 짝 → 송수신 폐루프. reward·advantage 무연결=anti-rigging.
+# ★comm-OFF는 others_msg≡0이라 consumer 손실 미가산(USE_COMM 게이트) → OFF 불변(공정). default 0=OFF.
+COMM_CONSUMER_COEF = _env_float('VESSEL_COMM_CONSUMER_COEF', 0.0)
+# ★H2 per-slot 재구성 (2026-06-22, H2-scaling-by-design): consumer가 masked-MEAN(2D, MSG_DIM≥2서 포화=flat 보장)
+#   대신 **nearest-K 파트너 각각의 의도(goal)를 슬롯별 복원** → K개 의도가 MSG_DIM others_msg 하나를 공유 =
+#   rate-distortion 병목이 MSG_DIM → 차원↑ = 더 많은 이웃 의도 전달 → H2 스케일 가능. K=1이면 nearest만(mean 아님).
+#   ⚠️ ground-truth 스케일엔 per-pair 보상(T4, C#)+행동head coupling도 필요(이것만으론 aux MSE만 스케일).
+#   anti-Schelling: z에서만 디코드(relpos는 attention 주소로만, 재구성 입력/타깃 아님). 천장=내재의도차원×동시이웃수.
+COMM_CONSUMER_K = _env_int('VESSEL_COMM_CONSUMER_K', 3)   # 복원 nearest-K 슬롯 (consumer_coef>0일 때만 의미)
+# ★H2 행동-head coupling (2026-06-22): consumer 재구성(decode)을 fc3 입력에 concat → "재구성↓ = 행동↑"이
+#   forward 항등이 됨 → ground-truth가 aux MSE를 *추종*(단순 공유-z aux는 "정렬되길 바람"일 뿐). decode는 z에서 산출 →
+#   forward·get_logprob_entropy(둘 다 _head 경유) 동일 → PPO mirror 보존. default 0=OFF(fc3 입력 128=baseline 비트동일).
+#   ★consumer_coef>0와 함께 써야 의미(coupling만 켜고 미supervised면 decode가 노이즈로 행동에 유입). ground-truth 스케일엔 T4(C#)도 필요.
+COMM_CONSUMER_COUPLING = _env_str('VESSEL_COMM_CONSUMER_COUPLING', '0') == '1'
+
+# ============================================================================
+# ★oracle-OFF 통제 arm (2026-06-22): C1·C4·C5 판정 분리용 진단 계기
+# ============================================================================
+# ★others_msg를 학습채널 대신 *참 파트너 goal*(privileged, 채널 우회)로 주입 → 수신자가 학습된 메시지
+#   디코딩 없이 파트너 의도를 직접 받음. 3분할 판정: oracle≈OFF→task가 comm 불필요(C1/C4 거짓, 종료);
+#   oracle>OFF & ON≈OFF→C5가 병목(채널학습 문제, C5c 수정 가치); oracle>OFF & ON≈oracle→comm 정당승리.
+# ★진단/통제용(comm-ON arm 아님) — comm 승리 주장에 쓰지 않음 = anti-rigging. rollout·update 미러(networks.py).
+# ★권장: VESSEL_ORACLE=1 + VESSEL_USE_COMM=1 + aux/consumer COEF=0(정보 직접이라 불요). default 0=OFF.
+USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 
 # ============================================================================
 # COLREGs Mixture-of-Experts (상황별 정책 head hard-routing)
@@ -227,6 +303,8 @@ def get_config_dict():
         'intent_coef': INTENT_COEF,
         'intent_k': INTENT_K,
         'intent_horizon': INTENT_HORIZON,
+        'threat_coef': THREAT_COEF,
+        'threat_k': THREAT_K,
         'continuous_action_size': CONTINUOUS_ACTION_SIZE,
         'frames': FRAMES,
         'learning_rate': LEARNING_RATE,
@@ -241,5 +319,32 @@ def get_config_dict():
         'max_steps': MAX_STEPS,
         'update_interval': UPDATE_INTERVAL,
         'device': str(DEVICE),
-        'time_scale': TIME_SCALE
+        'time_scale': TIME_SCALE,
+        # ★comm arm 식별 필드 (2026-06-12): 과거엔 snapshot에 없어서 run 식별이 가중치 포렌식에 의존했음
+        'seed': os.environ.get('VESSEL_SEED', '42'),
+        'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum'),
+        'comm_range': COMM_RANGE,
+        'max_comm_partners': MAX_COMM_PARTNERS,
+        'msg_l2_coef': MSG_L2_COEF,
+        'msg_gate_coef': MSG_GATE_COEF,
+        'msg_lr_scale': MSG_LR_SCALE,
+        'radar_feat_dim': RADAR_FEAT_DIM,
+        'env_farfield_coef': os.environ.get('VESSEL_FARFIELD_COEF', '(unset=0)'),
+        'env_risk_range': os.environ.get('VESSEL_RISK_RANGE', '(unset=56)'),
+        'env_radar_range': os.environ.get('VESSEL_RADAR_RANGE', '(unset=default)'),
+        'env_crossing': os.environ.get('VESSEL_CROSSING', '(unset=0)'),
+        # ★density regime 식별 필드 (2026-06-21): spawn 기하 레버(C# 적용). 미설정=baseline 비트동일.
+        #   런 식별·재현용 — 보상/네트워크 무관(289행 주석과 동일 목적). VESSEL_USE_COMM과 독립.
+        'env_spawn_ring_scale': os.environ.get('VESSEL_SPAWN_RING_SCALE', '(unset=1.0)'),
+        'env_vessel_count': os.environ.get('VESSEL_VESSEL_COUNT', '(unset=scene)'),
+        'env_speed_mult_min': os.environ.get('VESSEL_SPEED_MULT_MIN', '(unset=0.8)'),
+        'env_speed_mult_max': os.environ.get('VESSEL_SPEED_MULT_MAX', '(unset=1.8)'),
+        # ★C5c·oracle 식별 (2026-06-22): 수신측 decode-in-policy 계수 + oracle 통제 arm 플래그.
+        #   goal/role_comm은 producer측 인코딩 계수 — C5c sweep은 GOAL_COMM(생산)+CONSUMER(수신) 짝이라 함께 기록.
+        'goal_comm_coef': GOAL_COMM_COEF,
+        'role_comm_coef': ROLE_COMM_COEF,
+        'comm_consumer_coef': COMM_CONSUMER_COEF,
+        'comm_consumer_k': COMM_CONSUMER_K,
+        'comm_consumer_coupling': COMM_CONSUMER_COUPLING,
+        'use_oracle': USE_ORACLE
     }
