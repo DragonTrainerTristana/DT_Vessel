@@ -27,6 +27,7 @@ class AgentMemory:
         self.partner_selfs = []
         self.partner_masks = []   # [K] (1=유효 파트너, 0=padding)
         self.partner_relpos = []  # [K,3] 상대방위(sin,cos)+거리 (위치 grounding)
+        self.partner_situations = []  # [K] 파트너 COLREGs 상황(0~4) — 완전분리 MoE의 MessageActor sender 라우팅 재현용
         self.positions = []       # [2] 자기 위치(x,z) — intent 미래라벨 계산용(get_all_experiences)
         self.situations = []      # scalar COLREGs 상황(0~4) — MoE head 라우팅(rollout==update 동일 라우팅용)
 
@@ -34,13 +35,13 @@ class AgentMemory:
         for lst in (self.states, self.goals, self.self_states,
                     self.actions, self.rewards, self.dones, self.values, self.logprobs,
                     self.partner_states, self.partner_goals, self.partner_selfs,
-                    self.partner_masks, self.partner_relpos, self.positions,
-                    self.situations):
+                    self.partner_masks, self.partner_relpos, self.partner_situations,
+                    self.positions, self.situations):
             lst.clear()
 
     def add(self, state, goal, self_state, action, reward, done, value, logprob,
             partner_states, partner_goals, partner_selfs, partner_mask, partner_relpos,
-            position, situation):
+            partner_situations, position, situation):
         """새로운 경험 추가 (episode_done 게이트 제거 - 모든 경험 누적, 경계는 dones[]가 표시)"""
         self.states.append(state)
         self.goals.append(goal)
@@ -55,6 +56,7 @@ class AgentMemory:
         self.partner_selfs.append(partner_selfs)
         self.partner_masks.append(partner_mask)
         self.partner_relpos.append(partner_relpos)
+        self.partner_situations.append(partner_situations)
         self.positions.append(position)
         self.situations.append(situation)
 
@@ -82,13 +84,13 @@ class Memory:
     def add_agent_experience(self, agent_id, state, goal, self_state,
                              action, reward, done, value, logprob,
                              partner_states, partner_goals, partner_selfs, partner_mask,
-                             partner_relpos, position, situation):
+                             partner_relpos, partner_situations, position, situation):
         if agent_id not in self.agent_memories:
             self.agent_memories[agent_id] = AgentMemory()
         self.agent_memories[agent_id].add(
             state, goal, self_state, action, reward, done, value, logprob,
             partner_states, partner_goals, partner_selfs, partner_mask, partner_relpos,
-            position, situation
+            partner_situations, position, situation
         )
 
     def get_all_experiences(self):
@@ -100,13 +102,16 @@ class Memory:
         """
         from functions import calculate_returns
         from config import (DISCOUNT_FACTOR, GAE_LAMBDA,
-                            INTENT_COEF, INTENT_K, INTENT_HORIZON, INTENT_POS_SCALE)
+                            INTENT_COEF, INTENT_K, INTENT_HORIZON, INTENT_POS_SCALE,
+                            THREAT_COEF, THREAT_K, STATE_SIZE, FRAMES)
         import math
 
         states, goals, self_states = [], [], []
         actions, rewards, dones, values, logprobs = [], [], [], [], []
         p_states, p_goals, p_selfs, p_masks, p_relpos = [], [], [], [], []
+        p_sits = []
         own_future, own_future_mask = [], []
+        own_threat, own_threat_mask = [], []
         sits = []
         returns = []
 
@@ -153,6 +158,37 @@ class Memory:
                         fut[t, b + 2] = dh / 180.0
                         fut_mask[t, b:b + 3] = 1.0
 
+            # ★ L1 threat-relay 라벨(self-supervised): 각 step t의 ego-radar 360 ray(frame-stack 최신
+            #   프레임)에서 top-K 최근접 위협 기하 [sin방위,cos방위,거리,closing]를 추출.
+            #   radar 정규화 = dist/range-0.5 (-0.5=거리0 최근접, +0.5=미감지). 거리 = ray+0.5 ∈[0,1].
+            #   ★occlusion으로 가린 위협은 ray가 장애물에 막혀 안 잡힘 = ego 본 것만 자동 라벨(정직).
+            #   미감지(거리≈1.0)인 슬롯은 mask=0(=위협 없음 → 학습 제외). THREAT_COEF=0이면 zeros(OFF 비트동일).
+            thr = np.zeros((L, THREAT_K * 4), dtype=np.float32)
+            thr_mask = np.zeros((L, THREAT_K * 4), dtype=np.float32)
+            if THREAT_COEF > 0.0 and L > 0:
+                stacked = np.asarray(agent_memory.states, dtype=np.float32).reshape(L, FRAMES, STATE_SIZE)
+                cur = stacked[:, -1, :] + 0.5        # [L, n_rays] 현재 프레임 거리 ∈[0,1] (ray+0.5)
+                prev = stacked[:, -2, :] + 0.5       # [L, n_rays] 직전 프레임 거리 (closing 계산용)
+                n_rays = cur.shape[1]
+                # ray index i → body-frame 방위 i도(1° 간격, ray0=정면, 시계방향). sin/cos는 한 번만.
+                ang = np.radians(np.arange(n_rays, dtype=np.float32))   # [n_rays]
+                sin_a, cos_a = np.sin(ang), np.cos(ang)
+                DETECT_THRESH = 0.999   # 거리 ≥ 이 값이면 미감지(위협 없음) → 마스킹
+                for t in range(L):
+                    d = cur[t]                                   # [n_rays] 정규화 거리
+                    order = np.argsort(d)[:THREAT_K]             # 최근접 K개 ray index(거리 오름차순)
+                    for kk, ri in enumerate(order):
+                        dist = float(d[ri])
+                        if dist >= DETECT_THRESH:
+                            continue   # 미감지 = 위협 없음 → 슬롯 마스킹(0 유지, 정직)
+                        closing = float(prev[t, ri] - dist)       # 직전-현재 거리(양수=접근)
+                        b = kk * 4
+                        thr[t, b + 0] = float(sin_a[ri])
+                        thr[t, b + 1] = float(cos_a[ri])
+                        thr[t, b + 2] = dist                      # 거리/maxrange ∈[0,1]
+                        thr[t, b + 3] = closing
+                        thr_mask[t, b:b + 4] = 1.0
+
             states.extend(agent_memory.states)
             goals.extend(agent_memory.goals)
             self_states.extend(agent_memory.self_states)
@@ -166,8 +202,11 @@ class Memory:
             p_selfs.extend(agent_memory.partner_selfs)
             p_masks.extend(agent_memory.partner_masks)
             p_relpos.extend(agent_memory.partner_relpos)
+            p_sits.extend(agent_memory.partner_situations)
             own_future.extend(fut)
             own_future_mask.extend(fut_mask)
+            own_threat.extend(thr)
+            own_threat_mask.extend(thr_mask)
             sits.extend(agent_memory.situations)
             returns.extend(agent_returns)
 
@@ -189,7 +228,10 @@ class Memory:
             'partner_selfs': _arr(p_selfs),
             'partner_masks': _arr(p_masks),
             'partner_relpos': _arr(p_relpos),
+            'partner_situations': np.array(p_sits, dtype=np.int64) if p_sits else np.array([], dtype=np.int64),
             'own_future': _arr(own_future),
             'own_future_mask': _arr(own_future_mask),
+            'own_threat': _arr(own_threat),
+            'own_threat_mask': _arr(own_threat_mask),
             'situations': np.array(sits, dtype=np.int64) if sits else np.array([], dtype=np.int64),
         }
