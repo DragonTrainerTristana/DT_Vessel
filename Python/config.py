@@ -214,7 +214,7 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 #   MoE가 단일망을 ground-truth로 이겨야 진짜(anti-rigging). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
 # ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
 #   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
-USE_MOE = _env_str('VESSEL_USE_MOE', '0') == '1'
+USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'   # ★Light_MoE 브랜치: MoE 기본 ON (등파라미터 폭)
 NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
 # ★iso-parameter MoE (2026-07-03): MoE 전문가 코어의 내부 폭 배수 (conv 채널·radar feat·hidden·fc3에 적용).
 #   1.0(기본) = 기존 MoE — 코어당 단일망과 동일 폭, 총 파라미터 약 5배.
@@ -223,7 +223,7 @@ NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overt
 #   실측(2026-07-03 스모크): 0.44 → 3망 합 358,270 vs 단일 364,397 (−1.7%). 0.45는 반올림 계단으로 +7.9% → 0.44 권장.
 #   USE_MOE=1일 때만 적용, 단일망(USE_MOE=0)은 항상 폭 1.0 = 기존과 비트동일.
 #   메시지 6D·행동 2D·상황 one-hot 등 외부 인터페이스 불변. 폭 변경 시 체크포인트 비호환 = from-scratch.
-MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 1.0)
+MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 0.44)   # ★Light_MoE 브랜치: 5코어 합 358,270 ≈ 단일망 364,397
 
 # ============================================================================
 # ★COLREGs situation 정책 입력 (2026-07-02 도입, 2026-07-03 기본 ON 승격): obs[368] 상황(0~4)을
