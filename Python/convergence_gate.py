@@ -89,7 +89,10 @@ def analyze(tag, rows):
 
     # LATE_COLLAPSE 판정
     first, last = chunk_coll[0], chunk_coll[-1]
-    monotonic = all(chunk_coll[i] <= chunk_coll[i + 1] + 1e-6 for i in range(NCHUNK - 1))
+    # monotonic은 '단조 비감소 + 실제 상승'일 때만 — 완전 평탄(예: 전 chunk 0% = 이상적 run)을
+    # 붕괴로 오판하지 않도록 last > first 조건을 함께 요구.
+    monotonic = (last > first + 1e-6) and all(
+        chunk_coll[i] <= chunk_coll[i + 1] + 1e-6 for i in range(NCHUNK - 1))
     collapse = (last > max(first, 1.0) * COLLAPSE_RATIO) or monotonic
     if collapse:
         print(f"  ⚠️ LATE_COLLAPSE: 충돌 {first:.1f}%→{last:.1f}% (아직 악화 중). "
