@@ -98,12 +98,30 @@ public class COLREGsHandler
             return CollisionSituation.Overtaking;
         }
 
-        // 3. Crossing 상황 체크 (수정됨: 5~112.5° 범위만)
-        if (absBearingAngle > 5f && absBearingAngle < CROSSING_ANGLE)
+        // 3. Crossing 상황 체크 (2026-07-03 수정: 5° 하한 제거 — 판정 사각지대 fix)
+        //    ★기존 5~112.5° 한정은 "내겐 정면(0~5°)인데 상대에겐 측면(≥15°)"인 비대칭 충돌코스가
+        //    HeadOn(상호 <15° 필요)도 Crossing도 아니어서 None으로 새는 구멍을 만들었음.
+        //    None 오분류 = compliance 보상 0 + MoE expert0 오라우팅 + situation 정책입력 오염.
+        if (absBearingAngle < CROSSING_ANGLE)
         {
-            // 우측(+)에서 접근하는 선박 = Give-way
-            // 좌측(-)에서 접근하는 선박 = Stand-on
-            return bearingAngle > 0 ? CollisionSituation.CrossingGiveWay : CollisionSituation.CrossingStandOn;
+            if (absBearingAngle > 5f)
+            {
+                // 우측(+)에서 접근하는 선박 = Give-way
+                // 좌측(-)에서 접근하는 선박 = Stand-on
+                return bearingAngle > 0 ? CollisionSituation.CrossingGiveWay : CollisionSituation.CrossingStandOn;
+            }
+            // ★정면 근접(0~5°): 내 bearing 부호는 0° 근방에서 노이즈(스텝간 GiveWay↔StandOn 깜빡임 위험)라
+            //   *상대의* bearing으로 판정 — HeadOn 탈락 조건상 |otherBearingAngle|≥15°가 보장됨.
+            //   (a) 상대 선미 섹터(>112.5°)에서 접근 중이면 추월 계열: 속도 휴리스틱(1.1×) 탈락이어도
+            //       TCPA>0로 closing 확정 → Overtaking (Rule 13, 내가 keep-clear). otherBearing이 ±180°
+            //       근방이라 부호 판정 불가한 기하이기도 함 — 좌/우 대신 추월로 두는 게 안정·정합.
+            if (absOtherBearing > OVERTAKING_ANGLE)
+            {
+                return CollisionSituation.Overtaking;
+            }
+            //   (b) 횡단 계열(15°≤|otherBearing|≤112.5°, 부호 안정): Rule 15 쌍대성 —
+            //       내가 상대의 port(−)에 있음 ⇔ 상대가 내 starboard 쪽에서 횡단 → 내가 give-way.
+            return otherBearingAngle < 0 ? CollisionSituation.CrossingGiveWay : CollisionSituation.CrossingStandOn;
         }
 
         return CollisionSituation.None;

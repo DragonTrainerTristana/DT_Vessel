@@ -59,6 +59,77 @@ public class VesselManager : MonoBehaviour
     private readonly List<int> _availableIndicesBuffer = new List<int>(64);
     private readonly List<Transform> _validGoalBuffer = new List<Transform>(64);
 
+    // ──────────────────────────────────────────────────────────────────────
+    // ★Density regime (2026-06-21): 의도통신-필수 regime을 "밀도 상향"으로 생성.
+    //   동기는 "통신 가치 = 다물체 동시조우의 액션 모호성"(3척+이 56m 안에서 한 점 수렴 →
+    //   shared-policy 예측가능성·짝 COLREGs 규약이 깨짐 → 단일 정답 액션 없음 → 의도공유로 joint maneuver 합의).
+    //   현 regime(ring500·n16·crossing fan-out)은 ambiguity(2+동시충돌코스) ~4.5%로 통신 잉여 진단됨.
+    //   레버: ① ring 축소(중심집중) ② 척수↑ ③ 진짜 대척 goal(fan-out 제거)로 빈도를 ~40-80%까지 상향.
+    //   ⚠️ per-agent 비동기 respawn 구조라 "매 에피소드 100% 보장"은 아님(확률적 상향) — 검증지표로 확인.
+    //
+    //   anti-rigging: 전부 env 토글, default(scale 1.0 / count 미설정 / crossing≠2)면 좌표·로직 비트동일.
+    //   comm ON/OFF 동일 환경(밀도는 spawn 기하라 ON/OFF에 동일 적용) → baseline 불구화 아님.
+    //   도달성: ring 축소는 이동거리를 *줄여* 도달성을 높임(MaxStep/goalDist 미증가 = 제약3 준수).
+    // ──────────────────────────────────────────────────────────────────────
+    private static float _spawnRingScale = float.NaN;     // VESSEL_SPAWN_RING_SCALE (기본 1.0)
+    private static int   _vesselCountOverride = -2;        // VESSEL_VESSEL_COUNT (-2=미파싱, -1=미설정)
+    private static int   _antipodalGoalMode = -1;          // VESSEL_CROSSING==2 → 대척 goal
+    private Vector3 _spawnCentroid;                        // spawn/goal 링의 중심(축소 기준점)
+    private bool _spawnCentroidCached = false;
+
+    /// <summary>VESSEL_SPAWN_RING_SCALE: spawn/goal 좌표를 중심 기준 곱수(기본 1.0=비트동일). &lt;1이면 링 축소→밀도↑.</summary>
+    private float SpawnRingScale()
+    {
+        if (float.IsNaN(_spawnRingScale))
+        {
+            string v = System.Environment.GetEnvironmentVariable("VESSEL_SPAWN_RING_SCALE");
+            _spawnRingScale = (!string.IsNullOrEmpty(v) && float.TryParse(v, out float s) && s > 0f) ? s : 1.0f;
+        }
+        return _spawnRingScale;
+    }
+
+    /// <summary>VESSEL_VESSEL_COUNT: 스폰할 배 수 override(미설정=scene 직렬화값=비트동일). 점모드는 spawnPoints.Count 상한.</summary>
+    private int ResolvedVesselCount()
+    {
+        if (_vesselCountOverride == -2)
+        {
+            string v = System.Environment.GetEnvironmentVariable("VESSEL_VESSEL_COUNT");
+            _vesselCountOverride = (!string.IsNullOrEmpty(v) && int.TryParse(v, out int n) && n > 0) ? n : -1;
+        }
+        return _vesselCountOverride > 0 ? _vesselCountOverride : vesselCount;
+    }
+
+    /// <summary>VESSEL_CROSSING==2 → 대척(중심관통) goal 배정. fan-out(가장먼=코너) 대신 경로가 정확히 중심 교차.</summary>
+    private bool UseAntipodalGoals()
+    {
+        if (_antipodalGoalMode < 0)
+            _antipodalGoalMode = (System.Environment.GetEnvironmentVariable("VESSEL_CROSSING") == "2") ? 1 : 0;
+        return _antipodalGoalMode == 1;
+    }
+
+    /// <summary>spawn 링의 중심(모든 spawnPoint 평균). 1회 캐시. ring scale의 축소 기준점.</summary>
+    private Vector3 SpawnCentroid()
+    {
+        if (!_spawnCentroidCached)
+        {
+            Vector3 sum = Vector3.zero;
+            int cnt = 0;
+            foreach (var p in spawnPoints) { if (p != null) { sum += p.position; cnt++; } }
+            _spawnCentroid = (cnt > 0) ? sum / cnt : Vector3.zero;
+            _spawnCentroidCached = true;
+        }
+        return _spawnCentroid;
+    }
+
+    /// <summary>좌표를 중심 기준으로 ring scale 적용. scale==1.0이면 입력 그대로(비트동일).</summary>
+    private Vector3 ApplyRingScale(Vector3 worldPos)
+    {
+        float s = SpawnRingScale();
+        if (s == 1.0f) return worldPos;
+        Vector3 c = SpawnCentroid();
+        return c + (worldPos - c) * s;
+    }
+
     public List<VesselAgent> GetAllVesselAgents()
     {
         return vesselAgents;
@@ -161,12 +232,15 @@ public class VesselManager : MonoBehaviour
         }
 
         bool zoneMode = AnySpawnPointIsZone();
+        int spawnTarget = ResolvedVesselCount();   // VESSEL_VESSEL_COUNT override (기본=scene값=비트동일)
 
-        if (!zoneMode && spawnPoints.Count < vesselCount)
+        if (!zoneMode && spawnPoints.Count < spawnTarget)
         {
-            Debug.LogWarning($"[VesselManager] Not enough spawn points! Need {vesselCount}, have {spawnPoints.Count}. " +
+            // ★빈 환경 방지: 과거엔 여기서 return → headless 학습이 배 0척으로 조용히 진행되는 무효 실험 벡터.
+            //   스폰 가능한 수로 클램프하고 경고만 남긴다 (VESSEL_VESSEL_COUNT docstring의 '점모드 상한'과 일치).
+            Debug.LogWarning($"[VesselManager] Not enough spawn points! Need {spawnTarget}, have {spawnPoints.Count} — clamping to available. " +
                              $"Hint: add SpawnZone components to spawn points to allow multi-vessel per point.");
-            return;
+            spawnTarget = spawnPoints.Count;
         }
 
         if (goalPoints.Count == 0)
@@ -174,7 +248,7 @@ public class VesselManager : MonoBehaviour
             Debug.LogWarning("[VesselManager] No goal points set! Will use spawn points as goals (not recommended)");
         }
 
-        for (int i = 0; i < vesselCount; i++)
+        for (int i = 0; i < spawnTarget; i++)
         {
             SpawnVessel();
         }
@@ -231,14 +305,15 @@ public class VesselManager : MonoBehaviour
         }
         else
         {
-            // 점 모드: NavMesh 있으면 스냅, 없으면 원래 위치 사용
-            if (useNavMeshPathfinding && TrySnapToNavMesh(spawnPoint.position, out spawnPos))
+            // 점 모드: ring scale 적용(기본 1.0=원좌표) → NavMesh 스냅
+            Vector3 basePos = ApplyRingScale(spawnPoint.position);
+            if (useNavMeshPathfinding && TrySnapToNavMesh(basePos, out spawnPos))
             {
                 // NavMesh 스냅 성공
             }
             else
             {
-                spawnPos = spawnPoint.position;
+                spawnPos = basePos;
             }
             usedSpawnIndices.Add(spawnIndex);
         }
@@ -345,9 +420,27 @@ public class VesselManager : MonoBehaviour
         Transform goalPoint = null;
         int goalIndex = 0;
 
+        // ── 대척 교차 모드(VESSEL_CROSSING=2): spawn의 중심대칭점에 가장 가까운 goal 배정 ──
+        //   경로가 정확히 중심(centroid) 관통 → fan-out(코너 산개, centerMiss 평균 ~45m) 제거 →
+        //   같은 ring·n에서 다물체 한점수렴 빈도 대폭↑. ring scale과 결합 시 시너지(density 검증).
+        if (UseAntipodalGoals())
+        {
+            Vector3 c = SpawnCentroid();
+            Vector3 antipode = c + (c - spawnPoint.position);   // spawn의 중심대칭점(반대편)
+            float minD = float.MaxValue;
+            string sName = spawnPoint.name;
+            for (int i = 0; i < availableGoals.Count; i++)
+            {
+                Transform p = availableGoals[i];
+                if (p == spawnPoint || p.name == sName) continue;
+                float d = Vector3.Distance(antipode, p.position);
+                if (d < minD) { minD = d; goalPoint = p; goalIndex = i; }   // 대척점에 가장 가까운 goal
+            }
+        }
+
         // ── 4-way 교차 모드(VESSEL_CROSSING=1): 스폰에서 거리가 가장 먼 목표 배정 → 경로가 중심 교차 ──
         // (초기/respawn 모두 이 함수를 거치므로 매 에피소드 적용됨)
-        if (UseCrossingGoals())
+        if (goalPoint == null && UseCrossingGoals())
         {
             float maxD = -1f;
             string sName = spawnPoint.name;
@@ -411,13 +504,18 @@ public class VesselManager : MonoBehaviour
                 goalPos = goalPoint.position;
             }
         }
-        else if (useNavMeshPathfinding && TrySnapToNavMesh(goalPoint.position, out goalPos))
-        {
-            // NavMesh 스냅 성공
-        }
         else
         {
-            goalPos = goalPoint.position;
+            // goal도 spawn과 동일 ring scale 적용(중심 동심 유지) → NavMesh 스냅. 기본 1.0=원좌표(비트동일).
+            Vector3 goalBase = ApplyRingScale(goalPoint.position);
+            if (useNavMeshPathfinding && TrySnapToNavMesh(goalBase, out goalPos))
+            {
+                // NavMesh 스냅 성공
+            }
+            else
+            {
+                goalPos = goalBase;
+            }
         }
 
         // 경로 계산 (공통)
@@ -451,10 +549,16 @@ public class VesselManager : MonoBehaviour
 
     private void RotateVesselTowardsGoal(GameObject vessel)
     {
-        // 최종 목적지(goal Transform) 방향으로 회전 (waypoint가 아닌 최종 destination)
+        // 최종 목적지 방향으로 회전 (waypoint가 아닌 최종 destination)
         if (!vesselGoals.ContainsKey(vessel)) return;
 
+        // ★ring scale 정합: 에이전트가 실제 항해하는 goalPosition(스케일 적용된 좌표)을 기준으로 회전.
+        //   vesselGoals[vessel].position(원 Transform)을 쓰면 scale<1.0일 때 초기 침로가 어긋남(homothety로 방향은 보존되나
+        //   원점=spawn이 scaled라 벡터가 다름). AssignGoalForVessel→SetGoal이 이미 scaled goal을 주입했으므로 그걸 사용.
         Vector3 targetPos = vesselGoals[vessel].position;
+        VesselAgent ag = vessel.GetComponent<VesselAgent>();
+        if (ag != null && ag.hasGoal) targetPos = ag.goalPosition;
+
         Vector3 direction = (targetPos - vessel.transform.position).normalized;
 
         // Y축 회전만 적용 (선박은 수평면에서만 회전)
@@ -529,14 +633,15 @@ public class VesselManager : MonoBehaviour
         }
         else
         {
-            // 점 모드: NavMesh 있으면 스냅, 없으면 원래 위치 사용
-            if (useNavMeshPathfinding && TrySnapToNavMesh(spawnPoint.position, out spawnPos))
+            // 점 모드: ring scale 적용(기본 1.0=원좌표) → NavMesh 스냅
+            Vector3 basePos = ApplyRingScale(spawnPoint.position);
+            if (useNavMeshPathfinding && TrySnapToNavMesh(basePos, out spawnPos))
             {
                 // NavMesh 스냅 성공
             }
             else
             {
-                spawnPos = spawnPoint.position;
+                spawnPos = basePos;
             }
             usedSpawnIndices.Add(spawnIndex);
         }
