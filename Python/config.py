@@ -214,7 +214,7 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 #   MoE가 단일망을 ground-truth로 이겨야 진짜(anti-rigging). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
 # ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
 #   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
-USE_MOE = _env_str('VESSEL_USE_MOE', '0') == '1'
+USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'   # ★Thick_MoE 브랜치: MoE 기본 ON (폭 1.0 = 코어당 단일망 동일 폭, 총 ~5배)
 NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
 # ★iso-parameter MoE (2026-07-03): MoE 전문가 코어의 내부 폭 배수 (conv 채널·radar feat·hidden·fc3에 적용).
 #   1.0(기본) = 기존 MoE — 코어당 단일망과 동일 폭, 총 파라미터 약 5배.
