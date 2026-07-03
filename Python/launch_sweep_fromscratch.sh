@@ -17,10 +17,13 @@
 cd "$(dirname "$0")"
 mkdir -p logs
 
-# ⬇⬇⬇ 빌드한 exe 경로로 교체 (또는 export VESSEL_ENV_PATH=... 후 실행) ⬇⬇⬇
-ENV_PATH="${VESSEL_ENV_PATH:-c:/Users/sengh/Dropbox/Private_Paper_Project/Vessel/Vessel_MLAgent/Build/0526_ver5/Vessel_MLAgent.exe}"
-# 신뢰 outcome 로그 per-run 절대경로 (C#이 씀, Windows 스타일 경로 필요)
-OUTDIR="c:/Users/sengh/OneDrive/Desktop/Github/MyUnity/Vessel/Vessel_MLAgent/Assets/Scripts/Python/logs"
+# 상대경로화: 이 스크립트(Assets/Scripts/Python) 기준 프로젝트 루트 = ../../..
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)"
+
+# ⬇⬇⬇ 빌드한 exe 경로 (또는 export VESSEL_ENV_PATH=... 후 실행) ⬇⬇⬇
+ENV_PATH="${VESSEL_ENV_PATH:-$ROOT/Build/Vessel_MLAgent.exe}"
+# 신뢰 outcome 로그 per-run 경로 (C#이 씀; 스크립트 위치의 logs\ 아래)
+OUTDIR="$ROOT/Assets/Scripts/Python/logs"
 
 if [ ! -f "$ENV_PATH" ]; then
     echo "[ERROR] Build exe not found: $ENV_PATH"

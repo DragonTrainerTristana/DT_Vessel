@@ -10,7 +10,7 @@ condition(ON/OFF) × outcome(goal/timeout/collision) 별로 메트릭 분해.
 import csv
 import os
 
-RUN_DIR = r"C:\Users\sengh\OneDrive\Desktop\Github\MyUnity\Vessel\Vessel_MLAgent\run_logs"
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
 TAIL_FRAC = 0.30
 
 RUNS = {

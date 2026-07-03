@@ -22,8 +22,11 @@
 cd "$(dirname "$0")"
 mkdir -p logs
 
+# 상대경로화: 이 스크립트(Assets/Scripts/Python) 기준 프로젝트 루트 = ../../..
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)"
+
 # Phase 1 분기점 모델 (4.07M step)
-MODEL_PATH="$(cd ../../.. && pwd)/models/COMM_NON/VesselNavigation_20260114_183130/policy_step_4070000.pth"
+MODEL_PATH="$ROOT/models/COMM_NON/VesselNavigation_20260114_183130/policy_step_4070000.pth"
 
 if [ ! -f "$MODEL_PATH" ]; then
     echo "[ERROR] Phase 1 base model not found: $MODEL_PATH"
@@ -33,7 +36,7 @@ fi
 # Server Build 경로 (사용자가 빌드 후 여기 수정 또는 환경변수 export)
 # 비어있으면 config.py default (0424 일반 build) 사용
 SERVER_ENV_PATH="${VESSEL_ENV_PATH:-}"
-# 예시: SERVER_ENV_PATH="C:/Users/sengh/Dropbox/Private_Paper_Project/Vessel/Vessel_MLAgent/Build/0428_server/Vessel_MLAgent.exe"
+# 예시(상대경로): SERVER_ENV_PATH="$ROOT/Build/Vessel_MLAgent.exe"
 
 # 학습 설정
 START_STEP=4070000

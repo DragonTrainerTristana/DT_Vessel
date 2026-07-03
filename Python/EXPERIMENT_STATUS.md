@@ -81,7 +81,7 @@ ONE 빌드 수렴결과: **comm-OFF가 깊은 수렴에서 rush>avoid로 붕괴(
 # 1) Unity 재빌드 필수 (C# 변경). 예: Build\0601_reward\Vessel_MLAgent.exe
 # 2) 6병렬 from-scratch sweep (OFF/sum × 3seed + ON/mean × 3seed)
 cd <repo>\Assets\Scripts\Python
-.\run_sweep.ps1 -Exe "C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0601_reward\Vessel_MLAgent.exe"
+.\run_sweep.ps1 -Exe "C:\Users\sengh\Dropbox\Private_Paper_Project\0702_NewVessel\Build\0601_reward\Vessel_MLAgent.exe"
 # (단일 run: .\run_experiment.ps1 -Exe <exe> -Seed 42 -Comm 0 -Port 5042)
 ```
 성능: latency-bound. 이 머신 최적 = **6병렬 × NUM_ENVS=1**(NUM_ENVS=2는 2배 느림).

@@ -24,7 +24,7 @@ try:
 except Exception:
     pass
 
-RUN_DIR = r"C:\Users\sengh\OneDrive\Desktop\Github\MyUnity\Vessel\Vessel_MLAgent\run_logs"
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
 RUNS = {
     "OFF": ["base_off_mt.csv", "off_s43_mt.csv", "off_s44_mt.csv"],
     "ON":  ["on_s42_mt.csv", "on_s43_mt.csv", "on_s44_mt.csv"],

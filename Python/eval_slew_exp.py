@@ -8,7 +8,7 @@ import csv
 import os
 import statistics as st
 
-RUN_DIR = r"C:\Users\sengh\OneDrive\Desktop\Github\MyUnity\Vessel\Vessel_MLAgent\run_logs"
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
 TAIL_FRAC = 0.30  # 각 run 마지막 30% 에피소드 = 수렴 구간
 
 RUNS = {

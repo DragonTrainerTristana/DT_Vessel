@@ -3,8 +3,9 @@ COLREGs Mixture-of-Experts 검증 sweep.
 가설: 단일 정책망이 4상황(head-on/stand-on/give-way/overtake)의 상충 회피규칙을 평균내며 간섭 →
   상황별 head로 분리(hard-route)하면 각 상황 전문화 → 충돌↓(특히 rush>avoid 붕괴 완화).
 
-★ MoE는 Python 전용(networks.py)이나, situation 라우터 obs(59→60D)가 C#에 추가됨 → *60D 재빌드 필요*.
-   (구 59D 빌드면 obs_utils가 situation=0 폴백 → MoE가 head0로만 라우팅 = 의미없음. 반드시 새 빌드.)
+★ MoE는 Python 전용(networks.py)이나, situation 라우터 obs가 C#에 추가됨 → *현재 369D 빌드 필요*.
+   (옛 빌드면 obs_utils가 situation=0 폴백 → MoE가 expert0로만 라우팅 = 의미없음. 반드시 369D 빌드.)
+   ★main.py가 연결 시 obs!=369D면 즉시 RuntimeError(빌드 함정 fail-fast 가드, 2026-06-28).
 
 anti-rigging (CLAUDE.md H1 honesty):
   - 두 arm 같은 빌드·seed·env, *오직 VESSEL_USE_MOE만 토글*. USE_MOE=0 = 기존 단일망 비트동일(검증 Δ=0).
@@ -24,10 +25,12 @@ falsify: moe ≈ single → 상황 간섭이 병목 아니었음(또는 라우�
   .\run_sweep_moe.ps1 -Exe "...\Build\FOUR\Vessel_MLAgent.exe" -RushFix   # floor 정리 버전
 #>
 param(
-  [string]$Exe = "C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\FOUR\Vessel_MLAgent.exe",
+  [string]$Exe = "",  # 비우면 프로젝트 루트 Build\Vessel_MLAgent.exe 사용. ★369D situation obs 빌드여야 함(MoE는 Python전용).
   [switch]$RushFix
 )
-if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (60D situation obs 재빌드 필요)"; exit 1 }
+# 상대경로화: 이 스크립트 위치(Assets\Scripts\Python) 기준 프로젝트 루트 = $PSScriptRoot\..\..\..
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\..\..\Build\Vessel_MLAgent.exe' }
+if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (369D situation obs 빌드 필요)"; exit 1 }
 
 # ── 공통 env (두 arm 동일; 통신 ON = 검증된 comm1fix 설정) ──
 $env:VESSEL_USE_COMM = "1"        # 통신 포함(user 요청). 공유 MessageActor — MoE는 정책 head만 분리.
@@ -71,7 +74,8 @@ foreach ($v in 'VESSEL_USE_MOE','VESSEL_USE_COMM','VESSEL_AGG_MODE','VESSEL_MSG_
                'VESSEL_ARRIVAL_REWARD','VESSEL_GOAL_COEF','VESSEL_COLCOURSE_EXP','VESSEL_COLCOURSE_COEF') {
   Remove-Item "Env:\$v" -ErrorAction SilentlyContinue
 }
-Write-Host "`n6 runs (single×3 + moe×3, 통신 ON). 결과 → <build>\results\<ts>_*moe_*\"
-Write-Host "분석(수렴 후): python analyze_run.py `"$(Split-Path $Exe -Parent)\results`""
+$resRoot = Join-Path $PSScriptRoot '..\..\..\results'
+Write-Host "`n6 runs (single×3 + moe×3, 통신 ON). 결과 → $resRoot\<ts>_*moe_*\"
+Write-Host "분석(수렴 후): python analyze_run.py `"$resRoot`""
 Write-Host "핵심 비교: moe arm의 vColl/oColl/LATE < single arm = 상황분리 효과. ≈면 간섭이 병목 아니었음(falsify)."
-Write-Host "★재빌드 확인: Assembly-CSharp.dll에 VESSEL_USE_MOE는 없어도 됨(Python전용). 단 obs 60D(situation)는 빌드에 있어야 — VectorObservationSize=60 확인."
+Write-Host "★재빌드 확인: Assembly-CSharp.dll에 VESSEL_USE_MOE는 없어도 됨(Python전용). 단 obs 369D(situation)는 빌드에 있어야 — main.py가 연결 시 obs!=369D면 즉시 실패(fail-fast 가드)."

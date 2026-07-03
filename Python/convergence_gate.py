@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-RUN_DIR = r"C:\Users\sengh\OneDrive\Desktop\Github\MyUnity\Vessel\Vessel_MLAgent\run_logs"
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
 FILES = {
     "OFF_s42": "base_off_mt.csv", "OFF_s43": "off_s43_mt.csv", "OFF_s44": "off_s44_mt.csv",
     "ON_s42": "on_s42_mt.csv", "ON_s43": "on_s43_mt.csv", "ON_s44": "on_s44_mt.csv",
