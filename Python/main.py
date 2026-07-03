@@ -133,6 +133,10 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
     total_loss = 0
     num_updates = 0
     grad_norm = 0.0
+    # ★통신 채널 건강 텔레메트리 누적 (2026-06-30 A2Z 감사: weight norm만으론 "동결=grad 0" vs "압력부족=grad 미미" 구분 불가)
+    cg_msgout = cg_fc2ctr = cg_fc2cri = cg_gate = cg_vproj = cg_msgenc = 0.0
+    def _gnorm(t):
+        return 0.0 if t is None else float(t.norm())
 
     for epoch in range(N_EPOCH):
         indices = np.random.permutation(n_samples)
@@ -213,6 +217,29 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
 
             optimizer.zero_grad()
             loss.backward()
+            # ★채널별 grad L2 (clip 전 = 진짜 신호). comm-OFF면 스킵=불변. MoE는 코어 합산, 미라우팅 코어 grad=None→0.
+            if USE_COMMUNICATION:
+                try:
+                    _mc = policy.msg_actor.cores()
+                    _md = _mc[0].msg_out.weight.shape[0]
+                    for _c in _mc:
+                        cg_msgout += _gnorm(_c.msg_out.weight.grad)
+                    for _c in policy.ctr_actor.cores():
+                        _g = _c.fc2.weight.grad
+                        cg_fc2ctr += 0.0 if _g is None else float(_g[:, -_md:].norm())
+                        cg_gate += _gnorm(_c.msg_gate.grad)
+                    for _c in policy.critic.cores():
+                        _g = _c.fc2.weight.grad
+                        cg_fc2cri += 0.0 if _g is None else float(_g[:, -_md:].norm())
+                        cg_gate += _gnorm(_c.msg_gate.grad)
+                    if getattr(policy, 'attn', None) is not None:
+                        cg_vproj += _gnorm(policy.attn.v_proj.weight.grad)
+                    # ★pos_ground(기본 집계) 활성 경로 감시: attention OFF일 땐 v_proj가 죽은 경로라
+                    #   msg_encoder grad가 실제 채널 생존 신호.
+                    if getattr(policy, 'msg_encoder', None) is not None:
+                        cg_msgenc += _gnorm(policy.msg_encoder[0].weight.grad)
+                except Exception:
+                    pass
             grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), MAX_GRAD_NORM)
             optimizer.step()
 
@@ -244,6 +271,23 @@ def ppo_update(policy, optimizer, memory, writer, total_steps, training_log_file
         writer.add_scalar('Loss/CommConsumer', total_consumer_loss / num_updates, total_steps)
         writer.add_scalar('Loss/MsgReg', total_msg_reg / num_updates, total_steps)
         writer.add_scalar('Loss/Total', avg_total_loss, total_steps)
+
+        # ★통신 채널 건강 (2026-06-30 A2Z 감사). grad≈0 단조 = 동결(구조사, 현 코드론 불가) / 미미 = 압력부족 감쇠.
+        #   GateMean이 0.5→0 하강 = 수신측 메시지 외면. comm-OFF면 전부 스킵.
+        if USE_COMMUNICATION:
+            writer.add_scalar('Comm/Grad_MsgOut', cg_msgout / num_updates, total_steps)
+            writer.add_scalar('Comm/Grad_Fc2Ctr', cg_fc2ctr / num_updates, total_steps)
+            writer.add_scalar('Comm/Grad_Fc2Critic', cg_fc2cri / num_updates, total_steps)
+            writer.add_scalar('Comm/Grad_Gate', cg_gate / num_updates, total_steps)
+            writer.add_scalar('Comm/Grad_Vproj', cg_vproj / num_updates, total_steps)
+            writer.add_scalar('Comm/Grad_MsgEncoder', cg_msgenc / num_updates, total_steps)
+            try:
+                _gm_c = [float(torch.sigmoid(c.msg_gate)) for c in policy.ctr_actor.cores()]
+                _gm_v = [float(torch.sigmoid(c.msg_gate)) for c in policy.critic.cores()]
+                writer.add_scalar('Comm/GateMean_Ctr', sum(_gm_c) / len(_gm_c), total_steps)
+                writer.add_scalar('Comm/GateMean_Critic', sum(_gm_v) / len(_gm_v), total_steps)
+            except Exception:
+                pass
 
         with open(training_log_file, 'a', newline='') as f:
             csv_writer = csv.writer(f)
@@ -411,6 +455,18 @@ def setup_environments():
         channel.set_configuration_parameters(time_scale=TIME_SCALE)
         env.reset()
         behavior_name = list(env.behavior_specs)[0]
+
+        # ★빌드 함정 가드 (2026-06-28): stale 빌드(옛 obs 크기)가 연결되면 obs_utils가 situation=0으로
+        #   폴백 → MoE가 expert0로만 라우팅 = 무의미한 학습을 몇 시간 돌리는 시간낭비. Unity가 보고하는
+        #   실제 obs 벡터 크기가 config.OBSERVATION_SIZE(369)와 다르면 *연결 즉시 실패*시켜 차단.
+        #   (이 프로젝트 트리에서 빌드한 exe만 연결할 것 — obs 차원이 다르면 stale 빌드.)
+        _spec = env.behavior_specs[behavior_name]
+        _obs_len = int(sum(int(np.prod(o.shape)) for o in _spec.observation_specs))
+        if _obs_len != OBSERVATION_SIZE:
+            raise RuntimeError(
+                f"[BUILD TRAP] Unity obs={_obs_len}D != config OBSERVATION_SIZE={OBSERVATION_SIZE}D. "
+                f"stale 빌드 의심 — 현재 프로젝트에서 재빌드 필요(obs 차원 불일치). "
+                f"MoE면 situation 슬롯 부재로 expert0만 라우팅됨.")
 
         envs.append(env)
         channels.append(channel)
@@ -739,6 +795,7 @@ def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
             others_abs = interval_stats['others_abs_sum'] / n_msg
             msg_out_norm = policy.msg_actor.mean_msg_out_norm()
             vproj_norm = float(policy.attn.v_proj.weight.norm())
+            msgenc_norm = float(policy.msg_encoder[0].weight.norm())   # pos_ground 활성 경로 가중치
             fc2_ctr = policy.ctr_actor.fc2_msg_slice_norm()
             fc2_cri = policy.critic.fc2_msg_slice_norm()
             fc2_cri_rest = policy.critic.fc2_rest_norm()
@@ -748,6 +805,7 @@ def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
             writer.add_scalar('Comm/others_msg_abs_mean', others_abs, step)
             writer.add_scalar('Comm/msg_out_norm', msg_out_norm, step)
             writer.add_scalar('Comm/vproj_norm', vproj_norm, step)
+            writer.add_scalar('Comm/msg_encoder_norm', msgenc_norm, step)
             writer.add_scalar('Comm/fc2slice_ctr_norm', fc2_ctr, step)
             writer.add_scalar('Comm/fc2slice_critic_norm', fc2_cri, step)
             comm_stats_file = stats.get('comm_stats_file')
@@ -756,7 +814,8 @@ def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
                     csv.writer(f).writerow([
                         step, f"{gate_ctr:.6f}", f"{gate_cri:.6f}", f"{msg_abs:.6f}",
                         f"{others_abs:.6f}", f"{msg_out_norm:.6f}", f"{vproj_norm:.6f}",
-                        f"{fc2_ctr:.6f}", f"{fc2_cri:.6f}", f"{fc2_cri_rest:.6f}"
+                        f"{fc2_ctr:.6f}", f"{fc2_cri:.6f}", f"{fc2_cri_rest:.6f}",
+                        f"{msgenc_norm:.6f}"
                     ])
 
         # Episode CSV 로깅
@@ -915,7 +974,7 @@ def main():
             csv.writer(f).writerow([
                 'step', 'gate_ctr', 'gate_critic', 'msg_abs_mean', 'others_msg_abs_mean',
                 'msg_out_norm', 'vproj_norm', 'fc2slice_ctr_norm', 'fc2slice_critic_norm',
-                'fc2_critic_rest_norm'
+                'fc2_critic_rest_norm', 'msg_encoder_norm'
             ])
 
     # 시작 스텝 설정 (이어서 학습할 때 이전 스텝 누적)

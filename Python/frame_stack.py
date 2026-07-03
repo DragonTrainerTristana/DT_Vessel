@@ -57,6 +57,11 @@ class MultiAgentFrameStack:
         self.n_frames = n_frames
         self.state_size = state_size
         self.agent_buffers = {}  # {agent_id: FrameStackBuffer}
+        # ★누수 방어(2026-06-18): ML-Agents agent_id는 EndEpisode(respawn)마다 새 값 →
+        #   agent_buffers 키가 무한 누적(remove_agent는 terminal_steps에서만 호출, terminal 누락 시 영구 잔존).
+        #   이번 update에서 '본' agent_id를 기록 → retire_unseen()이 한 동안 안 보인 stale 키를 GC.
+        #   respawn 빈번한 commOFF(충돌 7.9%)가 ~23k ep서 크래시한 근본(buffer dict가 키당 deque×369D×3 누적).
+        self._seen_this_pass = set()
 
     def update(self, agent_id, state):
         """
@@ -72,8 +77,23 @@ class MultiAgentFrameStack:
         if agent_id not in self.agent_buffers:
             self.agent_buffers[agent_id] = FrameStackBuffer(self.n_frames, self.state_size)
 
+        self._seen_this_pass.add(agent_id)
         self.agent_buffers[agent_id].update(state)
         return self.agent_buffers[agent_id].get_stacked()
+
+    def retire_unseen(self):
+        """
+        이번 collect pass에서 한 번도 update되지 않은(=더 이상 활성 아닌) agent_id 버퍼 제거.
+        terminal_steps 정리(remove_agent)가 어떤 이유로든 누락돼도 stale 키가 무한 쌓이지 않게 하는 안전망.
+        매 training_step의 collect 직후 호출. 활성 배(매 step update됨)는 절대 제거 안 됨(안전).
+        ★respawn 횟수 비례 누수 차단 → commOFF 장기(2M) 완주 가능.
+        """
+        active = self._seen_this_pass
+        stale = [aid for aid in self.agent_buffers if aid not in active]
+        for aid in stale:
+            del self.agent_buffers[aid]
+        self._seen_this_pass = set()
+        return len(stale)
 
     def reset_agent(self, agent_id):
         """특정 에이전트 버퍼 리셋"""
