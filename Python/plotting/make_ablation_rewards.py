@@ -16,7 +16,7 @@ FIG = os.path.dirname(os.path.abspath(__file__))
 # 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능
 _LOCAL = os.path.join(FIG, '_data')
 SCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else
-    os.path.join(FIG, 'logs'))
+    r"C:/Users/sengh/AppData/Local/Temp/claude/C--Users-sengh-Dropbox-Private-Paper-Project-0702-NewVessel/e8fe723f-83ff-4c13-af4f-54455574c53b/scratchpad")
 OUT = os.path.join(FIG, '20_REWARD'); os.makedirs(OUT, exist_ok=True)
 
 W_GOAL, W_COLL, W_TO = 1.5, 6.0, 0.5
@@ -66,6 +66,31 @@ def load(stem):
 BIN = 0.33   # step 구간(M) — run마다 로그 창 수가 달라 인덱스 합산은 어긋난다(실측 확인). step으로 묶는다.
 
 
+def series_each(stems):
+    """실행 하나하나의 곡선 (옅은 배경용). 합치지 않는다."""
+    out = []
+    for st in stems:
+        r = load(st)
+        if r is None:
+            continue
+        nb = int(np.ceil(16.2 / BIN))
+        n, g, c, t = (np.zeros(nb) for _ in range(4))
+        idx = np.clip(np.round(r[0] / BIN).astype(int), 0, nb - 1)
+        for arr, dst in zip(r[1:], (n, g, c, t)):
+            np.add.at(dst, idx, arr)
+        keep = n > 0
+        x = np.arange(nb) * BIN
+        x, n, g, c, t = x[keep], n[keep], g[keep], c[keep], t[keep]
+        sm = np.empty(len(x))
+        for i in range(len(x)):
+            sl = slice(max(0, i - ROLL + 1), i + 1)
+            nn = max(n[sl].sum(), 1e-9)
+            sm[i] = (W_GOAL * g[sl].sum() / nn - W_COLL * c[sl].sum() / nn
+                     - W_TO * t[sl].sum() / nn) * SCALE
+        out.append((x, sm))
+    return out
+
+
 def series(stems):
     """여러 run을 *step 구간별로* 카운트 합산 → (step[M], raw 보상, pooled 보상)."""
     runs = [r for r in (load(s) for s in stems) if r is not None]
@@ -103,6 +128,9 @@ def _render(fname, title, entries, note_comm=True, x0=None):
     for i, (lab, (x, raw, sm)) in enumerate(data):
         k = (x >= x0) & (x <= X1)
         col = C[i % len(C)]
+        for xe, se in series_each(entries[i][1]):
+            ke = (xe >= x0) & (xe <= X1)
+            ax.plot(xe[ke], se[ke], color=col, lw=0.7, alpha=0.28, zorder=2)
         ax.plot(x[k], sm[k], color=col, lw=1.7, label=lab, zorder=3,
                 solid_joinstyle='miter', solid_capstyle='butt')
         allv.append(sm[k])
