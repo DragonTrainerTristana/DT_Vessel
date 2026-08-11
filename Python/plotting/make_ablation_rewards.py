@@ -11,6 +11,16 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from scipy.interpolate import PchipInterpolator
+
+
+def dense(x, y, n=700):
+    """측정점을 그대로 지나가는 부드러운 곡선으로 촘촘히 그린다.
+    PCHIP은 형상보존 보간이라 없는 봉우리를 만들지 않는다. 값 자체는 바뀌지 않는다."""
+    if len(x) < 3:
+        return x, y
+    xi = np.linspace(x[0], x[-1], n)
+    return xi, PchipInterpolator(x, y)(xi)
 
 FIG = os.path.dirname(os.path.abspath(__file__))
 # 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능
@@ -130,9 +140,11 @@ def _render(fname, title, entries, note_comm=True, x0=None):
         col = C[i % len(C)]
         for xe, se in series_each(entries[i][1]):
             ke = (xe >= x0) & (xe <= X1)
-            ax.plot(xe[ke], se[ke], color=col, lw=0.7, alpha=0.28, zorder=2)
-        ax.plot(x[k], sm[k], color=col, lw=1.7, label=lab, zorder=3,
-                solid_joinstyle='miter', solid_capstyle='butt')
+            xd, yd = dense(xe[ke], se[ke])
+            ax.plot(xd, yd, color=col, lw=0.8, alpha=0.26, zorder=2)
+        xd, yd = dense(x[k], sm[k])
+        ax.plot(xd, yd, color=col, lw=2.0, label=lab, zorder=3,
+                solid_joinstyle='round', solid_capstyle='round')
         allv.append(sm[k])
     # 로버스트 y범위: 한 곡선의 초반 저점이 전체를 압축하지 않도록 하위 백분위 사용
     v = np.concatenate(allv)
