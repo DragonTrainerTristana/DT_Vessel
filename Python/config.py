@@ -210,11 +210,12 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 # 공유 backbone(radar 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
 #   단일 정책이 4상황의 상충하는 회피규칙(head-on→우현 / stand-on→유지 / give-way→우현+감속 / overtake→keep clear)을
 #   평균내며 간섭하는 걸 방지 → 상황별 전문화.
-# ★default OFF = 단일 head(기존 단일망과 *비트동일*, 기존 체크포인트 strict 로드 가능) = 공정 baseline.
-#   MoE가 단일망을 ground-truth로 이겨야 진짜(anti-rigging). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
+# ★2026-08-04 기본 ON 승격(사용자 결정): 무설정 학습이 MoE를 쓴다. 단일망 baseline은 VESSEL_USE_MOE=0으로
+#   명시 실행 = 기존 단일망과 *비트동일*(기존 체크포인트 strict 로드 가능) = anti-rigging 공정 baseline.
+#   MoE(5x/iso)가 이 single을 ground-truth로 이겨야 진짜(H4). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
 # ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
 #   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
-USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'   # ★Thick_MoE 브랜치: MoE 기본 ON (폭 1.0 = 코어당 단일망 동일 폭, 총 ~5배)
+USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'   # ★Thick_MoE 브랜치: MoE 기본 ON (폭 1.0 = 전문가마다 단일망과 같은 폭, 총 ~5배)
 NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
 # ★iso-parameter MoE (2026-07-03): MoE 전문가 코어의 내부 폭 배수 (conv 채널·radar feat·hidden·fc3에 적용).
 #   1.0(기본) = 기존 MoE — 코어당 단일망과 동일 폭, 총 파라미터 약 5배.
@@ -224,6 +225,11 @@ NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overt
 #   USE_MOE=1일 때만 적용, 단일망(USE_MOE=0)은 항상 폭 1.0 = 기존과 비트동일.
 #   메시지 6D·행동 2D·상황 one-hot 등 외부 인터페이스 불변. 폭 변경 시 체크포인트 비호환 = from-scratch.
 MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 1.0)
+# ★공유지각 MoE (2026-08-08, H4 설계수정): RadarEncoder(코어 파라미터 ~82.5%) 1벌을 5개 전문가가 공유,
+#   결정부(fc2·gate·consumer·fc3·head)만 상황별 5벌. iso-MoE 붕괴의 근본원인(지배상황 코어의
+#   지각 용량 1/5 축소 — 실측 8.5M goal 3%)을 제거: 지각은 전체 데이터로 학습, 라우팅은 결정 계층만 특화.
+#   총 파라미터 ≈ 단일망 ×1.7 (5x의 ×5 대비). USE_MOE=1일 때만 유효, MOE_WIDTH=1.0과 함께 쓸 것.
+MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '0') == '1'
 
 # ============================================================================
 # ★COLREGs situation 정책 입력 (2026-07-02 도입, 2026-07-03 기본 ON 승격): obs[368] 상황(0~4)을
@@ -255,7 +261,8 @@ USE_COMMUNICATION = _env_str('VESSEL_USE_COMM', '1') == '1'   # 통신 ON/OFF (e
 # Training Mode
 # ============================================================================
 LOAD_MODEL = (_env_str('VESSEL_LOAD_MODEL', '0') == '1')   # env로 켜면 MODEL_PATH 로드(관찰/이어학습용). 기본 from-scratch
-TRAIN_MODE = True               # 학습 모드
+TRAIN_MODE = (_env_str('VESSEL_TRAIN', '1') == '1')   # 0=eval: PPO 업데이트 스킵 — LOAD_MODEL=1과 조합해
+                                                      #   학습된 정책의 ground-truth 평가 (sim2sim 판정관 단계, 2026-07-06)
 _default_model_path = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
 MODEL_PATH = _env_str('VESSEL_MODEL_PATH', _default_model_path)
 START_STEP = _env_int('VESSEL_START_STEP', 0)   # from-scratch=0 (LOAD_MODEL=False면 main.py가 0으로 강제)
@@ -277,7 +284,7 @@ MAX_GRAD_NORM = 0.5             # Gradient clipping norm
 # ============================================================================
 # Training Schedule
 # ============================================================================
-RUN_STEP = _env_int('VESSEL_RUN_STEP', 30000000) if TRAIN_MODE else 0   # env override 가능
+RUN_STEP = _env_int('VESSEL_RUN_STEP', 30000000)   # env override 가능 (eval도 env로 길이 지정 — 옛 'else 0' 분기는 TRAIN_MODE 상수 시절 사문)
 MAX_STEPS = RUN_STEP            # main.py가 start_step + MAX_STEPS 까지 학습
 UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격
 
@@ -318,10 +325,10 @@ LOG_DIR = os.path.join(SAVE_PATH, 'logs')
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 디렉토리 생성
-if not os.path.exists(SAVE_PATH):
-    os.makedirs(SAVE_PATH)
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# exist_ok: DATE_TIME이 초 단위라 같은 초에 두 학습을 띄우면 폴더 이름이 겹친다.
+# 검사-후-생성 사이에 다른 프로세스가 먼저 만들면 FileExistsError로 죽어버려 실행이 통째로 날아갔다.
+os.makedirs(SAVE_PATH, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 
 VALUE_LOSS_COEF = CRITIC_LOSS_WEIGHT   # main.py PPO total-loss에서 사용 (CRITIC_LOSS_WEIGHT alias)
 
@@ -334,6 +341,7 @@ def get_config_dict():
         'use_communication': USE_COMMUNICATION,
         'use_moe': USE_MOE,
         'moe_width': MOE_WIDTH,
+        'moe_shared': MOE_SHARED,
         'situation_input': SITUATION_INPUT,
         'num_colregs_situations': NUM_COLREGS_SITUATIONS,
         'use_attention': USE_ATTENTION,
