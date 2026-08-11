@@ -160,9 +160,11 @@ if __name__ == '__main__':
     figure('ablation_reward_1_communication', 'Effect of Communication',
            [('No Communication', OFF3), ('Communication', ON3)])
     figure('ablation_reward_2_moe', 'MoE Architecture',
-           [('Single network', ['q_MOE_SINGLE', 'qd_MOE_SINGLE_s43', 'qd_MOE_SINGLE_s44']),
-            ('MoE (isolated experts)', ['q_MOE_ISO']),
-            ('MoE (proposed)', ON3)], x0=5.0)
+           # 파라미터 양이 아니라 *어디를 나누느냐*가 쟁점이므로 크기를 라벨에 함께 적는다.
+           [('Single network (369K)', ['q_MOE_SINGLE', 'qd_MOE_SINGLE_s43', 'qd_MOE_SINGLE_s44']),
+            ('Separate experts, thin (363K)', ['q_MOE_ISO']),
+            ('Separate experts, full (1.83M)', BON),
+            ('Shared perception (512K)', ON3)], x0=5.0)
     figure('ablation_reward_3_aggregation', 'Message Aggregation',
            [('Nearest-1', ['qf_SE_NEAR1_s42', 'qf_SE_NEAR1_s43', 'qf_SE_NEAR1_s44']),
             ('Aggregation of 4 neighbours', ON3)])

@@ -109,9 +109,12 @@ TOPICS = {
          ('Communication',    ['MOE_SE_' + s for s in S])]),
     'Fig2_MoE_Architecture': (
         '20_REWARD/ablation_reward_2_moe',
-        [('Single network',  ['MOE_SINGLE', 'MOE_SINGLE_s43', 'MOE_SINGLE_s44']),
-         ('MoE (isolated)',  ['MOE_ISO']),
-         ('MoE (proposed)',  ['MOE_SE_' + s for s in S])]),
+        # 네 구조 모두 학습 조건이 같고(dim6, 통신 9M, 파트너 4, 16M step) 다른 것은 구조뿐.
+        # Thick(=COMM_s*)과 제안(=MOE_SE_s*)은 지각 공유 여부 하나만 다른 완전 대응쌍이다.
+        [('Single network\n369K',          ['MOE_SINGLE', 'MOE_SINGLE_s43', 'MOE_SINGLE_s44']),
+         ('Separate experts\nthin  363K',  ['MOE_ISO']),
+         ('Separate experts\nfull  1.83M', ['COMM_s42', 'COMM_s43', 'COMM_s44']),
+         ('Shared perception\n512K',       ['MOE_SE_' + s for s in S])]),
     'Fig3_Message_Aggregation': (
         '20_REWARD/ablation_reward_3_aggregation',
         [('Nearest-1',      ['SE_NEAR1_' + s for s in S]),
