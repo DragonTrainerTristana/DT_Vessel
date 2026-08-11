@@ -21,8 +21,10 @@ wave-1 레버 (둘 다 anti-rigging 대칭=ON/OFF 동일 적용, freeze-위험 �
   .\run_sweep_rushfix.ps1 -Exe "C:\...\Build\0602_rushfix\Vessel_MLAgent.exe"
 #>
 param(
-  [string]$Exe = "C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0602_rushfix\Vessel_MLAgent.exe"
+  [string]$Exe = ""
 )
+# 상대경로화: 이 스크립트 위치(Assets\Scripts\Python) 기준 프로젝트 루트 = $PSScriptRoot\..\..\..
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\..\..\Build\Vessel_MLAgent.exe' }
 if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (먼저 Unity 재빌드 — 새 env는 재빌드 전엔 무시됨)"; exit 1 }
 
 # ── wave-1 rush-fix 레버 (자식 프로세스로 상속됨; run_meta.txt에 자동 스냅샷) ──
@@ -60,6 +62,7 @@ foreach ($c in $combos) {
 foreach ($v in 'VESSEL_ARRIVAL_REWARD','VESSEL_GOAL_COEF','VESSEL_COLCOURSE_EXP','VESSEL_COLCOURSE_COEF','VESSEL_MSG_L2','VESSEL_RUN_STEP') {
   Remove-Item "Env:\$v" -ErrorAction SilentlyContinue
 }
-Write-Host "`n6 runs launched (wave-1 rush-fix: arrival-debulk + dense-steepening). 결과 → <build>\results\<ts>_rushfix_*\"
-Write-Host "분석(수렴 후): python analyze_run.py `"$(Split-Path $Exe -Parent)\results`""
+$resRoot = Join-Path $PSScriptRoot '..\..\..\results'
+Write-Host "`n6 runs launched (wave-1 rush-fix: arrival-debulk + dense-steepening). 결과 → $resRoot\<ts>_rushfix_*\"
+Write-Host "분석(수렴 후): python analyze_run.py `"$resRoot`""
 Write-Host "wave-2 후보(필요시): VESSEL_PROX_RAMP_COEF=-2.5(prox-ramp, 버그수정완료) / VESSEL_SPEED_AVOID_UNLOCK=1(Rule-8 감속, ×0.3 freeze가드)"

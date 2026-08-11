@@ -1,14 +1,16 @@
 <#
 6병렬 from-scratch sweep: baseline-OFF(sum) × 3seed + extended-ON(mean) × 3seed.
-각 run은 독립 프로세스(이 머신 최적 = 6병렬 × NUM_ENVS=1). 결과는 <build>\results\ 에 자동 정리.
+각 run은 독립 프로세스(이 머신 최적 = 6병렬 × NUM_ENVS=1). 결과는 프로젝트 루트(0702_NewVessel) results\ 에 자동 정리(run_experiment.ps1 -ResultRoot).
 anti-rigging: OFF/ON 같은 빌드·같은 seed·같은 env, 통신만 토글(공정 baseline).
 
 사용:
   .\run_sweep.ps1 -Exe "C:\...\Build\0601_reward\Vessel_MLAgent.exe"
 #>
 param(
-  [string]$Exe = "C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0601_reward\Vessel_MLAgent.exe"
+  [string]$Exe = ""
 )
+# 상대경로화: 이 스크립트 위치(Assets\Scripts\Python) 기준 프로젝트 루트 = $PSScriptRoot\..\..\..
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\..\..\Build\Vessel_MLAgent.exe' }
 if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (먼저 Unity 재빌드)"; exit 1 }
 
 # H1a 시험: ON은 mean 집계 권장(zero-init과 함께 value-of-info≥0). OFF는 통신 미사용이라 agg 무관.
@@ -35,5 +37,6 @@ foreach ($c in $combos) {
 # env 정리: 같은 PowerShell 세션에서 다른 sweep을 이어 돌릴 때 RUN_STEP 상속 방지.
 #   (이미 Start-Process된 자식들은 spawn 시점 env를 받았으므로 영향 없음 — 이후 sweep 격리용.)
 Remove-Item "Env:\VESSEL_RUN_STEP" -ErrorAction SilentlyContinue
-Write-Host "`n6 runs launched (독립 프로세스). 결과 → <build>\results\<timestamp>_*\"
-Write-Host "분석: python analyze_run.py `"$(Split-Path $Exe -Parent)\results`""
+$resRoot = Join-Path $PSScriptRoot '..\..\..\results'
+Write-Host "`n6 runs launched (독립 프로세스). 결과 → $resRoot\<timestamp>_*\"
+Write-Host "분석: python analyze_run.py `"$resRoot`""

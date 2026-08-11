@@ -49,7 +49,7 @@ STATE_SIZE = RADAR_RAYS         # Radar state 크기 = raw ray 360 (압축은 ne
 RADAR_FEAT_DIM = _env_int('VESSEL_RADAR_FEAT_DIM', 30)
 GOAL_SIZE = 2                   # Goal (distance, angle)
 SELF_STATE_SIZE = 4             # Self state (speed, yaw_rate, heading, rudder) - 네트워크 입력용
-COLREGS_SIZE = 0               # 정책 입력에서 제거 (vessel-label leak). 보상 shaping(특권정보)으로만 사용, obs/net 경로 제외
+COLREGS_SIZE = 0               # obs 내 별도 슬롯 없음. 보상 shaping + MoE 라우팅 + obs[368] one-hot 정책 입력(기본 ON, SITUATION_INPUT)
 MSG_DIM = _env_int('VESSEL_MSG_DIM', 6)   # 메시지 차원 (env override 가능)
 CONTINUOUS_ACTION_SIZE = 2      # 행동 공간 차원 (rudder, thrust)
 FRAMES = 3                      # Frame stacking 개수 (radar에만 적용 → RadarEncoder 입력 채널 = FRAMES)
@@ -59,7 +59,7 @@ FRAMES = 3                      # Frame stacking 개수 (radar에만 적용 → 
 # [360:362]  Goal (distance, angle)
 # [362:366]  Self state (speed, yaw_rate, heading, rudder)
 # [366:368]  Position (x, z) - 통신 범위 계산용, 학습 제외
-# [368:369]  Situation (COLREGs 상황 0~4) - MoE 라우터 전용, 학습 feature 제외 (position처럼)
+# [368:369]  Situation (COLREGs 상황 0~4) - MoE 라우터 + one-hot 5D 정책 입력(★기본 ON, VESSEL_SITUATION_INPUT=0으로 ablation)
 # ★ARPA(구 [366:387]) 제거: 충돌기하는 360 raw ray + frame-stack(RadarEncoder Conv1D가 bearing-rate 학습)이 대체
 POSITION_SIZE = 2               # Position (x, z) - 통신 범위 계산용, 학습 제외
 SITUATION_SIZE = 1              # COLREGs 상황 라우팅 인덱스 (0~4). MoE 라우터 전용 — 네트워크 feature 입력 제외
@@ -79,10 +79,11 @@ def _env_float(key, default):
     return float(v) if v is not None else default
 
 COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 420m (C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 56m)과는 분리)
-# ★4→8 (2026-06-12): nearest-4는 레이더(56m) 근방 배만 잡아 far-band(56~420m) 위협 대부분이 통신 도달
-#   불가였음(활성 씬 16척, 밴드 점유 8~10척 실측). far 정보는 *먼* 파트너가 가져야 의미 → 캡 확대.
-#   비용: partner obs 메모리 ~2×, attention K 2×(벡터화로 수용 가능). env로 튜닝.
-MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 8)   # nearest-N within COMM_RANGE
+# ★기본 4 (2026-07-03 사용자 결정으로 8→4 원복): nearest-4 within COMM_RANGE.
+#   이력: 원래 4 → 2026-06-12에 far-band(56~420m) 커버 목적으로 8로 확대(활성 씬 16척, 밴드 점유 8~10척 실측)
+#   → 2026-07-03에 4로 원복. far-band 커버가 필요한 실험은 VESSEL_MAX_PARTNERS=8로 명시 설정할 것.
+#   ⚠️ COMM_CONSUMER_K는 이 값으로 clamp됨 → 기본 4에서는 consumer K ≤ 4 (msgdim 스윕의 K=6 설정은 4로 축소됨).
+MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N within COMM_RANGE
 MSG_LR_SCALE = _env_float('VESSEL_MSG_LR', 1.0)   # 3.0→1.0 (zero-init으로 0에서 자라는 구조: 빠른 LR은 노이즈만↑). env override
 # 메시지 L2 정규화: 통신이 쓸모없으면 메시지를 0으로 우아하게 수렴(불안정 붕괴 방지).
 # 통신이 도움되면 페널티 무릅쓰고 nonzero 유지 → "comm 유용성 자가검증". env로 튜닝.
@@ -103,6 +104,15 @@ MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.0)
 # 기본 OFF(=기존 sum) → 켜기 전 빌드/baseline과 100% 동일(anti-rigging). H1b regime에서 ON 비교.
 USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '0') == '1'
 ATTN_DIM = _env_int('VESSEL_ATTN_DIM', 32)   # attention query/key 내부차원 (head 1개)
+
+# ★위치 grounding (2026-07-03 기본 ON 승격, 사용자 결정): 수신 메시지에 발신자의 [상대방위 sin·cos, 거리/420]
+#   3D를 붙여 msg_encoder(9→32→6 MLP)로 인코딩 후 mean 집계. "내용(학습 6D) + 주소(물리 3D)" 분리.
+# 근거: 상대위치는 수신자가 국소 계산 가능(전송 불요, 채널 대역폭 0) + 실제 AIS가 위치를 메시지에 동봉 →
+#   현실적 관측. comm-OFF는 others_msg≡0이라 불변(공정성 유지). 방향 귀속("어느 쪽이 위험한가")을 가능하게 함.
+# 우선순위: USE_ATTENTION=1 > POS_GROUND=1 > sum/mean/scale. sum 대조군은 VESSEL_POS_GROUND=0 명시.
+# ⚠️ 켜/끄면 통신 arm의 집계 함수가 달라짐 = from-scratch 대상 (msg_encoder 가중치는 항상 존재하므로
+#   체크포인트 shape은 호환되나 학습 의미가 다름).
+POS_GROUND = _env_str('VESSEL_POS_GROUND', '1') == '1'
 
 # ============================================================================
 # Intent self-supervised (메시지 = sender의 미래의도; Phase 2)
@@ -200,12 +210,41 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 # 공유 backbone(radar 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
 #   단일 정책이 4상황의 상충하는 회피규칙(head-on→우현 / stand-on→유지 / give-way→우현+감속 / overtake→keep clear)을
 #   평균내며 간섭하는 걸 방지 → 상황별 전문화.
-# ★default OFF = 단일 head(기존 단일망과 *비트동일*, 기존 체크포인트 strict 로드 가능) = 공정 baseline.
-#   MoE가 단일망을 ground-truth로 이겨야 진짜(anti-rigging). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
+# ★2026-08-04 기본 ON 승격(사용자 결정): 무설정 학습이 MoE를 쓴다. 단일망 baseline은 VESSEL_USE_MOE=0으로
+#   명시 실행 = 기존 단일망과 *비트동일*(기존 체크포인트 strict 로드 가능) = anti-rigging 공정 baseline.
+#   MoE(5x/iso)가 이 single을 ground-truth로 이겨야 진짜(H4). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
 # ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
 #   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
-USE_MOE = _env_str('VESSEL_USE_MOE', '0') == '1'
+USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'
 NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
+# ★iso-parameter MoE (2026-07-03): MoE 전문가 코어의 내부 폭 배수 (conv 채널·radar feat·hidden·fc3에 적용).
+#   1.0(기본) = 기존 MoE — 코어당 단일망과 동일 폭, 총 파라미터 약 5배.
+#   0.44 = 5코어 합계 ≈ 단일망 파라미터 → "상황별 전문화 효과"를 "용량 5배 효과"와
+#   분리하는 공정 비교 arm (single vs moe5x vs moe-iso 3-arm 가능).
+#   실측(2026-07-03 스모크): 0.44 → 3망 합 358,270 vs 단일 364,397 (−1.7%). 0.45는 반올림 계단으로 +7.9% → 0.44 권장.
+#   USE_MOE=1일 때만 적용, 단일망(USE_MOE=0)은 항상 폭 1.0 = 기존과 비트동일.
+#   메시지 6D·행동 2D·상황 one-hot 등 외부 인터페이스 불변. 폭 변경 시 체크포인트 비호환 = from-scratch.
+MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 1.0)
+# ★공유지각 MoE (2026-08-08, H4 설계수정): RadarEncoder(코어 파라미터 ~82.5%) 1벌을 5개 전문가가 공유,
+#   결정부(fc2·gate·consumer·fc3·head)만 상황별 5벌. iso-MoE 붕괴의 근본원인(지배상황 코어의
+#   지각 용량 1/5 축소 — 실측 8.5M goal 3%)을 제거: 지각은 전체 데이터로 학습, 라우팅은 결정 계층만 특화.
+#   총 파라미터 ≈ 단일망 ×1.7 (5x의 ×5 대비). USE_MOE=1일 때만 유효, MOE_WIDTH=1.0과 함께 쓸 것.
+MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '0') == '1'
+
+# ============================================================================
+# ★COLREGs situation 정책 입력 (2026-07-02 도입, 2026-07-03 기본 ON 승격): obs[368] 상황(0~4)을
+#   one-hot 5D로 MessageActor·ControlActor·Critic fc2에 직접 입력 (MoE 라우팅과 별개, 병행 가능).
+# ============================================================================
+# 근거: 상황 판정은 자기 센서 반경(56m=레이더 범위) 내 정보로 산출되고, 실선도 ARPA/AIS가 동일한
+#   상황 분류를 제공 → 현실적 관측으로 간주. 통신 ON/OFF 양 arm에 동일 적용이라 anti-rigging 안전
+#   (오히려 통신이 전달할 정보를 공짜로 주는 방향 = 통신 가치 평가엔 보수적).
+# ★기본 1 = 표준 아키텍처 (사용자 결정 2026-07-03): MoE OFF=단일망+situation 입력,
+#   MoE ON=상황별 5벌+각 코어에도 situation 입력(expert 내 상수라 중복이나 무해).
+#   =0은 ablation 전용(situation 입력 제거, fc2 36/42 구조 — 07-03 이전 체크포인트 호환).
+# ⚠️ 기본 변경으로 fc2 입력 +5 (Msg 41 / Ctrl·Critic 47) → 이전 체크포인트와 shape 불일치 = from-scratch.
+# ⚠️ 라벨 결함(1스텝 stale, argmax-risk 1척 기준)이 정책 입력으로 직결됨을 인지.
+#   (0~5° None 사각지대는 2026-07-03 COLREGsHandler.AnalyzeSituation fix로 폐쇄 — 재빌드 필요)
+SITUATION_INPUT = _env_str('VESSEL_SITUATION_INPUT', '1') == '1'
 
 # Terminal reward 판별 threshold (C# collisionPenalty=-100, spinningPenalty=-80 기준)
 COLLISION_REWARD_THRESHOLD = -150  # collision: reward < -150 (collisionPenalty -300과 짝. 충돌 종료~-300≪-150, 정상종료~±2 → 분류 신뢰)
@@ -222,7 +261,8 @@ USE_COMMUNICATION = _env_str('VESSEL_USE_COMM', '1') == '1'   # 통신 ON/OFF (e
 # Training Mode
 # ============================================================================
 LOAD_MODEL = (_env_str('VESSEL_LOAD_MODEL', '0') == '1')   # env로 켜면 MODEL_PATH 로드(관찰/이어학습용). 기본 from-scratch
-TRAIN_MODE = True               # 학습 모드
+TRAIN_MODE = (_env_str('VESSEL_TRAIN', '1') == '1')   # 0=eval: PPO 업데이트 스킵 — LOAD_MODEL=1과 조합해
+                                                      #   학습된 정책의 ground-truth 평가 (sim2sim 판정관 단계, 2026-07-06)
 _default_model_path = os.path.join(PROJECT_ROOT, "models", "COMM_NON", "VesselNavigation_20260419_194205", "policy_step_3220000.pth")
 MODEL_PATH = _env_str('VESSEL_MODEL_PATH', _default_model_path)
 START_STEP = _env_int('VESSEL_START_STEP', 0)   # from-scratch=0 (LOAD_MODEL=False면 main.py가 0으로 강제)
@@ -244,7 +284,7 @@ MAX_GRAD_NORM = 0.5             # Gradient clipping norm
 # ============================================================================
 # Training Schedule
 # ============================================================================
-RUN_STEP = _env_int('VESSEL_RUN_STEP', 30000000) if TRAIN_MODE else 0   # env override 가능
+RUN_STEP = _env_int('VESSEL_RUN_STEP', 30000000)   # env override 가능 (eval도 env로 길이 지정 — 옛 'else 0' 분기는 TRAIN_MODE 상수 시절 사문)
 MAX_STEPS = RUN_STEP            # main.py가 start_step + MAX_STEPS 까지 학습
 UPDATE_INTERVAL = BATCH_SIZE    # PPO 업데이트 간격
 
@@ -258,7 +298,10 @@ USE_EDITOR = _env_str('VESSEL_USE_EDITOR', '1') == '1'          # 기본 ON (편
 NUM_ENVS = 1 if USE_EDITOR else _env_int('VESSEL_NUM_ENVS', 2)  # 에디터=1, 빌드=병렬
 BASE_PORT = _env_int('VESSEL_BASE_PORT', 5004)   # env override 가능 (병렬 학습 시 충돌 회피)
 TIME_SCALE = _env_float('VESSEL_TIME_SCALE', 100.0)   # 시뮬 속도. 관찰 시 VESSEL_TIME_SCALE=2~3 (천천히 보이게)
-_default_env_path = r"c:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0424\Vessel_MLAgent.exe"
+# ★cross-platform: 프로젝트 루트 기준 상대경로 (Mac/Windows 공용).
+#   ⚠️ Mac에선 이 .exe가 실행 안 됨 → 기본 VESSEL_USE_EDITOR=1(에디터 직결)로 학습하거나
+#      Mac 빌드를 VESSEL_ENV_PATH로 지정할 것.
+_default_env_path = os.path.join(PROJECT_ROOT, "Build", "Vessel_MLAgent.exe")
 ENV_PATH = _env_str('VESSEL_ENV_PATH', _default_env_path)   # Server build 경로로 env override 가능
 
 # ============================================================================
@@ -282,10 +325,10 @@ LOG_DIR = os.path.join(SAVE_PATH, 'logs')
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 디렉토리 생성
-if not os.path.exists(SAVE_PATH):
-    os.makedirs(SAVE_PATH)
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# exist_ok: DATE_TIME이 초 단위라 같은 초에 두 학습을 띄우면 폴더 이름이 겹친다.
+# 검사-후-생성 사이에 다른 프로세스가 먼저 만들면 FileExistsError로 죽어버려 실행이 통째로 날아갔다.
+os.makedirs(SAVE_PATH, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
 
 VALUE_LOSS_COEF = CRITIC_LOSS_WEIGHT   # main.py PPO total-loss에서 사용 (CRITIC_LOSS_WEIGHT alias)
 
@@ -297,9 +340,13 @@ def get_config_dict():
         'msg_dim': MSG_DIM,
         'use_communication': USE_COMMUNICATION,
         'use_moe': USE_MOE,
+        'moe_width': MOE_WIDTH,
+        'moe_shared': MOE_SHARED,
+        'situation_input': SITUATION_INPUT,
         'num_colregs_situations': NUM_COLREGS_SITUATIONS,
         'use_attention': USE_ATTENTION,
         'attn_dim': ATTN_DIM,
+        'pos_ground': POS_GROUND,
         'intent_coef': INTENT_COEF,
         'intent_k': INTENT_K,
         'intent_horizon': INTENT_HORIZON,

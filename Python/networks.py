@@ -25,7 +25,41 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     SELF_STATE_SIZE, GOAL_SIZE, USE_ATTENTION, ATTN_DIM,
                     INTENT_COEF, INTENT_K, THREAT_COEF, THREAT_K, GOAL_COMM_COEF,
                     ROLE_COMM_COEF, USE_MOE, NUM_COLREGS_SITUATIONS, MAX_COMM_PARTNERS,
-                    COMM_CONSUMER_COEF, COMM_CONSUMER_K, COMM_CONSUMER_COUPLING, USE_ORACLE)
+                    COMM_CONSUMER_COEF, COMM_CONSUMER_K, COMM_CONSUMER_COUPLING, USE_ORACLE,
+                    SITUATION_INPUT, MOE_WIDTH, MOE_SHARED, POS_GROUND)
+
+
+def _share_radar_encoder(experts):
+    """★공유지각 MoE(MOE_SHARED=1): 전문가들의 radar_encoder를 experts[0] 것으로 통일(모듈 공유).
+    지각(코어 파라미터 ~82.5%)은 전체 데이터로 학습, 상황별 특화는 결정부(fc2~head)만.
+    parameters()/optimizer는 공유 텐서를 자동 dedup, state_dict는 5벌 동일 사본 저장(load 호환)."""
+    for _k in range(1, len(experts)):
+        experts[_k].radar_encoder = experts[0].radar_encoder
+
+
+def _w(n, width, floor=4):
+    """iso-parameter MoE용 폭 스케일: 내부 차원 n에 배수 width 적용 (하한 floor).
+    width=1.0이면 정확히 n 반환 → 기존 구조와 비트동일. 외부 인터페이스(msg 6D, 행동 2D,
+    goal/self/situation 입력)는 스케일 대상이 아님 — 코어 *내부* 차원만."""
+    return max(floor, int(round(n * width)))
+
+# ★COLREGs situation 정책 입력 (2026-07-02, VESSEL_SITUATION_INPUT=1): obs[368] 상황(0~4)을 one-hot 5D로
+#   세 네트워크 fc2에 직접 입력. 판정은 자기 센서 반경(56m=레이더) 내 기하로 산출 + 실선 ARPA/AIS 동등 정보.
+#   통신 ON/OFF 양 arm 동일 적용 = anti-rigging 안전. 기본 OFF = 기존과 비트동일(체크포인트 호환).
+#   ⚠️ concat 순서는 항상 [radar, goal, self, (sit_onehot), msg] — msg가 *마지막*이어야
+#   fc2 메시지 슬라이스의 [:, -msg_dim:] 인덱싱(×0.1 init·grad 텔레메트리)이 유효.
+SIT_INPUT_DIM = NUM_COLREGS_SITUATIONS if SITUATION_INPUT else 0
+
+
+def _situation_onehot(situation, M, ref):
+    """situation [b,n]|[b,n,1]|None → one-hot [M, NUM_COLREGS_SITUATIONS] float.
+    None이면 상황 0(None) 취급 — MoE 라우팅의 'None→코어 0' 규약과 일치.
+    rollout·update가 같은 저장값(memory situations/p_sits)으로 호출 → PPO ratio 정합."""
+    if situation is not None:
+        sit = situation.reshape(M).long().clamp(0, NUM_COLREGS_SITUATIONS - 1)
+    else:
+        sit = torch.zeros(M, dtype=torch.long, device=ref.device)
+    return F.one_hot(sit, NUM_COLREGS_SITUATIONS).to(dtype=ref.dtype)
 
 
 class RadarEncoder(nn.Module):
@@ -41,13 +75,15 @@ class RadarEncoder(nn.Module):
     ★출력 out_dim(=RADAR_FEAT_DIM) = 다운스트림 fc2 입력. 각 네트워크가 독립 인스턴스 보유.
       차원 변경 시 fc2 weight shape 변경 → from-scratch 필요. VESSEL_RADAR_FEAT_DIM로 튜닝.
     """
-    def __init__(self, frames, n_rays, out_dim=RADAR_FEAT_DIM):
+    def __init__(self, frames, n_rays, out_dim=RADAR_FEAT_DIM, width=1.0):
         super(RadarEncoder, self).__init__()
         self.frames = frames
         self.n_rays = n_rays
-        self.conv1 = nn.Conv1d(frames, 32, kernel_size=5, stride=2, padding=2, padding_mode='circular')
-        self.conv2 = nn.Conv1d(32, 64, kernel_size=5, stride=2, padding=2, padding_mode='circular')
-        self.conv3 = nn.Conv1d(64, 64, kernel_size=3, stride=2, padding=1, padding_mode='circular')
+        # width: iso-parameter MoE용 채널 배수 (기본 1.0 = 32/64/64 그대로)
+        c1, c2, c3 = _w(32, width), _w(64, width), _w(64, width)
+        self.conv1 = nn.Conv1d(frames, c1, kernel_size=5, stride=2, padding=2, padding_mode='circular')
+        self.conv2 = nn.Conv1d(c1, c2, kernel_size=5, stride=2, padding=2, padding_mode='circular')
+        self.conv3 = nn.Conv1d(c2, c3, kernel_size=3, stride=2, padding=1, padding_mode='circular')
         # conv flatten 크기는 n_rays에 의존 → 더미 forward로 산출(차원 하드코딩 방지).
         with torch.no_grad():
             _flat = self._conv(torch.zeros(1, frames, n_rays)).shape[1]
@@ -211,14 +247,17 @@ class _MessageActorCore(nn.Module):
     ★완전분리 MoE(2026-06-26): MessageActor/ControlActor/Critic 각각이 USE_MOE=1이면 COLREGs 5상황별로
       이 *코어를 통째 5벌*(radar_encoder 포함) 보유 → 상황별 완전 독립망. USE_MOE=0이면 코어 1벌(단일망).
     flat 입력 [M, ...]으로 동작(상위 wrapper가 reshape·상황 라우팅 담당)."""
-    def __init__(self, frames, msg_dim):
+    def __init__(self, frames, msg_dim, width=1.0):
         super(_MessageActorCore, self).__init__()
         self.msg_dim = msg_dim
+        # width<1.0 = iso-parameter MoE 코어 (내부 차원만 축소, 입출력 인터페이스 불변)
+        f_dim = _w(RADAR_FEAT_DIM, width)
+        self.hidden = _w(128, width, floor=8)
         # Radar feature extraction: 360 raw ray → 학습형 Conv1D 압축(원형 padding). min-pool 제거(2026-06-04).
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)
-        # RADAR_FEAT_DIM + goal(2) + self_state(4)
-        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4, 128)
-        self.msg_out = nn.Linear(128, msg_dim)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, f_dim, width)
+        # f_dim + goal(2) + self_state(4) + situation one-hot(SIT_INPUT_DIM, 기본 0)
+        self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM, self.hidden)
+        self.msg_out = nn.Linear(self.hidden, msg_dim)
         # ★생산측 소진폭 init (2026-06-12 채널동결 fix): weight+bias zero-init은 msg≡tanh(0)=0을 만들어
         #   소비측 zero-init과 직렬 곱 새들 형성 → 채널 전체 grad 항등 0, 1M step 비트동결(실측).
         #   소진폭(×0.1)이면 메시지가 step1부터 상태의존적이되 작음(tanh 선형구간) → 학습 신호 생존.
@@ -226,10 +265,14 @@ class _MessageActorCore(nn.Module):
             self.msg_out.weight.mul_(0.1)
             self.msg_out.bias.zero_()
 
-    def forward(self, x_flat, goal_flat, self_state_flat):
-        """x_flat [M, frames*STATE_SIZE], goal_flat [M,2], self_state_flat [M,4] → msg [M, msg_dim]."""
+    def forward(self, x_flat, goal_flat, self_state_flat, sit_oh=None):
+        """x_flat [M, frames*STATE_SIZE], goal_flat [M,2], self_state_flat [M,4],
+        sit_oh [M, SIT_INPUT_DIM] (SITUATION_INPUT=1일 때만) → msg [M, msg_dim]."""
         a = self.radar_encoder(x_flat)   # [M, RADAR_FEAT_DIM] (post-ReLU)
-        a = torch.cat((a, goal_flat, self_state_flat), dim=-1)
+        if SITUATION_INPUT:
+            a = torch.cat((a, goal_flat, self_state_flat, sit_oh), dim=-1)
+        else:
+            a = torch.cat((a, goal_flat, self_state_flat), dim=-1)
         a = F.relu(self.fc2(a))
         return torch.tanh(self.msg_out(a))  # bounded [-1, 1]
 
@@ -249,7 +292,11 @@ class MessageActor(nn.Module):
         self.use_moe = USE_MOE
         self.num_experts = NUM_COLREGS_SITUATIONS
         if self.use_moe:
-            self.experts = nn.ModuleList([_MessageActorCore(frames, msg_dim) for _ in range(self.num_experts)])
+            # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
+            self.experts = nn.ModuleList(
+                [_MessageActorCore(frames, msg_dim, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _MessageActorCore(frames, msg_dim)
 
@@ -275,8 +322,9 @@ class MessageActor(nn.Module):
         goal_f = goal.reshape(M, -1)
         self_f = self_state.reshape(M, -1)
 
+        sit_oh = _situation_onehot(situation, M, x_f) if SITUATION_INPUT else None
         if not self.use_moe:
-            msg = self.core(x_f, goal_f, self_f)
+            msg = self.core(x_f, goal_f, self_f, sit_oh)
         else:
             # 상황별 hard-route: 각 sample은 자기 상황 코어만 통과 → 그 코어만 gradient.
             if situation is not None:
@@ -287,7 +335,8 @@ class MessageActor(nn.Module):
             for k in range(self.num_experts):
                 mask = (sit == k)
                 if mask.any():
-                    msg[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask])
+                    msg[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask],
+                                                sit_oh[mask] if sit_oh is not None else None)
         return msg.view(batch_size, n_agent, self.msg_dim)
 
 
@@ -297,13 +346,18 @@ class _ControlActorCore(nn.Module):
     ★완전분리 MoE(2026-06-26): radar_encoder를 *코어 안*에 둠 → USE_MOE=1이면 상황별 5벌이 perception까지
       완전 독립(과거의 공유 backbone 폐기). backbone(z)·head(mean,logstd) flat 입력으로 동작.
     """
-    def __init__(self, frames, msg_dim, action_size):
+    def __init__(self, frames, msg_dim, action_size, width=1.0):
         super(_ControlActorCore, self).__init__()
         self.msg_dim = msg_dim
         self.action_size = action_size
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)  # 360 raw ray → 학습형 Conv1D 압축
-        # RADAR_FEAT_DIM + goal(2) + self_state(4) + others_msg(msg_dim)
-        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4 + msg_dim, 128)
+        # width<1.0 = iso-parameter MoE 코어 (내부 차원만 축소, 입출력 인터페이스 불변)
+        f_dim = _w(RADAR_FEAT_DIM, width)
+        self.hidden = _w(128, width, floor=8)
+        _fc3_h = _w(64, width)
+        _cons_h = _w(64, width)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, f_dim, width)  # 360 raw ray → 학습형 Conv1D 압축
+        # f_dim + goal(2) + self_state(4) + situation one-hot(SIT_INPUT_DIM, 기본 0) + others_msg(msg_dim, ★항상 마지막)
+        self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM + msg_dim, self.hidden)
         # ★메시지 슬라이스 소진폭 init (2026-06-12 채널동결 fix): zero-init은 ∂L/∂msg≡0을 만들어 생산측
         #   zero와 직렬 곱 새들 형성 → 채널 영구 동결. 소진폭(×0.1)은 grad를 살리되 초기 메시지 영향을 작게.
         with torch.no_grad():
@@ -313,13 +367,13 @@ class _ControlActorCore(nn.Module):
         # ★C5c 수신측 decode-in-policy: backbone z로 파트너 의도(goal) 복원 head (코어별 독립).
         self.consumer_k = max(1, min(COMM_CONSUMER_K, MAX_COMM_PARTNERS))
         self.consumer_decoder = nn.Sequential(
-            nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, self.consumer_k * GOAL_SIZE)
+            nn.Linear(self.hidden, _cons_h), nn.ReLU(), nn.Linear(_cons_h, self.consumer_k * GOAL_SIZE)
         )
-        # ★H2 coupling: decode(재구성)를 fc3 입력에 concat. OFF면 fc3 입력=128.
+        # ★H2 coupling: decode(재구성)를 fc3 입력에 concat. OFF면 fc3 입력=hidden.
         self.consumer_coupling = COMM_CONSUMER_COUPLING
-        _fc3_in = 128 + (self.consumer_k * GOAL_SIZE if self.consumer_coupling else 0)
-        self.fc3 = nn.Linear(_fc3_in, 64)
-        self.action_mean = nn.Linear(64, action_size)
+        _fc3_in = self.hidden + (self.consumer_k * GOAL_SIZE if self.consumer_coupling else 0)
+        self.fc3 = nn.Linear(_fc3_in, _fc3_h)
+        self.action_mean = nn.Linear(_fc3_h, action_size)
         self.action_mean.weight.data.mul_(0.1)
         self.action_mean.bias.data.zero_()
         # Learnable log std — per-dim: rudder(dim0) -1.0(std≈0.37), thrust(dim1) -0.5(std≈0.61).
@@ -328,10 +382,13 @@ class _ControlActorCore(nn.Module):
         else:
             self.action_logstd = nn.Parameter(torch.full((1, action_size), -0.5))
 
-    def backbone(self, x_f, goal_f, self_f, others_msg_f):
-        """flat 입력 → z[M,128]. 게이트가 forward·update 양쪽에 동일 적용 → PPO ratio 정합."""
+    def backbone(self, x_f, goal_f, self_f, others_msg_f, sit_oh=None):
+        """flat 입력 → z[M,128]. 게이트가 forward·update 양쪽에 동일 적용 → PPO ratio 정합.
+        sit_oh [M, SIT_INPUT_DIM]: SITUATION_INPUT=1일 때만 concat(msg 앞 = msg 슬라이스 인덱싱 보존)."""
         gated = others_msg_f * torch.sigmoid(self.msg_gate)
         radar_feat = self.radar_encoder(x_f)   # [M, RADAR_FEAT_DIM] (post-ReLU)
+        if SITUATION_INPUT:
+            return torch.tanh(self.fc2(torch.cat((radar_feat, goal_f, self_f, sit_oh, gated), dim=-1)))
         return torch.tanh(self.fc2(torch.cat((radar_feat, goal_f, self_f, gated), dim=-1)))
 
     def head(self, z):
@@ -360,10 +417,14 @@ class ControlActor(nn.Module):
         self.comm_consumer_coef = COMM_CONSUMER_COEF   # evaluate_actions C5c 게이트
         self.consumer_k = max(1, min(COMM_CONSUMER_K, MAX_COMM_PARTNERS))
         if self.use_moe:
+            # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
             self.experts = nn.ModuleList(
-                [_ControlActorCore(frames, msg_dim, action_size) for _ in range(self.num_experts)])
+                [_ControlActorCore(frames, msg_dim, action_size, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _ControlActorCore(frames, msg_dim, action_size)
+        self.core_hidden = (self.experts[0] if self.use_moe else self.core).hidden
 
     def cores(self):
         return list(self.experts) if self.use_moe else [self.core]
@@ -388,8 +449,9 @@ class ControlActor(nn.Module):
         goal_f = goal.reshape(M, -1)
         self_f = self_state.reshape(M, -1)
         om_f = others_msg.reshape(M, -1)
+        sit_oh = _situation_onehot(situation, M, x_f) if SITUATION_INPUT else None
         if not self.use_moe:
-            z = self.core.backbone(x_f, goal_f, self_f, om_f)
+            z = self.core.backbone(x_f, goal_f, self_f, om_f, sit_oh)
             mean, logstd = self.core.head(z)
             return z, mean, logstd, batch_size, n_agent
         # 상황별 hard-route (코어 통째). 각 sample은 자기 상황 코어만 통과 → 그 코어만 gradient.
@@ -397,13 +459,14 @@ class ControlActor(nn.Module):
             sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
         else:
             sit = torch.zeros(M, dtype=torch.long, device=x.device)
-        z = x_f.new_zeros(M, 128)
+        z = x_f.new_zeros(M, self.core_hidden)
         mean = x_f.new_zeros(M, self.action_size)
         logstd = x_f.new_zeros(M, self.action_size)
         for k in range(self.num_experts):
             mask = (sit == k)
             if mask.any():
-                zk = self.experts[k].backbone(x_f[mask], goal_f[mask], self_f[mask], om_f[mask])
+                zk = self.experts[k].backbone(x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
+                                              sit_oh[mask] if sit_oh is not None else None)
                 mk, lk = self.experts[k].head(zk)
                 z[mask] = zk
                 mean[mask] = mk
@@ -428,7 +491,10 @@ class ControlActor(nn.Module):
         return out
 
     def forward(self, x, goal, self_state, others_msg, situation=None):
-        """Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act]. situation: [b,n] or [b,n,1] (0~4)."""
+        """Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act], action_raw [b,n,act].
+        ★action_raw(=pre-tanh 샘플)를 함께 반환 → rollout이 memory에 raw를 저장하고 update가 그대로
+          재사용(get_logprob_entropy) → tanh 보정이 비트 일치, PPO ratio가 epoch0에서 1.0(포화 샘플 포함).
+        situation: [b,n] or [b,n,1] (0~4)."""
         z, action_mean, action_logstd, batch_size, n_agent = self._route(
             x, goal, self_state, others_msg, situation)
 
@@ -447,30 +513,34 @@ class ControlActor(nn.Module):
         action = action.view(batch_size, n_agent, -1)
         logprob = logprob.view(batch_size, n_agent, -1)
         action_mean = action_mean.view(batch_size, n_agent, -1)
-        return action, logprob, action_mean
+        action_raw = action_raw.view(batch_size, n_agent, -1)
+        return action, logprob, action_mean, action_raw
 
-    def get_logprob_entropy(self, x, goal, self_state, others_msg, action, situation=None):
-        """PPO 업데이트용: 주어진 action의 log_prob과 entropy 계산.
-        ★situation은 rollout 저장값 → forward와 *동일* 코어 라우팅 → old_logprob 정합(PPO ratio 유효)."""
+    def get_logprob_entropy(self, x, goal, self_state, others_msg, action_raw, situation=None):
+        """PPO 업데이트용: rollout이 저장한 pre-tanh raw로 log_prob·entropy 재계산.
+        ★situation은 rollout 저장값 → forward와 *동일* 코어 라우팅 → old_logprob 정합(PPO ratio 유효).
+        ★action_raw는 rollout forward가 sample한 pre-tanh 값(memory 저장). 기존엔 tanh 저장값을
+          atanh(clamp(·,±0.999))로 역변환했으나 |raw|>3.8 포화 샘플에서 old≠new logprob → ratio가
+          policy 변화와 무관하게 epoch0부터 clip 밴드를 벗어났음(전타/전속 commit 기동에서 gradient 오염).
+          raw를 직접 받아 action=tanh(raw)를 재계산 → 보정항이 forward와 정확히 동일."""
         z, action_mean, action_logstd, batch_size, n_agent = self._route(
             x, goal, self_state, others_msg, situation)
-        action_flat = action.reshape(batch_size * n_agent, -1)
+        action_raw_flat = action_raw.reshape(batch_size * n_agent, -1)
 
         action_mean = torch.clamp(action_mean, -3.0, 3.0)
         action_logstd = torch.clamp(action_logstd, -2.3, 0.0)
         action_std = torch.exp(action_logstd)
 
-        # action은 이미 tanh 적용값 → arctanh로 역변환
-        action_clamped = torch.clamp(action_flat, -0.999, 0.999)
-        action_raw = 0.5 * torch.log((1 + action_clamped) / (1 - action_clamped))
+        # ★저장된 raw로 tanh를 재계산 → forward의 squash 보정과 비트 일치(무손실).
+        action = torch.tanh(action_raw_flat)
 
         dist = Normal(action_mean, action_std)
-        logprob = dist.log_prob(action_raw) - torch.log(1 - action_clamped.pow(2) + 1e-6)
+        logprob = dist.log_prob(action_raw_flat) - torch.log(1 - action.pow(2) + 1e-6)
         logprob = logprob.sum(dim=-1, keepdim=True)
 
-        # Squashed Gaussian entropy 보정
+        # Squashed Gaussian entropy 보정 (동일 tanh 값 사용)
         gaussian_entropy = dist.entropy().sum(dim=-1)
-        squash_correction = torch.log(1 - action_clamped.pow(2) + 1e-6).sum(dim=-1)
+        squash_correction = torch.log(1 - action.pow(2) + 1e-6).sum(dim=-1)
         entropy = (gaussian_entropy + squash_correction).mean()
 
         logprob = logprob.view(batch_size, n_agent, -1)
@@ -482,20 +552,26 @@ class ControlActor(nn.Module):
 class _CriticCore(nn.Module):
     """단일 Critic 본체(radar_encoder + fc2 + msg_gate + value_out). 완전분리 MoE에서 상황별 5벌 독립.
     ★과거의 situation one-hot 조건화 폐기 — 상황별로 코어를 통째 라우팅하므로 가치망도 perception까지 독립."""
-    def __init__(self, frames, msg_dim):
+    def __init__(self, frames, msg_dim, width=1.0):
         super(_CriticCore, self).__init__()
-        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, RADAR_FEAT_DIM)  # 360 raw ray → 학습형 Conv1D 압축
-        # RADAR_FEAT_DIM + goal(2) + self_state(4) + others_msg(msg_dim)
-        self.fc2 = nn.Linear(RADAR_FEAT_DIM + 2 + 4 + msg_dim, 128)
+        # width<1.0 = iso-parameter MoE 코어 (내부 차원만 축소, 입출력 인터페이스 불변)
+        f_dim = _w(RADAR_FEAT_DIM, width)
+        self.hidden = _w(128, width, floor=8)
+        self.radar_encoder = RadarEncoder(frames, STATE_SIZE, f_dim, width)  # 360 raw ray → 학습형 Conv1D 압축
+        # f_dim + goal(2) + self_state(4) + situation one-hot(SIT_INPUT_DIM, 기본 0) + others_msg(msg_dim, ★항상 마지막)
+        self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM + msg_dim, self.hidden)
         with torch.no_grad():
             self.fc2.weight[:, -msg_dim:].mul_(0.1)   # 메시지 슬라이스 소진폭 init (채널동결 fix)
         self.msg_gate = nn.Parameter(torch.tensor(0.0))
-        self.value_out = nn.Linear(128, 1)
+        self.value_out = nn.Linear(self.hidden, 1)
 
-    def forward(self, x_f, goal_f, self_f, others_msg_f):
+    def forward(self, x_f, goal_f, self_f, others_msg_f, sit_oh=None):
         gated = others_msg_f * torch.sigmoid(self.msg_gate)
         v = self.radar_encoder(x_f)   # [M, RADAR_FEAT_DIM] (post-ReLU)
-        v = F.relu(self.fc2(torch.cat((v, goal_f, self_f, gated), dim=-1)))
+        if SITUATION_INPUT:
+            v = F.relu(self.fc2(torch.cat((v, goal_f, self_f, sit_oh, gated), dim=-1)))
+        else:
+            v = F.relu(self.fc2(torch.cat((v, goal_f, self_f, gated), dim=-1)))
         return self.value_out(v)   # [M, 1]
 
 
@@ -510,7 +586,11 @@ class Critic(nn.Module):
         self.use_moe = USE_MOE
         self.num_experts = NUM_COLREGS_SITUATIONS
         if self.use_moe:
-            self.experts = nn.ModuleList([_CriticCore(frames, msg_dim) for _ in range(self.num_experts)])
+            # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
+            self.experts = nn.ModuleList(
+                [_CriticCore(frames, msg_dim, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _CriticCore(frames, msg_dim)
 
@@ -539,8 +619,9 @@ class Critic(nn.Module):
         goal_f = goal.reshape(M, -1)
         self_f = self_state.reshape(M, -1)
         om_f = others_msg.reshape(M, -1)
+        sit_oh = _situation_onehot(situation, M, x_f) if SITUATION_INPUT else None
         if not self.use_moe:
-            v = self.core(x_f, goal_f, self_f, om_f)
+            v = self.core(x_f, goal_f, self_f, om_f, sit_oh)
         else:
             if situation is not None:
                 sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
@@ -550,7 +631,8 @@ class Critic(nn.Module):
             for k in range(self.num_experts):
                 mask = (sit == k)
                 if mask.any():
-                    v[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask], om_f[mask])
+                    v[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
+                                              sit_oh[mask] if sit_oh is not None else None)
         return v.view(batch_size, n_agent, 1)
 
 
@@ -577,11 +659,10 @@ class CNNPolicy(nn.Module):
         self.ctr_actor = ControlActor(frames, msg_dim, action_size)
         self.critic = Critic(frames, msg_dim)
 
-        # ★ 위치 grounding (AIS-style): 파트너의 [상대방위(sin,cos)+거리] 3D를 메시지에 결합 →
-        #   receiver가 "어느 방위에서 온 메시지"인지 알게 됨. VESSEL_POS_GROUND=1일 때만 사용.
+        # ★ 위치 grounding (AIS-style, 2026-07-03 기본 ON): 파트너의 [상대방위(sin,cos)+거리] 3D를 메시지에 결합 →
+        #   receiver가 "어느 방위에서 온 메시지"인지 알게 됨. VESSEL_POS_GROUND=0으로 sum 대조군.
         #   relpos는 "주소"(어디서), 학습 6D latent는 "내용"(의도) → 학습메시지 thesis 유지.
-        import os as _os
-        self.pos_ground = _os.environ.get('VESSEL_POS_GROUND', '0') == '1'
+        self.pos_ground = POS_GROUND
         self.relpos_dim = 3
         self.msg_encoder = nn.Sequential(
             nn.Linear(self.relpos_dim + msg_dim, 32), nn.ReLU(), nn.Linear(32, msg_dim)
@@ -643,13 +724,18 @@ class CNNPolicy(nn.Module):
         # ★oracle-OFF 통제(rollout): 학습채널 대신 *참 파트너 goal* 주입(채널 우회). update(evaluate_actions)와
         #   동일 함수형(파트너 goal 평균을 others_msg 앞 GOAL_SIZE 차원에 주입, 나머지 0) → PPO ratio 유효.
         #   ★USE_COMMUNICATION 가드: oracle은 comm-path 변종 → COMM=0(OFF baseline)이면 미발화(others_msg≡0 보존).
-        if (USE_ORACLE and USE_COMMUNICATION and comm_partners is not None
-                and agent_id_list is not None and goal is not None):
+        if USE_ORACLE and USE_COMMUNICATION:
+            # ★파트너 정보 누락 시 zeros 반환 — 아래 mean-field 폴백으로 새는 것 차단. update(evaluate_actions)는
+            #   무조건 oracle 주입이므로 여기서 폴백에 떨어지면 rollout≠update = PPO ratio 파손.
+            if comm_partners is None or agent_id_list is None or goal is None:
+                return torch.zeros_like(msg)
             id_to_idx = {aid: idx for idx, aid in enumerate(agent_id_list)}
             others_msg = torch.zeros_like(msg)
             for i, agent_id in enumerate(agent_id_list):
                 partners = comm_partners.get(agent_id, [])
-                pidx = [id_to_idx[p] for p in partners if p in id_to_idx]
+                # [:MAX_COMM_PARTNERS] 절단: update의 K-slot masked-mean과 도메인을 구조적으로 일치
+                #   (obs_utils가 원천 절단하므로 현행 무영향 — 방어적 불변식).
+                pidx = [id_to_idx[p] for p in partners if p in id_to_idx][:MAX_COMM_PARTNERS]
                 if not pidx:
                     continue
                 others_msg[0, i, :GOAL_SIZE] = goal[0, pidx, :].mean(dim=0)   # 참 파트너 goal 평균
@@ -692,6 +778,44 @@ class CNNPolicy(nn.Module):
                     others_msg = others_msg * msg_gain
                 return others_msg
 
+            # ★ pos_ground 벡터화 경로 (2026-07-03 기본 ON 승격과 함께 추가): attention 벡터화와 동일한
+            #   행렬 구성 → msg_encoder 1회 배치 호출 + masked mean. per-agent 루프의 커널 런치 병목 방지
+            #   (attention이 겪은 6-way 병렬 처리량 붕괴의 재발 방지). update의 masked-mean(★아래
+            #   evaluate_actions 분기)과 동일 함수형: 인코더 출력에 mask 적용 후 실파트너 수 Kc로 나눔
+            #   → 패딩 슬롯 기여 0, per-agent mean(dim=0)과 수치 동일 → PPO ratio 유효.
+            if self.pos_ground and comm_relpos is not None:
+                Kmax = MAX_COMM_PARTNERS
+                # 순수 파이썬 리스트로 행렬 구성 (numpy 미경유): torch↔numpy 버전 비호환에 무관하게 동작.
+                # N·Kmax ≤ 수십 원소라 비용 무시 가능.
+                idx_rows, mask_rows, rel_rows = [], [], []
+                for i, agent_id in enumerate(agent_id_list):
+                    idx_r = [0] * Kmax
+                    mask_r = [0.0] * Kmax
+                    rel_r = [[0.0] * self.relpos_dim for _ in range(Kmax)]
+                    partners = comm_partners.get(agent_id, [])
+                    if partners and agent_id in comm_relpos:
+                        rp = comm_relpos[agent_id]   # [K_actual, relpos_dim]
+                        kept_pos = [k for k, p in enumerate(partners) if p in id_to_idx][:Kmax]
+                        for j, k in enumerate(kept_pos):
+                            idx_r[j] = id_to_idx[partners[k]]
+                            mask_r[j] = 1.0
+                            if k < len(rp):
+                                rel_r[j] = [float(v) for v in rp[k]]
+                    idx_rows.append(idx_r)
+                    mask_rows.append(mask_r)
+                    rel_rows.append(rel_r)
+                idx_t = torch.tensor(idx_rows, dtype=torch.long, device=msg.device)              # [N,Kmax]
+                mask_t = torch.tensor(mask_rows, dtype=torch.float32, device=msg.device).unsqueeze(-1)  # [N,Kmax,1]
+                relpos_t = torch.tensor(rel_rows, dtype=torch.float32, device=msg.device)        # [N,Kmax,R]
+                msg_part = msg[0][idx_t] * mask_t                                                # [N,Kmax,M]
+                localized = self.msg_encoder(torch.cat([relpos_t, msg_part], dim=-1))            # [N,Kmax,M]
+                Kc = mask_t.sum(dim=1, keepdim=True).clamp(min=1.0)                              # [N,1,1]
+                others = (localized * mask_t).sum(dim=1, keepdim=True) / Kc                      # [N,1,M]
+                others_msg = others.transpose(0, 1).contiguous()                                # [1,N,M]
+                if msg_gain != 1.0:
+                    others_msg = others_msg * msg_gain
+                return others_msg
+
             others_msg = torch.zeros_like(msg)
             for i, agent_id in enumerate(agent_id_list):
                 partners = comm_partners.get(agent_id, [])
@@ -712,6 +836,9 @@ class CNNPolicy(nn.Module):
                     msg_p = msg[0, partner_indices, :]                                                       # [K,6]
                     q_in = torch.cat([self_state[0, i], goal[0, i]], dim=-1)                                 # [6]
                     s = self.attn.aggregate_single(q_in, rp, msg_p)                                          # [6]
+                # ⚠️도달 불가(죽은 분기): 동일 조건은 위 벡터화 pos_ground 분기가 항상 먼저 return.
+                #   내부의 numpy fancy-indexing→torch.as_tensor 경로는 torch/numpy 버전 비호환 환경에서
+                #   실행 불가하므로, 벡터화 분기 조건을 바꿀 경우 이 폴백을 살리지 말고 벡터화 쪽을 수정할 것.
                 elif self.pos_ground and comm_relpos is not None and agent_id in comm_relpos:
                     # 위치 grounding: [상대방위·거리 + 메시지] → encoder → mean
                     rp = torch.as_tensor(comm_relpos[agent_id][kept_pos], dtype=torch.float32, device=msg.device)  # [K,3]
@@ -737,9 +864,11 @@ class CNNPolicy(nn.Module):
 
     def forward(self, x, goal, self_state,
                 return_msg=False, comm_partners=None, agent_id_list=None, comm_relpos=None,
-                situation=None):
+                situation=None, return_raw=False):
         """
-        Rollout forward. Returns value, action, logprob, mean [, msg, others_msg]
+        Rollout forward. Returns value, action, logprob, mean [, msg, others_msg] [, action_raw]
+        ★return_raw=True면 pre-tanh action_raw를 튜플 끝에 추가 반환(학습 rollout이 memory에 저장 →
+          update가 그대로 재사용, PPO ratio 정합). 기본 False → 기존 caller(arity) 불변(anti-regression).
         situation: [b,n] COLREGs 상황(0~4) — USE_MOE=1이면 head/critic 라우팅. None/OFF면 무시(단일 head).
         """
         if len(x.shape) == 2:
@@ -753,17 +882,21 @@ class CNNPolicy(nn.Module):
         others_msg = self._get_others_msg(msg, comm_partners, agent_id_list, comm_relpos,
                                           self_state=self_state, goal=goal)
         # 3. 행동 (situation으로 상황별 head 라우팅)
-        action, logprob, mean = self.ctr_actor(x, goal, self_state, others_msg, situation)
+        action, logprob, mean, action_raw = self.ctr_actor(x, goal, self_state, others_msg, situation)
         # 4. 가치 (situation one-hot 조건화)
         value = self.critic(x, goal, self_state, others_msg, situation)
 
+        if return_msg and return_raw:
+            return value, action, logprob, mean, msg, others_msg, action_raw
         if return_msg:
             return value, action, logprob, mean, msg, others_msg
+        if return_raw:
+            return value, action, logprob, mean, action_raw
         return value, action, logprob, mean
 
     def evaluate_actions(self, x, goal, self_state,
                          partner_x, partner_goal, partner_self, partner_mask,
-                         partner_relpos, action, own_future=None, own_future_mask=None,
+                         partner_relpos, action_raw, own_future=None, own_future_mask=None,
                          own_threat=None, own_threat_mask=None, situation=None,
                          partner_situations=None):
         """
@@ -793,7 +926,7 @@ class CNNPolicy(nn.Module):
             x = x.unsqueeze(1)
             goal = goal.unsqueeze(1)
             self_state = self_state.unsqueeze(1)
-            action = action.unsqueeze(1)
+            action_raw = action_raw.unsqueeze(1)
 
         if USE_ORACLE and USE_COMMUNICATION:
             # ★oracle-OFF 통제(update): 학습채널 대신 *참 파트너 goal* 주입(채널 우회). rollout _get_others_msg의
@@ -889,7 +1022,7 @@ class CNNPolicy(nn.Module):
             role_loss = torch.zeros((), device=x.device)
 
         logprob, entropy, _, z_ctrl = self.ctr_actor.get_logprob_entropy(
-            x, goal, self_state, others_msg, action, situation
+            x, goal, self_state, others_msg, action_raw, situation
         )
         # ★C5c consumer 손실: 수신측 backbone z로 파트너 의도(goal masked-mean) 복원 → MSE가 fc2 메시지슬라이스로
         #   gradient(수신 정책이 파트너 의도를 표상하게 강제). USE_COMMUNICATION·COMM_CONSUMER_COEF>0·非oracle만.

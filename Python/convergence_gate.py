@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-RUN_DIR = r"C:\Users\sengh\OneDrive\Desktop\Github\MyUnity\Vessel\Vessel_MLAgent\run_logs"
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
 FILES = {
     "OFF_s42": "base_off_mt.csv", "OFF_s43": "off_s43_mt.csv", "OFF_s44": "off_s44_mt.csv",
     "ON_s42": "on_s42_mt.csv", "ON_s43": "on_s43_mt.csv", "ON_s44": "on_s44_mt.csv",
@@ -89,7 +89,10 @@ def analyze(tag, rows):
 
     # LATE_COLLAPSE 판정
     first, last = chunk_coll[0], chunk_coll[-1]
-    monotonic = all(chunk_coll[i] <= chunk_coll[i + 1] + 1e-6 for i in range(NCHUNK - 1))
+    # monotonic은 '단조 비감소 + 실제 상승'일 때만 — 완전 평탄(예: 전 chunk 0% = 이상적 run)을
+    # 붕괴로 오판하지 않도록 last > first 조건을 함께 요구.
+    monotonic = (last > first + 1e-6) and all(
+        chunk_coll[i] <= chunk_coll[i + 1] + 1e-6 for i in range(NCHUNK - 1))
     collapse = (last > max(first, 1.0) * COLLAPSE_RATIO) or monotonic
     if collapse:
         print(f"  ⚠️ LATE_COLLAPSE: 충돌 {first:.1f}%→{last:.1f}% (아직 악화 중). "

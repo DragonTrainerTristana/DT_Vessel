@@ -23,9 +23,11 @@ falsify: redATTN ≈ redOFF(regime서도 통신 무용) → grounding으로도 �
   .\run_sweep_attention.ps1 -Exe "C:\...\Build\0601_reward\Vessel_MLAgent.exe"
 #>
 param(
-  [string]$Exe = "C:\Users\sengh\Dropbox\Private_Paper_Project\Vessel\Vessel_MLAgent\Build\0601_reward\Vessel_MLAgent.exe",
+  [string]$Exe = "",
   [int]$RadarReduced = 28   # 국소 관측 regime (기본 레이더 56m → 28m 절반). COMM_RANGE 420m은 불변 → 통신여지.
 )
+# 상대경로화: 이 스크립트 위치(Assets\Scripts\Python) 기준 프로젝트 루트 = $PSScriptRoot\..\..\..
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\..\..\Build\Vessel_MLAgent.exe' }
 if (-not (Test-Path $Exe)) { Write-Host "[ERROR] exe 없음: $Exe (59D positions 빌드 필요)"; exit 1 }
 
 # arm 정의: tag, comm, agg, attention, intent(Phase2 self-supervised coef), radar(빈문자=완전관측 baseline)
@@ -66,6 +68,7 @@ Remove-Item Env:\VESSEL_RADAR_RANGE -ErrorAction SilentlyContinue
 Remove-Item Env:\VESSEL_RUN_STEP -ErrorAction SilentlyContinue
 Write-Host "`n15 runs (5 arm x 3 seed). ★동시 15개는 이 머신 과부하 → arm 2~3개씩 나눠 돌리세요(refOFF+redOFF 먼저, 그다음 redATTN/redINTENT)."
 Write-Host "★재빌드 불필요(intent·attention 전부 Python; CTDE 격차도 radar env만으로 생김). 기존 0601 빌드로 즉시."
-Write-Host "분석(수렴 후): python analyze_run.py `"$(Split-Path $Exe -Parent)\results`"  (arm별 vColl/fuel/near-miss 비교)"
+$resRoot = Join-Path $PSScriptRoot '..\..\..\results'
+Write-Host "분석(수렴 후): python analyze_run.py `"$resRoot`"  (arm별 vColl/fuel/near-miss 비교)"
 Write-Host "핵심 비교: redATTN/redINTENT < redOFF(통신 가치) / <= refOFF(완전관측 회복) / redATTN < redSUM(attn>sum) / redINTENT <= redATTN(intent 시간축 보강)"
 Write-Host "진단: tensorboard Loss/Intent 가 내려가면 메시지가 미래의도 인코딩(falsify: 내려가는데 ground-truth 무변=미래의도가 ARPA로 이미 충분)."
