@@ -1,6 +1,6 @@
 """
 20_REWARD/ — ablation 축별 reward 학습곡선 (Dropbox 참조 폴더 스타일 재현).
-  스타일: x축 Training Steps (Millions) · y축 Average Reward · 옅은 원본선 + 굵은 평활선 ·
+  스타일: x축 Training Steps (Millions) · y축 Average Reward · 굵은 평활선 ·
           굵은 제목 · 범례 우하단 · 통신 전환 시점 점선
   지표: 결과 기반 가중 보상 = W_GOAL·도착 − W_COLL·충돌 − W_TO·타임아웃 (모든 조건 동일 채점)
         창별 종료 에피소드 수로 가중 합산(pooling) → 표본 적은 창의 잡음 제거
@@ -76,31 +76,6 @@ def load(stem):
 BIN = 0.33   # step 구간(M) — run마다 로그 창 수가 달라 인덱스 합산은 어긋난다(실측 확인). step으로 묶는다.
 
 
-def series_each(stems):
-    """실행 하나하나의 곡선 (옅은 배경용). 합치지 않는다."""
-    out = []
-    for st in stems:
-        r = load(st)
-        if r is None:
-            continue
-        nb = int(np.ceil(16.2 / BIN))
-        n, g, c, t = (np.zeros(nb) for _ in range(4))
-        idx = np.clip(np.round(r[0] / BIN).astype(int), 0, nb - 1)
-        for arr, dst in zip(r[1:], (n, g, c, t)):
-            np.add.at(dst, idx, arr)
-        keep = n > 0
-        x = np.arange(nb) * BIN
-        x, n, g, c, t = x[keep], n[keep], g[keep], c[keep], t[keep]
-        sm = np.empty(len(x))
-        for i in range(len(x)):
-            sl = slice(max(0, i - ROLL + 1), i + 1)
-            nn = max(n[sl].sum(), 1e-9)
-            sm[i] = (W_GOAL * g[sl].sum() / nn - W_COLL * c[sl].sum() / nn
-                     - W_TO * t[sl].sum() / nn) * SCALE
-        out.append((x, sm))
-    return out
-
-
 def series(stems):
     """여러 run을 *step 구간별로* 카운트 합산 → (step[M], raw 보상, pooled 보상)."""
     runs = [r for r in (load(s) for s in stems) if r is not None]
@@ -138,10 +113,6 @@ def _render(fname, title, entries, note_comm=True, x0=None):
     for i, (lab, (x, raw, sm)) in enumerate(data):
         k = (x >= x0) & (x <= X1)
         col = C[i % len(C)]
-        for xe, se in series_each(entries[i][1]):
-            ke = (xe >= x0) & (xe <= X1)
-            xd, yd = dense(xe[ke], se[ke])
-            ax.plot(xd, yd, color=col, lw=0.8, alpha=0.26, zorder=2)
         xd, yd = dense(x[k], sm[k])
         ax.plot(xd, yd, color=col, lw=2.0, label=lab, zorder=3,
                 solid_joinstyle='round', solid_capstyle='round')
