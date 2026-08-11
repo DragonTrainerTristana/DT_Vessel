@@ -23,6 +23,8 @@ W_GOAL, W_COLL, W_TO = 1.5, 6.0, 0.5
 SCALE, ROLL, MIN_EP = 3.0, 4, 0   # 카운트 가중이라 표본필터 불필요(오히려 run간 정렬을 깨뜨렸음)
 X0 = 4.0                       # 표시 시작 (Millions)
 X1 = float(os.environ.get('VESSEL_FIG_XMAX', '99.0'))   # 표시 상한(기본=전체)
+if X1 > 1000:      # 이 스크립트의 x축 단위는 '백만 step'. raw step으로 들어오면 환산.
+    X1 /= 1e6
 OUT = os.environ.get('VESSEL_FIG_OUT', OUT)             # 출력 폴더 override
 YLIM = None                   # 전 그림 공통 y범위 (2-pass로 계산해 주입)
 COMM_ON = 9.0
