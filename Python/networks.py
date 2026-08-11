@@ -26,7 +26,15 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     INTENT_COEF, INTENT_K, THREAT_COEF, THREAT_K, GOAL_COMM_COEF,
                     ROLE_COMM_COEF, USE_MOE, NUM_COLREGS_SITUATIONS, MAX_COMM_PARTNERS,
                     COMM_CONSUMER_COEF, COMM_CONSUMER_K, COMM_CONSUMER_COUPLING, USE_ORACLE,
-                    SITUATION_INPUT, MOE_WIDTH, POS_GROUND)
+                    SITUATION_INPUT, MOE_WIDTH, MOE_SHARED, POS_GROUND)
+
+
+def _share_radar_encoder(experts):
+    """★공유지각 MoE(MOE_SHARED=1): 전문가들의 radar_encoder를 experts[0] 것으로 통일(모듈 공유).
+    지각(코어 파라미터 ~82.5%)은 전체 데이터로 학습, 상황별 특화는 결정부(fc2~head)만.
+    parameters()/optimizer는 공유 텐서를 자동 dedup, state_dict는 5벌 동일 사본 저장(load 호환)."""
+    for _k in range(1, len(experts)):
+        experts[_k].radar_encoder = experts[0].radar_encoder
 
 
 def _w(n, width, floor=4):
@@ -287,6 +295,8 @@ class MessageActor(nn.Module):
             # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
             self.experts = nn.ModuleList(
                 [_MessageActorCore(frames, msg_dim, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _MessageActorCore(frames, msg_dim)
 
@@ -410,6 +420,8 @@ class ControlActor(nn.Module):
             # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
             self.experts = nn.ModuleList(
                 [_ControlActorCore(frames, msg_dim, action_size, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _ControlActorCore(frames, msg_dim, action_size)
         self.core_hidden = (self.experts[0] if self.use_moe else self.core).hidden
@@ -479,7 +491,10 @@ class ControlActor(nn.Module):
         return out
 
     def forward(self, x, goal, self_state, others_msg, situation=None):
-        """Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act]. situation: [b,n] or [b,n,1] (0~4)."""
+        """Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act], action_raw [b,n,act].
+        ★action_raw(=pre-tanh 샘플)를 함께 반환 → rollout이 memory에 raw를 저장하고 update가 그대로
+          재사용(get_logprob_entropy) → tanh 보정이 비트 일치, PPO ratio가 epoch0에서 1.0(포화 샘플 포함).
+        situation: [b,n] or [b,n,1] (0~4)."""
         z, action_mean, action_logstd, batch_size, n_agent = self._route(
             x, goal, self_state, others_msg, situation)
 
@@ -498,30 +513,34 @@ class ControlActor(nn.Module):
         action = action.view(batch_size, n_agent, -1)
         logprob = logprob.view(batch_size, n_agent, -1)
         action_mean = action_mean.view(batch_size, n_agent, -1)
-        return action, logprob, action_mean
+        action_raw = action_raw.view(batch_size, n_agent, -1)
+        return action, logprob, action_mean, action_raw
 
-    def get_logprob_entropy(self, x, goal, self_state, others_msg, action, situation=None):
-        """PPO 업데이트용: 주어진 action의 log_prob과 entropy 계산.
-        ★situation은 rollout 저장값 → forward와 *동일* 코어 라우팅 → old_logprob 정합(PPO ratio 유효)."""
+    def get_logprob_entropy(self, x, goal, self_state, others_msg, action_raw, situation=None):
+        """PPO 업데이트용: rollout이 저장한 pre-tanh raw로 log_prob·entropy 재계산.
+        ★situation은 rollout 저장값 → forward와 *동일* 코어 라우팅 → old_logprob 정합(PPO ratio 유효).
+        ★action_raw는 rollout forward가 sample한 pre-tanh 값(memory 저장). 기존엔 tanh 저장값을
+          atanh(clamp(·,±0.999))로 역변환했으나 |raw|>3.8 포화 샘플에서 old≠new logprob → ratio가
+          policy 변화와 무관하게 epoch0부터 clip 밴드를 벗어났음(전타/전속 commit 기동에서 gradient 오염).
+          raw를 직접 받아 action=tanh(raw)를 재계산 → 보정항이 forward와 정확히 동일."""
         z, action_mean, action_logstd, batch_size, n_agent = self._route(
             x, goal, self_state, others_msg, situation)
-        action_flat = action.reshape(batch_size * n_agent, -1)
+        action_raw_flat = action_raw.reshape(batch_size * n_agent, -1)
 
         action_mean = torch.clamp(action_mean, -3.0, 3.0)
         action_logstd = torch.clamp(action_logstd, -2.3, 0.0)
         action_std = torch.exp(action_logstd)
 
-        # action은 이미 tanh 적용값 → arctanh로 역변환
-        action_clamped = torch.clamp(action_flat, -0.999, 0.999)
-        action_raw = 0.5 * torch.log((1 + action_clamped) / (1 - action_clamped))
+        # ★저장된 raw로 tanh를 재계산 → forward의 squash 보정과 비트 일치(무손실).
+        action = torch.tanh(action_raw_flat)
 
         dist = Normal(action_mean, action_std)
-        logprob = dist.log_prob(action_raw) - torch.log(1 - action_clamped.pow(2) + 1e-6)
+        logprob = dist.log_prob(action_raw_flat) - torch.log(1 - action.pow(2) + 1e-6)
         logprob = logprob.sum(dim=-1, keepdim=True)
 
-        # Squashed Gaussian entropy 보정
+        # Squashed Gaussian entropy 보정 (동일 tanh 값 사용)
         gaussian_entropy = dist.entropy().sum(dim=-1)
-        squash_correction = torch.log(1 - action_clamped.pow(2) + 1e-6).sum(dim=-1)
+        squash_correction = torch.log(1 - action.pow(2) + 1e-6).sum(dim=-1)
         entropy = (gaussian_entropy + squash_correction).mean()
 
         logprob = logprob.view(batch_size, n_agent, -1)
@@ -570,6 +589,8 @@ class Critic(nn.Module):
             # MOE_WIDTH<1.0 = iso-parameter MoE (5코어 합계 ≈ 단일망). 단일망은 항상 폭 1.0.
             self.experts = nn.ModuleList(
                 [_CriticCore(frames, msg_dim, MOE_WIDTH) for _ in range(self.num_experts)])
+            if MOE_SHARED:
+                _share_radar_encoder(self.experts)
         else:
             self.core = _CriticCore(frames, msg_dim)
 
@@ -843,9 +864,11 @@ class CNNPolicy(nn.Module):
 
     def forward(self, x, goal, self_state,
                 return_msg=False, comm_partners=None, agent_id_list=None, comm_relpos=None,
-                situation=None):
+                situation=None, return_raw=False):
         """
-        Rollout forward. Returns value, action, logprob, mean [, msg, others_msg]
+        Rollout forward. Returns value, action, logprob, mean [, msg, others_msg] [, action_raw]
+        ★return_raw=True면 pre-tanh action_raw를 튜플 끝에 추가 반환(학습 rollout이 memory에 저장 →
+          update가 그대로 재사용, PPO ratio 정합). 기본 False → 기존 caller(arity) 불변(anti-regression).
         situation: [b,n] COLREGs 상황(0~4) — USE_MOE=1이면 head/critic 라우팅. None/OFF면 무시(단일 head).
         """
         if len(x.shape) == 2:
@@ -859,17 +882,21 @@ class CNNPolicy(nn.Module):
         others_msg = self._get_others_msg(msg, comm_partners, agent_id_list, comm_relpos,
                                           self_state=self_state, goal=goal)
         # 3. 행동 (situation으로 상황별 head 라우팅)
-        action, logprob, mean = self.ctr_actor(x, goal, self_state, others_msg, situation)
+        action, logprob, mean, action_raw = self.ctr_actor(x, goal, self_state, others_msg, situation)
         # 4. 가치 (situation one-hot 조건화)
         value = self.critic(x, goal, self_state, others_msg, situation)
 
+        if return_msg and return_raw:
+            return value, action, logprob, mean, msg, others_msg, action_raw
         if return_msg:
             return value, action, logprob, mean, msg, others_msg
+        if return_raw:
+            return value, action, logprob, mean, action_raw
         return value, action, logprob, mean
 
     def evaluate_actions(self, x, goal, self_state,
                          partner_x, partner_goal, partner_self, partner_mask,
-                         partner_relpos, action, own_future=None, own_future_mask=None,
+                         partner_relpos, action_raw, own_future=None, own_future_mask=None,
                          own_threat=None, own_threat_mask=None, situation=None,
                          partner_situations=None):
         """
@@ -899,7 +926,7 @@ class CNNPolicy(nn.Module):
             x = x.unsqueeze(1)
             goal = goal.unsqueeze(1)
             self_state = self_state.unsqueeze(1)
-            action = action.unsqueeze(1)
+            action_raw = action_raw.unsqueeze(1)
 
         if USE_ORACLE and USE_COMMUNICATION:
             # ★oracle-OFF 통제(update): 학습채널 대신 *참 파트너 goal* 주입(채널 우회). rollout _get_others_msg의
@@ -995,7 +1022,7 @@ class CNNPolicy(nn.Module):
             role_loss = torch.zeros((), device=x.device)
 
         logprob, entropy, _, z_ctrl = self.ctr_actor.get_logprob_entropy(
-            x, goal, self_state, others_msg, action, situation
+            x, goal, self_state, others_msg, action_raw, situation
         )
         # ★C5c consumer 손실: 수신측 backbone z로 파트너 의도(goal masked-mean) 복원 → MSE가 fc2 메시지슬라이스로
         #   gradient(수신 정책이 파트너 의도를 표상하게 강제). USE_COMMUNICATION·COMM_CONSUMER_COEF>0·非oracle만.
