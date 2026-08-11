@@ -215,7 +215,7 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 #   MoE(5x/iso)가 이 single을 ground-truth로 이겨야 진짜(H4). Critic은 USE_MOE=1일 때만 상황 one-hot 조건화.
 # ★라우터=privileged 상황(보상과 동일 ground-truth) → CTDE 일관. situation은 transition마다 저장돼
 #   rollout==update 동일 라우팅(PPO ratio 유효, 메시지 집계 일관성과 같은 원리).
-USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'
+USE_MOE = _env_str('VESSEL_USE_MOE', '1') == '1'   # ★Shared_MoE 브랜치(논문 제안 구조): MoE 기본 ON
 NUM_COLREGS_SITUATIONS = 5   # None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking
 # ★iso-parameter MoE (2026-07-03): MoE 전문가 코어의 내부 폭 배수 (conv 채널·radar feat·hidden·fc3에 적용).
 #   1.0(기본) = 기존 MoE — 코어당 단일망과 동일 폭, 총 파라미터 약 5배.
@@ -229,7 +229,7 @@ MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 1.0)
 #   결정부(fc2·gate·consumer·fc3·head)만 상황별 5벌. iso-MoE 붕괴의 근본원인(지배상황 코어의
 #   지각 용량 1/5 축소 — 실측 8.5M goal 3%)을 제거: 지각은 전체 데이터로 학습, 라우팅은 결정 계층만 특화.
 #   총 파라미터 ≈ 단일망 ×1.7 (5x의 ×5 대비). USE_MOE=1일 때만 유효, MOE_WIDTH=1.0과 함께 쓸 것.
-MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '0') == '1'
+MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '1') == '1'   # ★Shared_MoE 브랜치: 레이더 인식부를 전문가 5개가 공유 (기본 ON)
 
 # ============================================================================
 # ★COLREGs situation 정책 입력 (2026-07-02 도입, 2026-07-03 기본 ON 승격): obs[368] 상황(0~4)을
