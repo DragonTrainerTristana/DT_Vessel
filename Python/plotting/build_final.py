@@ -131,6 +131,11 @@ TOPICS = {
         '20_REWARD/ablation_reward_6_colregs',
         [('Without COLREGs term', ['COLREGSOFF']),
          ('With COLREGs term',    ['COMM_s42', 'COMM_s43', 'COMM_s44'])]),
+    'Fig6_Comm_Timing': (
+        '20_REWARD/ablation_reward_7_comm_timing',
+        # 구조·시드·나머지 설정 동일. --comm_on_at 0 vs 9000000 하나만 다른 대응쌍.
+        [('Communication\nfrom start',  ['SE_START_' + s for s in S]),
+         ('Communication\nfrom 9M',     ['MOE_SE_' + s for s in S])]),
 }
 
 
@@ -202,7 +207,8 @@ def main():
             sit_figure(os.path.join(out, '2_colregs_by_situation'), None, av)
             n_fig += 1
         print(f'  {folder}: 곡선 1 + 지표 {len([1 for f,_,k,_,_ in METRICS])}')
-    print(f'99_FINAL 생성 완료 — 주제 {len(TOPICS)}개, 파일 {n_fig}쌍(png/pdf)')
+    # cp949 콘솔에서 em-dash가 인코딩 안 돼 죽었었다. ASCII 구분자만 쓴다.
+    print(f'99_FINAL 생성 완료: 주제 {len(TOPICS)}개, 파일 {n_fig}쌍(png/pdf)')
 
 
 if __name__ == '__main__':

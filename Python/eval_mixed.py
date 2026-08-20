@@ -84,6 +84,9 @@ def main():
     ap.add_argument('--seed', type=int, default=999)
     ap.add_argument('--ring', type=float, default=0.7)
     ap.add_argument('--tag', default='')
+    ap.add_argument('--sham', action='store_true',
+                    help='가짜 대조군: 같은 번호로 편만 가르고 마스킹은 안 건다. '
+                         '두 무리 차이가 통신 때문인지 선박 번호 때문인지 판별용.')
     ap.add_argument('--csv', default=None)
     args = ap.parse_args()
 
@@ -100,8 +103,14 @@ def main():
         idx = spread_indices(N, k)
         nocomm[ci * args.envs_per:(ci + 1) * args.envs_per, idx] = True
     comm = ~nocomm
-    send_mask = comm                                    # 송신 불가
-    recv_mask = comm if args.mode == 'radar' else torch.ones_like(comm)
+    if args.sham:
+        # 편만 가르고 아무도 안 끊는다. 이때 남는 두 무리의 차이는 통신이 아니라
+        # 선박 번호(스폰 위치·목표 배정)에서 오는 것이므로, 본 실험의 교란 크기가 된다.
+        send_mask = torch.ones_like(comm)
+        recv_mask = torch.ones_like(comm)
+    else:
+        send_mask = comm                                    # 송신 불가
+        recv_mask = comm if args.mode == 'radar' else torch.ones_like(comm)
 
     env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
                             ring_scale=args.ring, crossing=2, risk_range=420.0,
@@ -232,7 +241,7 @@ def main():
                   f" goal={r['goal']:5.1f}% coll={r['coll']:5.2f}% colregsOK={r['colregs']:5.1f}%"
                   f" minSep={r['minsep']:5.1f}m fuel={r['fuel']:6.1f} head={r['head']:6.0f}deg"
                   f" len={r['length']:5.0f} (eps={r['eps']})")
-            lines.append([tag, args.mode, k, g] + [f"{r[c]:.4f}" for c in cols])
+            lines.append([tag, args.mode + ('_sham' if args.sham else ''), k, g] + [f"{r[c]:.4f}" for c in cols])
     if args.csv:
         path = args.csv if os.path.isabs(args.csv) else os.path.join(SCRATCH, args.csv)
         new = not os.path.exists(path)

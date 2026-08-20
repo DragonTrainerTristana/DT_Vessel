@@ -145,6 +145,8 @@ def _render(fname, title, entries, note_comm=True, x0=None):
 
 OFF3 = ['qf_SE_OFF_s42', 'qf_SE_OFF_s43', 'qf_SE_OFF_s44']   # 공유지각 구조 (저분산)
 ON3 = ['qd_MOE_SE_s42', 'qd_MOE_SE_s43', 'qd_MOE_SE_s44']
+# 통신을 0M부터 켠 팔. ON3와 구조·시드·나머지 설정이 모두 같고 --comm_on_at 만 다르다.
+START3 = ['ql_SE_START_s42', 'ql_SE_START_s43', 'ql_SE_START_s44']
 BOFF = ['base_off', 'base_off_s43', 'base_off_s44']
 BON = ['base_comm', 'base_comm_s43', 'base_comm_s44']
 
@@ -181,6 +183,10 @@ if __name__ == '__main__':
     figure('ablation_reward_6_colregs', 'COLREGs Reinforcement',
            [('Without COLREGs term', ['q_COLREGSOFF']),
             ('With COLREGs term', BON)])
+    figure('ablation_reward_7_comm_timing', 'Communication Curriculum',
+           # 두 팔 모두 16M 내내 학습한다. 다른 것은 메시지를 언제부터 흘렸는지뿐.
+           [('Communication from start', START3),
+            ('Communication from 9M', ON3)])
 
     # ── 1-pass: 전 그림의 곡선 범위를 모아 공통 y범위 확정 ──
     _v = []
