@@ -187,6 +187,13 @@ class StateReconDecoder(nn.Module):
                 #   지수 감쇠했다. 그 성분의 mask 가 다시 살아나는 첫 배치에서 z=(tf-0)/1e-3 로 폭발한다.
                 #   future(intent) 라벨은 에피소드 경계·버퍼 끝에서 통째로 마스크되므로 실제로 발생하는 경로다.
                 valid = (mf.sum(0) > 0)
+                # ★2026-09-05 진단 스위치: VESSEL_RECON_LEGACY_STAT=1 이면 수정 전(버그) 동작으로 되돌린다.
+                #   버그 = 유효표본 0 인 성분도 bm=0·bv=0 으로 EMA 에 섞여 run_var 가 1e-8 로 지수감쇠 →
+                #          그 성분이 다시 유효해지는 첫 배치에서 z=(tf-0)/1e-3 폭발.
+                #   future(intent) 라벨이 에피소드 경계에서 통째로 마스크되므로 실제로 발생하는 경로다.
+                #   붕괴(2026-09-04 off_s45)의 원인인지 가르기 위한 대조군. 기본 0 = 수정본.
+                if _os_ln.environ.get('VESSEL_RECON_LEGACY_STAT', '0') == '1':
+                    valid = torch.ones_like(valid)
                 if float(self.stat_inited) == 0.0:
                     self.run_mean.copy_(torch.where(valid, bm, self.run_mean))
                     self.run_var.copy_(torch.where(valid, bv.clamp(min=1e-8), self.run_var))

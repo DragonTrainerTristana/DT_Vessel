@@ -544,6 +544,9 @@ def main():
     if csv_f and _csv_mode == 'w':
         csv_f.write('step,raw_reward,ema_reward\n')
     ema_r = None
+    # 붕괴 검출기 상태 (위 [blind] 참조)
+    _blind_run = 0
+    _BLIND_WARN = int(os.environ.get('VESSEL_BLIND_WARN_AFTER', '200'))
     # ★상태복원 그룹별 손실 감시 CSV (2026-09-04): gradient 쏠림을 학습 '도중에' 본다
     _sr_log = {}
     aux_f = None
@@ -729,6 +732,29 @@ def main():
                     loss = policy_loss + cfg.CRITIC_LOSS_WEIGHT * value_loss - cfg.ENTROPY_BONUS * entropy + aux
                     opt.zero_grad()
                     loss.backward()
+                    # ★2026-09-05 붕괴 검출기: ControlActor 의 레이더 인코더에 gradient 가 흐르는가.
+                    #   2026-09-04 off_s45 붕괴의 실측 원인 = 이 인코더 출력 ReLU 가 전멸(dying ReLU)해
+                    #   **정책이 레이더를 물리적으로 못 보게 된 것**. 근거: step2M -> 6M 가중치 변화가
+                    #   정확히 0.000000 (같은 런의 critic 레이더는 2105, 정상 시드는 1655~2154).
+                    #   장애물을 알려주는 채널은 레이더가 유일하므로 장애물 충돌로 터진다(oColl 57~74%).
+                    #   같은 지문을 3건 찾음(m2_S_off_s45 / m2_F1base_s42 / tb_s46) = 재현되는 실패 모드.
+                    #   조용히 16M 을 태우고 나중에 '학습 실패 시드'로 버려지던 것을 *학습 중에* 잡는다.
+                    _rg = 0.0
+                    for _p in policy.ctr_actor.parameters():
+                        if _p.grad is not None:
+                            _rg += float(_p.grad.detach().abs().sum())
+                    _radar_g = 0.0
+                    for _c in policy.ctr_actor.cores():
+                        for _p in _c.radar_encoder.parameters():
+                            if _p.grad is not None:
+                                _radar_g += float(_p.grad.detach().abs().sum())
+                    _blind_now = (_radar_g == 0.0)
+                    _blind_run = _blind_run + 1 if _blind_now else 0
+                    if _blind_run == _BLIND_WARN:
+                        print(f'[blind] ControlActor 레이더 인코더 gradient 가 {_BLIND_WARN} 미니배치 연속 0 임. '
+                              f'정책이 레이더를 못 보는 상태(dying ReLU)로 굳는 중일 수 있음 — '
+                              f'2026-09-04 off_s45 붕괴와 같은 지문. ctr_actor 전체 grad={_rg:.3e}. '
+                              f'장애물 충돌률(oColl)을 확인할 것.', flush=True)
                     nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
                     opt.step()
 
