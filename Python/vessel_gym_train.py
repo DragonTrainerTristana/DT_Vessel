@@ -398,7 +398,15 @@ def main():
     if args.resume:
         _ck = torch.load(args.resume, map_location=device)
         policy.load_state_dict(_ck['model_state_dict'] if 'model_state_dict' in _ck else _ck)
-        vnorm.load(_ck.get('value_norm'))
+        # ★2026-09-05 fix: ValueNorm.load 는 통계가 없으면 조용히 return 한다.
+        #   그러면 debias=0 이라 _stats() 가 mean=0, std=sqrt(1e-6)=1e-3 을 돌려주고,
+        #   복원된 critic 은 정규화 공간(std≈17) 값을 내는데 denormalize 가 ×1e-3 해
+        #   values≈0 → 첫 update 의 GAE 가 통째로 오염된다. 조용한 실패를 막는다.
+        _vn = _ck.get('value_norm')
+        if not _vn:
+            print('[resume] 경고: 체크포인트에 value_norm 없음 - 첫 update 의 value/GAE 가 스케일 붕괴함. '
+                  '--resume_warmup 을 주거나 통계가 있는 ckpt 를 쓸 것', flush=True)
+        vnorm.load(_vn)
         if 'optimizer_state_dict' in _ck:
             opt.load_state_dict(_ck['optimizer_state_dict'])
             _os_msg = 'Adam 복원'
@@ -419,9 +427,27 @@ def main():
         "(oracle 통제군은 --arm ORACLE 로 돌릴 것)"
     # ★난수 대조군은 상수 입력 경로(OFF/ORACLE와 동일)로 흐르므로 통신 채널 학습이 없어야 정상이다.
     if args.arm == 'RANDOM':
-        print(f"[arm RANDOM] 난수 메시지 대조군 — others_msg ~ U(-a,a), sd="
+        print(f"[arm RANDOM] 난수 메시지 대조군 - others_msg ~ U(-a,a), sd="
               f"{float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)):.3f} "
               f"(비교 팔의 실측 om_sd 에 맞출 것: _diag_msg_channel.py)", flush=True)
+
+    # ★2026-09-05 fix(opt-in): timeout 절단을 GAE 에서 '절단'으로 취급할지.
+    #   기본 0 = 기존 동작(상수 trunc=0, timeout 을 진짜 종료로 취급) — 비트동일.
+    _trunc_boot = os.environ.get('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
+    if _trunc_boot:
+        print('[gae] VESSEL_TIMEOUT_BOOTSTRAP=1 - timeout 은 절단으로 처리(V(s_t) bootstrap). '
+              '기본(0)과 학습 결과가 다름 ― 과거 run 과 직접 비교 금지', flush=True)
+    # ★2026-09-05 fix: MSG_GATE_COEF(VESSEL_MSG_GATE_L2)가 이 학습기에선 loss 에 한 번도
+    #   안 더해졌다(gate_open_sum 참조처는 main.py 뿐). 값을 주고 돌려도 cfg 스냅샷에만
+    #   남아 문서와 실행이 어긋난다. 계수를 살리는 건 설계 변경이므로 기본은 그대로 두고
+    #   ① 조용한 무효화를 경고로 드러내고 ② VESSEL_MSG_GATE_APPLY=1 로만 실제 적용한다.
+    _gate_apply = os.environ.get('VESSEL_MSG_GATE_APPLY', '0') == '1'
+    if args.arm == 'ON' and cfg.MSG_GATE_COEF > 0.0 and not _gate_apply:
+        print(f'[msg-gate] 경고: MSG_GATE_COEF={cfg.MSG_GATE_COEF} 이지만 이 학습기에선 loss 에 미적용 '
+              f'(죽은 knob). 적용하려면 VESSEL_MSG_GATE_APPLY=1', flush=True)
+    elif _gate_apply:
+        print(f'[msg-gate] 게이트 개방 페널티 적용 (coef={cfg.MSG_GATE_COEF}) - '
+              f'기본(미적용) run 과 학습 결과가 다름', flush=True)
 
     fs = FrameStack(E, N, device)
     obs = env.reset()
@@ -439,7 +465,7 @@ def main():
             obs, _, _done, _ = env.step(_a)
             radar, goal, self_s, sit = parse_obs(obs)
             fs.push(radar, _done)
-        print(f'[warmup] 재개 워밍업 {args.resume_warmup} 결정/에이전트 완료 ({time.time()-_t0w:.0f}s) — 학습·기록 없음', flush=True)
+        print(f'[warmup] 재개 워밍업 {args.resume_warmup} 결정/에이전트 완료 ({time.time()-_t0w:.0f}s) - 학습·기록 없음', flush=True)
 
     # ── 혼합 함대 학습(선택) ──────────────────────────────────────────────
     # 함대의 일부 선박이 통신 장비 없이 *학습 단계부터* 항해한다. 평가할 때만 통신을
@@ -483,6 +509,15 @@ def main():
             'msg_random_sd': float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)) if args.arm == 'RANDOM' else None,
         }
 
+    # ★2026-09-05: intent/state-recon 라벨 정렬 버그를 고쳤다(pos/hdg 를 env.step *앞*에서 기록).
+    #   고치기 전에는 라벨이 한 스텝 밀려 있었고 respawn 텔레포트가 마스크를 관통했다.
+    #   INTENT_COEF·STATE_RECON_COEF 가 둘 다 0 이면 이 경로를 안 타므로 기본 설정은 비트동일이지만,
+    #   둘 중 하나라도 켜면 *결과가 달라진다*. 조용히 달라지면 안 되므로 시작할 때 남긴다.
+    if cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0:
+        print(f"[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF={cfg.INTENT_COEF} "
+              f"STATE_RECON_COEF={cfg.STATE_RECON_COEF}). 2026-09-05 이전 run 과 직접 비교하지 말 것.",
+              flush=True)
+
     T = args.rollout
     total_decisions = args.resume_at      # ★재개 시 이어서 카운트 (--steps 는 '총' 결정 수)
     outcome_counts = torch.zeros(5, device=device)
@@ -492,7 +527,16 @@ def main():
     #   mark > 0 이 성립해 *방금 재개한 그 체크포인트*를 덮어쓴다. 9M 경계에서 재개하면
     #   comm_on_at 을 이미 넘은 상태라, 통신 OFF 모델이어야 할 .step9M.pt 가
     #   통신 ON 1업데이트분으로 조용히 바뀜다(ABLATION_PLAN §4 가 이 파일을 OFF 모델로 지정).
-    ckpt_mark = int(args.resume_at // int(args.ckpt_every * 1e6)) if args.ckpt_every > 0 else 0
+    # ★2026-09-05 fix: int(ckpt_every*1e6) 이 0 이면(0<ckpt_every<1e-6) ZeroDivisionError → 최소 1 로 클램프.
+    _ck_div = max(int(args.ckpt_every * 1e6), 1) if args.ckpt_every > 0 else 0
+    ckpt_mark = int(args.resume_at // _ck_div) if _ck_div else 0
+    # ★2026-09-05 fix: total_decisions 는 rollout 당 E*N*T 만큼 한 번에 뛰고 저장 판정은 rollout 끝에서만
+    #   한다. 간격보다 rollout 이 크면 중간 마크가 조용히 건너뛰어져 학습곡선에 구멍이 난 줄 모른다.
+    #   건너뛴 이름으로 같은 가중치를 복제 저장하면 'step0.5M.pt' 가 실제로는 1M 모델이 돼 파일 라벨이
+    #   거짓이 되므로(이 저장소 제1원칙 위반) 복제 대신 *경고*로 드러낸다.
+    if _ck_div and E * N * T > _ck_div:
+        print(f"[ckpt] 경고: rollout 1회 = {E*N*T:,} 결정 > ckpt 간격 {_ck_div:,} - 중간 마크가 건너뛰어짐. "
+              f"--ckpt_every 를 {E*N*T/1e6:.3g} 이상으로 줄 것", flush=True)
     # ★조밀 로깅(2026-08): 매 update마다 (step, raw_reward, ema) CSV 기록 → 깨끗한 학습곡선용(참고 figure 스타일).
     csv_path = args.csv or (os.path.splitext(args.save)[0] + '_curve.csv' if args.save else None)
     _csv_mode = 'a' if (args.resume and csv_path and os.path.exists(csv_path)) else 'w'
@@ -505,207 +549,243 @@ def main():
     aux_f = None
     if cfg.STATE_RECON_COEF > 0.0 and csv_path:
         _aux_path = os.path.splitext(csv_path)[0] + '_aux.csv'
-        aux_f = open(_aux_path, _csv_mode, encoding='utf-8')
-        if _csv_mode == 'w':
+        # ★2026-09-05 fix: 이전엔 curve CSV 의 모드(_csv_mode)를 그대로 썼다. 돌던 run 을 --resume
+        #   하면서 그때 처음 STATE_RECON_COEF>0 을 켜면 curve 는 있으니 'a' 인데 _aux.csv 는 새로
+        #   생기므로 헤더 없는 파일이 됐다(pandas 가 첫 데이터 행을 헤더로 먹음). 자기 경로로 판정한다.
+        _aux_mode = 'a' if (args.resume and os.path.exists(_aux_path)) else 'w'
+        aux_f = open(_aux_path, _aux_mode, encoding='utf-8')
+        if _aux_mode == 'w':
             aux_f.write('step,goal,self,sit,threat,future\n')
 
-    while total_decisions < args.steps:
-        # ─── rollout ───
-        # ★comm curriculum: ON arm이고 comm_on_at 넘으면 학습형 comm 활성(이 rollout 내내 일관 → PPO 정합)
-        comm_active = (args.arm == 'ON' and total_decisions >= args.comm_on_at)
-        keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
-        if cfg.CENTRAL_CRITIC:
-            keys += ['gf']
-        use_intent = comm_active and (cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
-        if use_intent:
-            keys += ['pos', 'hdg']
-        if comm_active:
-            keys += ['px', 'pg', 'ps', 'pmask', 'prel', 'psit']
-        use_threat = comm_active and (cfg.THREAT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
-        if use_threat:
-            keys += ['othr', 'othrm']
-        buf = {k: [] for k in keys}
-        for _ in range(T):
-            x = fs.get()
+    # ★2026-09-05 fix: 예외(KeyboardInterrupt·CUDA OOM·env 오류)로 죽으면 csv_f·aux_f 가 닫히지
+    #   않아 마지막 flush 이후 최대 19 update 분 기록이 통째로 날아갔다(둘 다 20 update 마다만 flush).
+    #   특히 aux_f 는 정상 종료 경로에도 close 가 아예 없었다. try/finally 로 두 핸들을 확실히 닫는다.
+    try:
+        while total_decisions < args.steps:
+            # ─── rollout ───
+            # ★comm curriculum: ON arm이고 comm_on_at 넘으면 학습형 comm 활성(이 rollout 내내 일관 → PPO 정합)
+            comm_active = (args.arm == 'ON' and total_decisions >= args.comm_on_at)
+            keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
+            if cfg.CENTRAL_CRITIC:
+                keys += ['gf']
+            use_intent = comm_active and (cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
+            if use_intent:
+                keys += ['pos', 'hdg']
+            if comm_active:
+                keys += ['px', 'pg', 'ps', 'pmask', 'prel', 'psit']
+            use_threat = comm_active and (cfg.THREAT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
+            if use_threat:
+                keys += ['othr', 'othrm']
+            buf = {k: [] for k in keys}
+            for _ in range(T):
+                x = fs.get()
+                with torch.no_grad():
+                    if comm_active:
+                        om, (px, pg, ps, pmask, prel, psit) = comm_gather(
+                            policy, env, x, goal, self_s, sit, args.max_partners,
+                            send_mask=send_mask, recv_mask=recv_mask)
+                    else:
+                        om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
+                    action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit)
+                    _gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
+                    value = vnorm.denormalize(policy.critic(x, goal, self_s, om, sit,
+                                                            global_feat=_gf).squeeze(-1))
+                # ★2026-09-05 fix: pos/hdg 를 env.step *앞*에서 저장함. 뒤에서 찍으면 s_{t+1}
+                #   (종료한 배는 재스폰 좌표)이라 buf['x']=s_t 와 한 칸 어긋나 둘이 깨졌음:
+                #     ① 계통지연 — 라벨이 s_{t+1} 기준 미래변위인데 s_t 의 obs 로 맞히게 학습(1/INTENT_HORIZON 편향).
+                #     ② 텔레포트 누설 — compute_own_future 마스크가 sum(done[t..t+h-1]) 라
+                #        pos 가 밀리면 끝점 재스폰을 못 거름. 재스폰 변위는 정상 라벨보다 두 자릿수 커서
+                #        StateReconDecoder 의 run_var 를 부풀려 나머지 라벨 gradient 를 눌렀다.
+                #   이제 pos[t]=s_t 라 memory.py 의 dn[t:j].any() 마스크와 정확히 일치함.
+                #   ⚠영향 범위: use_intent(=INTENT_COEF>0 또는 STATE_RECON_COEF>0, 둘 다 기본 0) run 만.
+                #     기본 설정 run 은 비트동일.
+                if use_intent:
+                    buf['pos'].append(env.pos.clone()); buf['hdg'].append(env.heading.clone())
+                obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
+                for oc in range(5):
+                    outcome_counts[oc] += (outcome == oc).sum()
+                buf['x'].append(x); buf['goal'].append(goal); buf['self'].append(self_s)
+                # ★act = pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
+                buf['sit'].append(sit); buf['om'].append(om); buf['act'].append(action_raw)
+                if cfg.CENTRAL_CRITIC:
+                    buf['gf'].append(_gf)
+                buf['logp'].append(logp.squeeze(-1)); buf['val'].append(value)
+                buf['rew'].append(reward); buf['done'].append(done.float())
+                # ★2026-09-05 fix(opt-in): env 는 timeout 을 outcome=OUT_TIMEOUT 으로 구분해 주는데
+                #   학습기는 trunc 를 상수 0 으로 채워, batched_gae 의 term=dones*(1-truncs) 에서
+                #   timeout 이 *진짜 종료*로 처리됨(bootstrap 절단). 목표 코앞에서 절단된 배의
+                #   value target 이 r_T(TIMEOUT_PENALTY 포함)로 주저앉아 장거리 여정을 회피하게 밀림.
+                #   ⚠다만 이 수정은 모든 팔의 학습 결과를 바꿔 과거 보고 숫자와 비교가 끊긴다.
+                #     기본은 기존 동작 유지, VESSEL_TIMEOUT_BOOTSTRAP=1 일 때만 켜진다(저자 결정 사항).
+                buf['trunc'].append((outcome == vg.OUT_TIMEOUT).float() if _trunc_boot
+                                    else torch.zeros_like(done.float()))
+                if comm_active:
+                    buf['px'].append(px); buf['pg'].append(pg); buf['ps'].append(ps)
+                    buf['pmask'].append(pmask); buf['prel'].append(prel); buf['psit'].append(psit)
+                if use_threat:
+                    othr, othrm = compute_own_threat(x.reshape(E * N, -1), cfg.THREAT_K, device)
+                    buf['othr'].append(othr.reshape(E, N, -1)); buf['othrm'].append(othrm.reshape(E, N, -1))
+                radar, goal, self_s, sit = parse_obs(obs)
+                fs.push(radar, done)
+                total_decisions += E * N
+
+            # last value
+            # ★버그fix(2026-08-30): arm='ON' 일 때 make_others_msg 가 zeros 를 돌려줘, rollout 의 T 스텝은
+            #   실제 통신 입력으로 value 를 재고 마지막 bootstrap 만 통신 없는 입력으로 쟀다(GAE 계통오차).
             with torch.no_grad():
                 if comm_active:
-                    om, (px, pg, ps, pmask, prel, psit) = comm_gather(
-                        policy, env, x, goal, self_s, sit, args.max_partners,
-                        send_mask=send_mask, recv_mask=recv_mask)
+                    om, _ = comm_gather(policy, env, fs.get(), goal, self_s, sit, args.max_partners,
+                                        send_mask=send_mask, recv_mask=recv_mask)
                 else:
                     om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
-                action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit)
-                _gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
-                value = vnorm.denormalize(policy.critic(x, goal, self_s, om, sit,
-                                                        global_feat=_gf).squeeze(-1))
-            obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
-            for oc in range(5):
-                outcome_counts[oc] += (outcome == oc).sum()
-            if use_intent:
-                buf['pos'].append(env.pos.clone()); buf['hdg'].append(env.heading.clone())
-            buf['x'].append(x); buf['goal'].append(goal); buf['self'].append(self_s)
-            # ★act = pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
-            buf['sit'].append(sit); buf['om'].append(om); buf['act'].append(action_raw)
-            if cfg.CENTRAL_CRITIC:
-                buf['gf'].append(_gf)
-            buf['logp'].append(logp.squeeze(-1)); buf['val'].append(value)
-            buf['rew'].append(reward); buf['done'].append(done.float())
-            buf['trunc'].append(torch.zeros_like(done.float()))
+                last_v = vnorm.denormalize(policy.critic(
+                    fs.get(), goal, self_s, om, sit,
+                    global_feat=build_global_feat(env) if cfg.CENTRAL_CRITIC else None).squeeze(-1))
+
+            # stack [T,E,N,...]
+            S = {k: torch.stack(v) for k, v in buf.items()}
+            returns, adv = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v,
+                                       cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            # ★리턴 정규화: 통계 갱신 후 value target 을 정규화 공간으로 (critic 출력과 같은 공간)
+            vnorm.update(returns)
+            returns = vnorm.normalize(returns)
+
+            # flatten [T*E*N, ...]
+            def flat(t): return t.reshape(-1, *t.shape[3:]) if t.dim() > 3 else t.reshape(-1)
+            fx = flat(S['x']); fg = flat(S['goal']); fsf = flat(S['self']); fsit = flat(S['sit'])
+            fom = flat(S['om']); fact = flat(S['act']); flogp = flat(S['logp'])
+            fret = flat(returns); fadv = flat(adv)
+            fgf = flat(S['gf']) if cfg.CENTRAL_CRITIC else None      # [M, N_ships, 6]
+            M = fx.shape[0]
             if comm_active:
-                buf['px'].append(px); buf['pg'].append(pg); buf['ps'].append(ps)
-                buf['pmask'].append(pmask); buf['prel'].append(prel); buf['psit'].append(psit)
+                fpx = flat(S['px']); fpg = flat(S['pg']); fps = flat(S['ps'])
+                fpmask = flat(S['pmask']); fprel = flat(S['prel']); fpsit = flat(S['psit'])
             if use_threat:
-                othr, othrm = compute_own_threat(x.reshape(E * N, -1), cfg.THREAT_K, device)
-                buf['othr'].append(othr.reshape(E, N, -1)); buf['othrm'].append(othrm.reshape(E, N, -1))
-            radar, goal, self_s, sit = parse_obs(obs)
-            fs.push(radar, done)
-            total_decisions += E * N
+                fothr = flat(S['othr']); fothrm = flat(S['othrm'])
+            if use_intent:
+                _fut, _futm = compute_own_future(S['pos'], S['hdg'], S['done'].bool(),
+                                                 cfg.INTENT_K, cfg.INTENT_HORIZON, cfg.INTENT_POS_SCALE)
+                ffut = flat(_fut); ffutm = flat(_futm)
 
-        # last value
-        # ★버그fix(2026-08-30): arm='ON' 일 때 make_others_msg 가 zeros 를 돌려줘, rollout 의 T 스텝은
-        #   실제 통신 입력으로 value 를 재고 마지막 bootstrap 만 통신 없는 입력으로 쟀다(GAE 계통오차).
-        with torch.no_grad():
-            if comm_active:
-                om, _ = comm_gather(policy, env, fs.get(), goal, self_s, sit, args.max_partners,
-                                    send_mask=send_mask, recv_mask=recv_mask)
-            else:
-                om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
-            last_v = vnorm.denormalize(policy.critic(
-                fs.get(), goal, self_s, om, sit,
-                global_feat=build_global_feat(env) if cfg.CENTRAL_CRITIC else None).squeeze(-1))
+            # ─── PPO update ───
+            # ★2026-09-05 fix: randperm 을 epoch 루프 *안*으로. 밖에 있으면 N_EPOCH 회가 전부 같은
+            #   미니배치 분할을 반복해 epoch 간 표본 상관이 생긴다(PPO 표준은 epoch 마다 재셔플).
+            mb = cfg.MINIBATCH_SIZE
+            for _ in range(cfg.N_EPOCH):
+                idx_all = torch.randperm(M, device=device)
+                for s in range(0, M, mb):
+                    mi = idx_all[s:s + mb]
+                    aux = 0.0
+                    if comm_active:
+                        # ★학습형 comm: evaluate_actions가 파트너 obs로 others_msg 재계산(sender→receiver grad) + aux손실
+                        # ★threat-relay: own_threat 라벨 제공 → 메시지가 '내 레이더가 본 위협' 인코딩(THREAT_COEF).
+                        othr_b = fothr[mi].unsqueeze(1) if use_threat else None
+                        othrm_b = fothrm[mi].unsqueeze(1) if use_threat else None
+                        fut_b = ffut[mi].unsqueeze(1) if use_intent else None
+                        futm_b = ffutm[mi].unsqueeze(1) if use_intent else None
+                        val_u, logp_u, entropy, msg_reg, it_l, tt_l, gl_l, rl_l, cl_l = policy.evaluate_actions(
+                            fx[mi], fg[mi], fsf[mi], fpx[mi], fpg[mi], fps[mi], fpmask[mi], fprel[mi],
+                            fact[mi], own_future=fut_b, own_future_mask=futm_b,
+                            own_threat=othr_b, own_threat_mask=othrm_b,
+                            situation=fsit[mi], partner_situations=fpsit[mi],
+                            global_feat=fgf[mi] if fgf is not None else None)
+                        logp_new = logp_u.squeeze(1).squeeze(-1)
+                        value_new = val_u.squeeze(1).squeeze(-1)
+                        # ★버그fix(2026-08-30): cl_l(consumer_loss)을 언팩만 하고 aux 에 안 더해
+                        #   VESSEL_COMM_CONSUMER_COEF 가 이 학습기에서 항상 무효였다. 기본값 0 이라 기존 run 과는 비트동일.
+                        aux = (cfg.MSG_L2_COEF * msg_reg + cfg.GOAL_COMM_COEF * gl_l
+                               + cfg.INTENT_COEF * it_l + cfg.THREAT_COEF * tt_l + cfg.ROLE_COMM_COEF * rl_l
+                               + cfg.COMM_CONSUMER_COEF * cl_l)
+                        # ★2026-09-05 fix(opt-in): 게이트 개방 페널티(H1a value-of-information≥0 안전장치)는
+                        #   지금까지 main.py 에만 있고 이 GPU 학습기엔 없었다 = 죽은 knob. 기본은 미적용(비트동일),
+                        #   VESSEL_MSG_GATE_APPLY=1 일 때만 더한다. comm-OFF 팔은 others_msg≡0 이라 무관(anti-rigging).
+                        if _gate_apply and cfg.MSG_GATE_COEF != 0.0:
+                            aux = aux + cfg.MSG_GATE_COEF * (policy.ctr_actor.gate_open_sum()
+                                                             + policy.critic.gate_open_sum())
+                        # ★통합 상태복원 (2026-09-04): 반환 시그니처 불변 — 속성으로 수령
+                        if cfg.STATE_RECON_COEF > 0.0:
+                            _sr_l, _sr_raw = policy._last_state_recon
+                            aux = aux + cfg.STATE_RECON_COEF * _sr_l
+                            for _g, _v in _sr_raw.items():
+                                _sr_log[_g] = _sr_log.get(_g, 0.0) + _v
+                                _sr_log['_n'] = _sr_log.get('_n', 0) + (1 if _g == 'goal' else 0)
+                    else:
+                        # ctr_actor/critic는 [batch, n_agent, dim] 기대 → n_agent=1로 unsqueeze
+                        x_b = fx[mi].unsqueeze(1); g_b = fg[mi].unsqueeze(1); s_b = fsf[mi].unsqueeze(1)
+                        om_b = fom[mi].unsqueeze(1); sit_b = fsit[mi].unsqueeze(1); act_b = fact[mi].unsqueeze(1)
+                        logp_new, entropy, _, _ = policy.ctr_actor.get_logprob_entropy(
+                            x_b, g_b, s_b, om_b, act_b, sit_b)
+                        logp_new = logp_new.squeeze(1).squeeze(-1)
+                        value_new = policy.critic(x_b, g_b, s_b, om_b, sit_b,
+                                                  global_feat=fgf[mi] if fgf is not None else None
+                                                  ).squeeze(1).squeeze(-1)
+                    ratio = torch.exp(logp_new - flogp[mi])
+                    a_mb = fadv[mi]
+                    pg1 = ratio * a_mb
+                    pg2 = torch.clamp(ratio, 1 - cfg.EPSILON, 1 + cfg.EPSILON) * a_mb
+                    policy_loss = -torch.min(pg1, pg2).mean()
+                    value_loss = ((value_new - fret[mi]) ** 2).mean()
+                    loss = policy_loss + cfg.CRITIC_LOSS_WEIGHT * value_loss - cfg.ENTROPY_BONUS * entropy + aux
+                    opt.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
+                    opt.step()
 
-        # stack [T,E,N,...]
-        S = {k: torch.stack(v) for k, v in buf.items()}
-        returns, adv = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v,
-                                   cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
-        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
-        # ★리턴 정규화: 통계 갱신 후 value target 을 정규화 공간으로 (critic 출력과 같은 공간)
-        vnorm.update(returns)
-        returns = vnorm.normalize(returns)
+            update_i += 1
+            # ★중간 체크포인트(2026-08-10): --ckpt_every M마다 저장 → 각 지점을 frozen eval로 찍어
+            #   '신뢰할 수 있는 학습곡선'(에피소드 return) 생성. 학습 창 aliasing 우회.
+            if _ck_div and args.save:
+                mark = int(total_decisions // _ck_div)
+                if mark > ckpt_mark:
+                    if mark > ckpt_mark + 1:   # ★2026-09-05 fix: 건너뛴 마크를 로그로 남김(조용한 구멍 방지)
+                        print(f"[ckpt] 경고: 마크 {ckpt_mark+1}~{mark-1} 건너뜀(rollout 이 간격보다 큼) "
+                              f"― 해당 step 파일 없음", flush=True)
+                    ckpt_mark = mark
+                    cp = f"{os.path.splitext(args.save)[0]}.step{mark * args.ckpt_every:g}M.pt"
+                    torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm,
+                                'seed': args.seed, 'steps': total_decisions,
+                                'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
+                                'optimizer_state_dict': opt.state_dict()}, cp)
+            # ★매 update 조밀 로깅: raw reward + EMA(깨끗한 곡선). ~2400 point/16M run.
+            if csv_f:
+                raw_r = float(S['rew'].mean().item())
+                ema_r = raw_r if ema_r is None else 0.02 * raw_r + 0.98 * ema_r
+                csv_f.write(f"{total_decisions},{raw_r:.5f},{ema_r:.5f}\n")
+                if update_i % 20 == 0:
+                    csv_f.flush()
+            if aux_f and _sr_log.get('_n', 0) > 0:
+                _n = _sr_log.pop('_n')
+                aux_f.write(f"{total_decisions}," + ",".join(
+                    f"{_sr_log.get(g, 0.0) / _n:.6f}" for g in ('goal', 'self', 'sit', 'threat', 'future')) + "\n")
+                _sr_log = {}
+                if update_i % 20 == 0:
+                    aux_f.flush()
+            if update_i % 5 == 0:
+                # ★종료 에피소드 기준 % (이전의 전-agent-step 분모는 running이 지배해 커브가 안 읽혔음)
+                term = outcome_counts[1:].sum().clamp(min=1)
+                pct = (outcome_counts[1:] / term * 100).tolist()      # [goal, vColl, oColl, TO]
+                eps = int(term.item())
+                mean_len = (5 * T * E * N) / max(eps, 1)              # 윈도우 agent-결정 / 종료 수
+                # ★재개 보정(2026-08-31): t_start 는 재시작하는데 total_decisions 는 이어받아
+                #   그대로 나누면 dec/s 가 수십배로 부풀려 진행이 정상인 것처럼 보임.
+                sps = (total_decisions - args.resume_at) / max(time.time() - t_start, 1e-6)
+                print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
+                      f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
+                      f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s")
+                outcome_counts.zero_()
 
-        # flatten [T*E*N, ...]
-        def flat(t): return t.reshape(-1, *t.shape[3:]) if t.dim() > 3 else t.reshape(-1)
-        fx = flat(S['x']); fg = flat(S['goal']); fsf = flat(S['self']); fsit = flat(S['sit'])
-        fom = flat(S['om']); fact = flat(S['act']); flogp = flat(S['logp'])
-        fret = flat(returns); fadv = flat(adv)
-        fgf = flat(S['gf']) if cfg.CENTRAL_CRITIC else None      # [M, N_ships, 6]
-        M = fx.shape[0]
-        if comm_active:
-            fpx = flat(S['px']); fpg = flat(S['pg']); fps = flat(S['ps'])
-            fpmask = flat(S['pmask']); fprel = flat(S['prel']); fpsit = flat(S['psit'])
-        if use_threat:
-            fothr = flat(S['othr']); fothrm = flat(S['othrm'])
-        if use_intent:
-            _fut, _futm = compute_own_future(S['pos'], S['hdg'], S['done'].bool(),
-                                             cfg.INTENT_K, cfg.INTENT_HORIZON, cfg.INTENT_POS_SCALE)
-            ffut = flat(_fut); ffutm = flat(_futm)
-
-        # ─── PPO update ───
-        # ★2026-09-05 fix: randperm 을 epoch 루프 *안*으로. 밖에 있으면 N_EPOCH 회가 전부 같은
-        #   미니배치 분할을 반복해 epoch 간 표본 상관이 생긴다(PPO 표준은 epoch 마다 재셔플).
-        mb = cfg.MINIBATCH_SIZE
-        for _ in range(cfg.N_EPOCH):
-            idx_all = torch.randperm(M, device=device)
-            for s in range(0, M, mb):
-                mi = idx_all[s:s + mb]
-                aux = 0.0
-                if comm_active:
-                    # ★학습형 comm: evaluate_actions가 파트너 obs로 others_msg 재계산(sender→receiver grad) + aux손실
-                    # ★threat-relay: own_threat 라벨 제공 → 메시지가 '내 레이더가 본 위협' 인코딩(THREAT_COEF).
-                    othr_b = fothr[mi].unsqueeze(1) if use_threat else None
-                    othrm_b = fothrm[mi].unsqueeze(1) if use_threat else None
-                    fut_b = ffut[mi].unsqueeze(1) if use_intent else None
-                    futm_b = ffutm[mi].unsqueeze(1) if use_intent else None
-                    val_u, logp_u, entropy, msg_reg, it_l, tt_l, gl_l, rl_l, cl_l = policy.evaluate_actions(
-                        fx[mi], fg[mi], fsf[mi], fpx[mi], fpg[mi], fps[mi], fpmask[mi], fprel[mi],
-                        fact[mi], own_future=fut_b, own_future_mask=futm_b,
-                        own_threat=othr_b, own_threat_mask=othrm_b,
-                        situation=fsit[mi], partner_situations=fpsit[mi],
-                        global_feat=fgf[mi] if fgf is not None else None)
-                    logp_new = logp_u.squeeze(1).squeeze(-1)
-                    value_new = val_u.squeeze(1).squeeze(-1)
-                    # ★버그fix(2026-08-30): cl_l(consumer_loss)을 언팩만 하고 aux 에 안 더해
-                    #   VESSEL_COMM_CONSUMER_COEF 가 이 학습기에서 항상 무효였다. 기본값 0 이라 기존 run 과는 비트동일.
-                    aux = (cfg.MSG_L2_COEF * msg_reg + cfg.GOAL_COMM_COEF * gl_l
-                           + cfg.INTENT_COEF * it_l + cfg.THREAT_COEF * tt_l + cfg.ROLE_COMM_COEF * rl_l
-                           + cfg.COMM_CONSUMER_COEF * cl_l)
-                    # ★통합 상태복원 (2026-09-04): 반환 시그니처 불변 — 속성으로 수령
-                    if cfg.STATE_RECON_COEF > 0.0:
-                        _sr_l, _sr_raw = policy._last_state_recon
-                        aux = aux + cfg.STATE_RECON_COEF * _sr_l
-                        for _g, _v in _sr_raw.items():
-                            _sr_log[_g] = _sr_log.get(_g, 0.0) + _v
-                            _sr_log['_n'] = _sr_log.get('_n', 0) + (1 if _g == 'goal' else 0)
-                else:
-                    # ctr_actor/critic는 [batch, n_agent, dim] 기대 → n_agent=1로 unsqueeze
-                    x_b = fx[mi].unsqueeze(1); g_b = fg[mi].unsqueeze(1); s_b = fsf[mi].unsqueeze(1)
-                    om_b = fom[mi].unsqueeze(1); sit_b = fsit[mi].unsqueeze(1); act_b = fact[mi].unsqueeze(1)
-                    logp_new, entropy, _, _ = policy.ctr_actor.get_logprob_entropy(
-                        x_b, g_b, s_b, om_b, act_b, sit_b)
-                    logp_new = logp_new.squeeze(1).squeeze(-1)
-                    value_new = policy.critic(x_b, g_b, s_b, om_b, sit_b,
-                                              global_feat=fgf[mi] if fgf is not None else None
-                                              ).squeeze(1).squeeze(-1)
-                ratio = torch.exp(logp_new - flogp[mi])
-                a_mb = fadv[mi]
-                pg1 = ratio * a_mb
-                pg2 = torch.clamp(ratio, 1 - cfg.EPSILON, 1 + cfg.EPSILON) * a_mb
-                policy_loss = -torch.min(pg1, pg2).mean()
-                value_loss = ((value_new - fret[mi]) ** 2).mean()
-                loss = policy_loss + cfg.CRITIC_LOSS_WEIGHT * value_loss - cfg.ENTROPY_BONUS * entropy + aux
-                opt.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
-                opt.step()
-
-        update_i += 1
-        # ★중간 체크포인트(2026-08-10): --ckpt_every M마다 저장 → 각 지점을 frozen eval로 찍어
-        #   '신뢰할 수 있는 학습곡선'(에피소드 return) 생성. 학습 창 aliasing 우회.
-        if args.ckpt_every > 0 and args.save:
-            mark = int(total_decisions // int(args.ckpt_every * 1e6))
-            if mark > ckpt_mark:
-                ckpt_mark = mark
-                cp = f"{os.path.splitext(args.save)[0]}.step{mark * args.ckpt_every:g}M.pt"
-                torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm,
-                            'seed': args.seed, 'steps': total_decisions,
-                            'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
-                            'optimizer_state_dict': opt.state_dict()}, cp)
-        # ★매 update 조밀 로깅: raw reward + EMA(깨끗한 곡선). ~2400 point/16M run.
+    finally:
         if csv_f:
-            raw_r = float(S['rew'].mean().item())
-            ema_r = raw_r if ema_r is None else 0.02 * raw_r + 0.98 * ema_r
-            csv_f.write(f"{total_decisions},{raw_r:.5f},{ema_r:.5f}\n")
-            if update_i % 20 == 0:
-                csv_f.flush()
-        if aux_f and _sr_log.get('_n', 0) > 0:
-            _n = _sr_log.pop('_n')
-            aux_f.write(f"{total_decisions}," + ",".join(
-                f"{_sr_log.get(g, 0.0) / _n:.6f}" for g in ('goal', 'self', 'sit', 'threat', 'future')) + "\n")
-            _sr_log = {}
-            if update_i % 20 == 0:
-                aux_f.flush()
-        if update_i % 5 == 0:
-            # ★종료 에피소드 기준 % (이전의 전-agent-step 분모는 running이 지배해 커브가 안 읽혔음)
-            term = outcome_counts[1:].sum().clamp(min=1)
-            pct = (outcome_counts[1:] / term * 100).tolist()      # [goal, vColl, oColl, TO]
-            eps = int(term.item())
-            mean_len = (5 * T * E * N) / max(eps, 1)              # 윈도우 agent-결정 / 종료 수
-            # ★재개 보정(2026-08-31): t_start 는 재시작하는데 total_decisions 는 이어받아
-            #   그대로 나누면 dec/s 가 수십배로 부풀려 진행이 정상인 것처럼 보임.
-            sps = (total_decisions - args.resume_at) / max(time.time() - t_start, 1e-6)
-            print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
-                  f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
-                  f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s")
-            outcome_counts.zero_()
-
-    if csv_f:
-        csv_f.close()
+            csv_f.flush(); csv_f.close()
+        if aux_f:
+            aux_f.flush(); aux_f.close()
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,
                 'steps': total_decisions, 'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
                 'optimizer_state_dict': opt.state_dict()}, save)
-    print(f"saved → {save} ({total_decisions/1e6:.2f}M decisions, {(time.time()-t_start)/60:.1f}min)")
+    print(f"saved -> {save} ({total_decisions/1e6:.2f}M decisions, {(time.time()-t_start)/60:.1f}min)")
 
 
 if __name__ == '__main__':

@@ -19,6 +19,8 @@ v2 예정: 보상 12항(reward), 통신 집계는 기존 networks.py가 담당(�
 """
 import math
 import os
+import warnings
+
 import torch
 
 # ─────────────────────────── 상수 (GlobalScale × VESSEL_SCALE=0.2 반영) ───────────────────────────
@@ -37,6 +39,17 @@ DRAG_THRUST_THRESH = 0.1     # 절대속도 단위
 
 RADAR_RANGE = float(os.environ.get('VESSEL_RADAR_RANGE', '56.0'))  # ★제한시계(안개) regime: *지각(obs)만* 축소
 RADAR_RANGE_BASE = 56.0      # 보상 기준 원값 — VESSEL_RADAR_RANGE와 무관하게 보상 불변(CTDE privileged). <20m 금지(THR 19.6 클립)
+# ★2026-09-05 fix: 위 '<20m 금지'가 주석에만 있고 코드 가드가 없었음.
+#   RADAR_RANGE < THR(=19.6) 이면 미감지 ray 가 RADAR_RANGE 로 복원되어(_reward #5)
+#   아무것도 없는 공해에서도 proximity 벌점이 상수로 붙음(=15 이면 결정당 -0.55,
+#   time penalty 급) → '보상은 레이더 축소와 무관(CTDE privileged)' 설계 전제가 깨짐.
+#   실사용 스크립트는 전부 56m 이라 동작 변화 없음. 의도적 실험은 env 로 바이패스.
+if (RADAR_RANGE < RADAR_RANGE_BASE * 0.35
+        and os.environ.get('VESSEL_ALLOW_SMALL_RADAR', '0') != '1'):
+    raise ValueError(
+        f'VESSEL_RADAR_RANGE={RADAR_RANGE} < {RADAR_RANGE_BASE * 0.35} — 미감지 ray 복원값이 '
+        'proximity 보상 문턱(THR 19.6) 보다 작아 공해에서도 벌점이 상시 발화함 '
+        '(보상 불변 전제 파괴). 의도한 것이면 VESSEL_ALLOW_SMALL_RADAR=1 로 해제할 것.')
 # ★센서고장(radar dropout) regime: 배별 간헐 블랙아웃 — obs만 마스킹(전방위 미감지 +0.5), 보상 불변.
 #   블랙아웃 중 유일한 정보원 = 통신(파트너 threat-relay/위치) → 통신 가치가 필수가 되는 공정 시나리오.
 RADAR_DROPOUT_P = float(os.environ.get('VESSEL_RADAR_DROPOUT_P', '0'))     # 결정당 블랙아웃 진입확률
@@ -55,6 +68,13 @@ COMM_RANGE = float(os.environ.get('VESSEL_COMM_RANGE', '200.0'))  # (정책 통�
 #   C# 기본 2.5m 는 선체 길이보다 작아 사실상 무제약 → 70m 짜리 '옆동네' 여정이 섞였다.
 #   400m: 스폰당 후보 6~9개 유지(랜덤성 확보) + 최단 여정 430m + 목표 16개 전부 사용 (2026-08-27 측정).
 MIN_GOAL_DIST = float(os.environ.get('VESSEL_MIN_GOAL_DIST', '400.0'))
+# ★2026-09-05 fix(opt-in): _respawn 의 스폰 추첨이 '리셋된 배가 있는 인덱스'에서만
+#   난수를 소비해 호출당 소비량이 데이터 의존이었음(0 ~ N×E×n_spawn).
+#   → 같은 seed 라도 정책이 조금 달라 리셋 패턴이 바뀌는 순간 그 뒤 모든 스폰·목표·
+#   초기속도가 어긋나 seed-paired 비교가 '같은 시나리오 비교'가 아니게 됨.
+#   1로 켜면 호출당 E×N×n_spawn 으로 고정(분포 동일, 비트만 다름).
+#   ⚠기본 0 = 기존 난수 스트림 유지 — 과거 run 재현 숫자를 조용히 바꾸지 않기 위함.
+RESPAWN_RNG_CONST = os.environ.get('VESSEL_RESPAWN_RNG_CONST', '0') == '1'
 
 # ── C# COLREGsHandler/GlobalScale 상수 (BASE × VESSEL_SCALE 0.2). 시간항은 스케일 불변 ──
 EARLY_ACTION_TIME       = 21.5   # Rule 16 조기행동 시점(s)
@@ -166,24 +186,50 @@ def _wrap180(deg):
     return (deg + 180.0) % 360.0 - 180.0
 
 
+class _Unset:
+    """인자 생략 감지용 sentinel (작은 int 는 `is` 비교가 불가능해서 별도 객체)."""
+    def __repr__(self):
+        return '<unset>'
+
+
+_UNSET = _Unset()
+
+
 class VesselBatchEnv:
     """GPU 배치 선박 환경. 모든 상태는 [E,N] 텐서.
 
     사용:
-        env = VesselBatchEnv(num_envs=1024, n_vessels=16, device='cuda')
+        env = VesselBatchEnv(num_envs=1024, n_vessels=16, device='cuda',
+                             crossing=0, reward_range=COMM_RANGE)   # ★기본값(2, 56)은 학습 설정과
+                             # 다르니 학습과 비교할 거면 반드시 명시할 것 (생략하면 경고)
         obs = env.reset()                       # [E, N, 369]
         obs, done, outcome = env.step(actions)  # actions [E, N, 2] ∈ [-1,1]
     """
 
     def __init__(self, num_envs=256, n_vessels=16, device='cpu', seed=0,
-                 ring_scale=1.0, crossing=2, risk_range=56.0, dtype=torch.float32,
+                 ring_scale=1.0, crossing=_UNSET, risk_range=56.0, dtype=torch.float32,
                  farfield_coef=0.0, perpair_coef=0.0, perpair_exp=1.6,
                  farpair_coef=None, farpair_exp=None, reward_range=None):
         self.E, self.N = num_envs, n_vessels
         self.device = torch.device(device)
         self.dtype = dtype
         self.ring_scale = ring_scale
-        self.crossing = crossing
+        # ★2026-09-05 fix: 생성자 기본값(crossing=2 대척, reward_range=56)이 학습·평가 호출자의
+        #   의도(crossing=0, reward_range=COMM_RANGE=200)와 정반대라, 인자를 빼먹은 스크립트가
+        #   조용히 '어느 arm 도 쓴 적 없는 설정'으로 굴렀음(eval_astar_global 의 reward_range 누락 =
+        #   보상반경 56 + farfield 0.5 조합, fidelity 스크립트는 대척 기하로 검증).
+        #   기본 *값*을 바꾸면 그 스크립트들이 과거에 낸 숫자가 조용히 달라지므로(저자 결정 사항)
+        #   값은 그대로 두고 생략 시 *경고*만 띄운다 — 무엇을 명시해야 하는지 알리는 용도.
+        _omitted = []
+        if crossing is _UNSET:
+            _omitted.append('crossing(기본 2=대척 편중배정, 학습·평가는 0)')
+        if reward_range is None and 'VESSEL_REWARD_RANGE' not in os.environ:
+            _omitted.append('reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=%g)' % COMM_RANGE)
+        if _omitted:
+            warnings.warn('VesselBatchEnv: ' + ' / '.join(_omitted) + ' 를 명시하지 않음 - '
+                          '기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.',
+                          stacklevel=2)
+        self.crossing = 2 if crossing is _UNSET else crossing
         self.risk_range = risk_range
         # 보상 env 계수 (commgate: farfield=0.5, perpair=-0.3)
         self.farfield_coef = farfield_coef
@@ -273,9 +319,13 @@ class VesselBatchEnv:
         # spawn point 배정: 각 env에서 N개 선박에 서로 다른 point (근사 — Unity는 미사용 랜덤/최원거리)
         # 배치 근사: env마다 spawn_pts를 셔플해 앞 N개 사용. 리셋된 배만 갱신.
         if initial:
+            # ★2026-09-05 fix: mask 를 무시하고 spawn_idx 전체를 덮어썼음. 부분 마스크로
+            #   initial=True 를 부르면 리셋되지 않은 생존 배의 spawn_idx 가 실제 위치와 어긋나,
+            #   이후 '점유 포인트 제외' 계산이 엉뚱한 포인트를 막아 스폰 분포가 조용히 틀어짐
+            #   (에러·로그 없음). 현재 호출부(reset)는 mask 가 전부 True 라 동작·난수 소비 불변.
             for e in range(E):
                 perm = torch.randperm(self.n_spawn, generator=self.gen, device=self.device)[:N]
-                self.spawn_idx[e] = perm
+                self.spawn_idx[e] = torch.where(mask[e], perm, self.spawn_idx[e])
         else:
             # 개별 리셋: Unity GetRandomUnusedSpawnIndex 미러 — env별 '생존 배가 점유한 포인트' 제외 랜덤.
             #   ⚠️이전의 순수 randint는 timeout 동기화 후 같은 포인트에 중복 스폰 → 즉사 vColl 연쇄
@@ -288,11 +338,19 @@ class VesselBatchEnv:
                 k = keep[:, i]
                 if k.any():
                     used[arangeE[k], self.spawn_idx[k, i]] = True
+            # ★2026-09-05 fix(opt-in, 위 RESPAWN_RNG_CONST 주석): 아래 루프가 `if not m.any(): continue`
+            #   뒤에서 난수를 뽑아 한 호출의 난수 소비량이 리셋 패턴(=정책)에 의존했음.
+            #   1 번에 full-size 로 뽑아두면 소비량이 호출당 상수가 돼 시드만 같으면 무엇이
+            #   리셋되든 이후 스폰·목표 시퀀스가 유지됨(분포 동일, 비트만 다름 → 기본 OFF).
+            r_all = (torch.rand(E, N, self.n_spawn, generator=self.gen,
+                                device=self.device, dtype=self.dtype)
+                     if RESPAWN_RNG_CONST else None)
             for i in range(N):
                 m = mask[:, i]
                 if not m.any():
                     continue
-                r = torch.rand(E, self.n_spawn, generator=self.gen, device=self.device, dtype=self.dtype)
+                r = (r_all[:, i] if RESPAWN_RNG_CONST else
+                     torch.rand(E, self.n_spawn, generator=self.gen, device=self.device, dtype=self.dtype))
                 r = torch.where(used, torch.full_like(r, -1.0), r)   # 점유 인덱스 제외
                 pick = r.argmax(dim=1)                                # free 중 랜덤 (전부 점유는 N<=20이라 불발)
                 self.spawn_idx[:, i] = torch.where(m, pick, self.spawn_idx[:, i])
@@ -611,9 +669,11 @@ class VesselBatchEnv:
         self._last_pw = pw
 
     # ─────────────────────────── obs 369D ───────────────────────────
-    def _build_obs(self):
+    def _build_obs(self, radar=None):
+        # ★2026-09-05 fix: radar 를 밖에서 받을 수 있게 함(step 의 중복 계산 제거용).
+        #   None 이면 기존대로 직접 계산 — 동작 불변.
         E, N = self.E, self.N
-        radar = self._radar()                                        # [E,N,360]
+        radar = self._radar() if radar is None else radar            # [E,N,360]
         if RADAR_DROPOUT_P > 0:
             radar = torch.where((self.dropout_left > 0).unsqueeze(-1),
                                 torch.full_like(radar, 0.5), radar)  # 블랙아웃: 전방위 미감지(+0.5). 보상은 진짜 radar 사용
@@ -948,7 +1008,13 @@ class VesselBatchEnv:
         # ★2026-08: timeout 완만 페널티(실패 신호). 충돌(-300)보다 훨씬 약해 충돌 유발 안 함.
         reward = reward + torch.where(outcome == OUT_TIMEOUT, torch.full_like(reward, TIMEOUT_PENALTY), torch.zeros_like(reward))
         done = outcome != OUT_RUNNING
-        if done.any():
+        # ★2026-09-05 fix: 리셋이 없는 스텝은 respawn 전·후 상태(pos/heading/speed)가 완전히
+        #   같은데도 _pairwise 와 _radar(360ray × (원9+타선N+벽))를 한 번 더 돌렸음 = 순수 중복.
+        #   리셋이 있을 때만 재계산하고 없으면 위에서 만든 radar·situation 을 그대로 쓴다.
+        #   (같은 상태·같은 연산 → 결과 비트동일, 비용만 감소. dropout 마스킹은 _build_obs 안에서
+        #   현재 dropout_left 로 적용되므로 원본(보상용) radar 를 넘겨도 동일.)
+        _had_reset = bool(done.any())
+        if _had_reset:
             self._respawn(done, initial=False)
         if RADAR_DROPOUT_P > 0:
             # 센서고장 상태 전이(결정당 1회): 재스폰 초기화 → 잔여 감소 → 신규 진입 추첨
@@ -958,8 +1024,11 @@ class VesselBatchEnv:
                     & (self.dropout_left == 0)
             self.dropout_left = torch.where(enter, torch.full_like(self.dropout_left, RADAR_DROPOUT_LEN),
                                             self.dropout_left)
-        self._update_situation()                       # 리셋 후 obs용 상황 재계산
-        obs = self._build_obs()
+        if _had_reset:
+            self._update_situation()                   # 리셋 후 obs용 상황 재계산
+            obs = self._build_obs()
+        else:
+            obs = self._build_obs(radar)               # 상태 불변 → 재계산 불필요(위 주석)
         return obs, reward, done, outcome
 
     def partner_goals_oracle(self):

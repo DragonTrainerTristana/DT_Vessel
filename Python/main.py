@@ -554,16 +554,18 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
         situation_tensor = torch.as_tensor(env_data['batch_situations'], dtype=torch.long, device=DEVICE).unsqueeze(0)
         _ti = time.time()
         with torch.no_grad():
-            values, actions, logprobs, means, msg, others_msg = policy.forward(
+            values, actions, logprobs, means, msg, others_msg, actions_raw = policy.forward(
                 states_tensor, goals_tensor, self_states_tensor,
                 return_msg=True,
                 comm_partners=env_data['comm_partners'],
                 agent_id_list=env_data['agent_id_list'],
                 comm_relpos=env_data['comm_relpos'],
-                situation=situation_tensor
+                situation=situation_tensor,
+                return_raw=True
             )
 
-        env_actions = np.asarray(actions.squeeze(0).cpu().detach())
+        env_actions = np.asarray(actions.squeeze(0).cpu().detach())          # tanh 값 → Unity 전송용
+        env_actions_raw = np.asarray(actions_raw.squeeze(0).cpu().detach())  # pre-tanh raw → memory 저장(PPO ratio 정합)
         env_values = np.asarray(values.squeeze(0).cpu().detach())
         env_logprobs = np.asarray(logprobs.squeeze(0).cpu().detach())
         _infer_local += time.time() - _ti
@@ -629,7 +631,7 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
                 env_data['batch_states'][i],
                 env_data['batch_goals'][i],
                 env_data['batch_self_states'][i],
-                env_actions[i],
+                env_actions_raw[i],          # ★pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
                 normalized_reward,
                 False,
                 env_values[i, 0],
@@ -647,16 +649,21 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
                 full_actions[i] = env_actions[agent_id_to_idx[agent_id]]
         actions_per_env[env_idx] = full_actions
 
-        # Terminal steps 처리 (최종 보상 저장 + done=True 설정)
+        # Terminal steps 처리 (최종 보상 저장 + done/truncated 설정)
+        # ★truncation 구분(2026-08-03): ML-Agents terminal_steps.interrupted=True = MaxStep timeout(절단) →
+        #   value bootstrap 유지(done=False, truncated=True). False = goal/collision(진짜 종료) → bootstrap 0.
+        #   timeout이 종료의 60~80%라 이 구분이 critic value target을 지배 (기존엔 전부 done=True로 미래가치=0).
+        _term_interrupted = env_data['terminal_steps'].interrupted
         for t_idx, agent_id in enumerate(env_data['terminal_steps'].agent_id):
             raw_reward = env_data['terminal_steps'].reward[t_idx]
             global_id = f"env{env_idx}_{agent_id}"
+            truncated = bool(_term_interrupted[t_idx])
 
             reward_buffer.append(raw_reward)
             normalized_reward = raw_reward / (np.sqrt(reward_rms.var) + 1e-8)
 
             if global_id in memory.agent_memories:
-                memory.agent_memories[global_id].mark_done(normalized_reward)
+                memory.agent_memories[global_id].mark_done(normalized_reward, truncated=truncated)
 
             if global_id in agent_rewards:
                 agent_rewards[global_id] += raw_reward
@@ -726,6 +733,8 @@ def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
         reward_buffer.clear()
 
     # PPO 업데이트 (message annealing 폐기 - 통신 즉시 100%, dead code 제거됨)
+    if (not TRAIN_MODE) and step > 0 and step % UPDATE_INTERVAL == 0:
+        memory.clear()   # eval 모드(VESSEL_TRAIN=0): 업데이트 없이 버퍼만 비움 (RAM 누적 방지)
     if TRAIN_MODE and step > 0 and step % UPDATE_INTERVAL == 0:
         update_start = time.time()
         print(f"\n[UPDATE] PPO update at step {step}")
@@ -898,12 +907,32 @@ def main():
         model_state = policy.state_dict()
         filtered = {k: v for k, v in saved_state.items()
                     if k in model_state and v.shape == model_state[k].shape}
-        skipped = [k for k in saved_state if k not in filtered]
+        # ★2026-09-05 fix: 부분 로드가 '랜덤 init 으로 남는 층'을 보고도 안 하고 조용히 통과했음.
+        #   이전 코드의 skipped 는 *ckpt 에만 있는* 키만 나열 — 진짜 위험은 반대쪽임.
+        #   모델에는 있는데 ckpt 에서 못 채운 키(shape 불일치 포함)는 랜덤 init 인 채 학습/평가에 쓰임.
+        #   예: MSG_DIM=6 ckpt 를 VESSEL_MSG_DIM=12 로 로드 → msg_out·fc2 메시지 슬라이스·msg_encoder·attn
+        #   이 전부 걸러져 '12차원 이어학습' 이라 기록된 run 이 사실상 통신경로 from-scratch → H2 결론 오염.
+        #   → missing 이 있으면 기본 즉시 실패(setup_environments 의 [BUILD TRAP] 가드와 같은 방침).
+        #     의도한 부분 로드면 VESSEL_ALLOW_PARTIAL_LOAD=1 로 opt-in(강행해도 목록은 다 찍음).
+        #   unused(=ckpt 에만 있는 키)는 현재 모델이 안 쓰는 층(예: STATE_RECON_COEF=0 이라 미생성된
+        #   state_recon) → 랜덤 init 위험 없음 → 경고만(기존 동작 유지, eval 스크립트 안 깨짐).
+        unused = [k for k in saved_state if k not in filtered]
+        missing = [k for k in model_state if k not in filtered]
+        if unused:
+            print(f"[WARN] ckpt 에만 있고 안 쓰인 키 {len(unused)}개: "
+                  f"{unused[:12]}{' ...' if len(unused) > 12 else ''}", flush=True)
+        if missing:
+            _pl_msg = (f"[PARTIAL LOAD] 랜덤 init 으로 남는 층 {len(missing)}개: "
+                       f"{missing[:12]}{' ...' if len(missing) > 12 else ''} "
+                       f"(shape 불일치로 걸러진 키 포함). ckpt={MODEL_PATH}")
+            if os.environ.get('VESSEL_ALLOW_PARTIAL_LOAD', '0') != '1':
+                raise RuntimeError(_pl_msg + " - 의도한 것이면 VESSEL_ALLOW_PARTIAL_LOAD=1 로 실행할 것.")
+            print(f"[WARN]{_pl_msg} - VESSEL_ALLOW_PARTIAL_LOAD=1 로 강행함(이 run 은 부분로드임).", flush=True)
         model_state.update(filtered)
         policy.load_state_dict(model_state)
-        if skipped:
-            print(f"[WARN] Skipped (shape mismatch): {skipped}")
-        print(f"[OK] Model loaded: {MODEL_PATH} ({len(filtered)}/{len(saved_state)} layers)")
+        print(f"[OK] Model loaded: {MODEL_PATH} "
+              f"({len(filtered)}/{len(model_state)} layers matched, "
+              f"missing {len(missing)}, unused {len(unused)})")
 
         # ★동결 체크포인트 감지 (2026-06-12): 06-02~06-11 구버전 ckpt는 채널 가중치 0/게이트 −8로
         #   동결돼 있어 로드 시 해동 init을 덮어씀 → 통신이 조용히 죽은 채 재개됨. 통신 실험은 from-scratch 필수.
@@ -912,12 +941,13 @@ def main():
             if (_gate_sig < 0.05
                     or float(policy.attn.v_proj.weight.norm()) < 1e-4
                     or policy.msg_actor.mean_msg_out_norm() < 1e-4):
-                print(f"[WARN] 동결 체크포인트 감지 (gate sigmoid={_gate_sig:.4f}) — "
+                print(f"[WARN] 동결 체크포인트 감지 (gate sigmoid={_gate_sig:.4f}) - "
                       f"채널 해동 init이 덮어써졌습니다. 통신 실험은 from-scratch를 사용하세요.", flush=True)
 
-        # reward_rms 복원
+        # reward_rms 복원 (★.pt 등 '.pth' 아닌 확장자는 replace가 no-op → 자기 자신을 npz로 열다
+        #   KeyError 크래시(2026-07-06 gteval 실측) → 경로 불변이면 스킵. eval(VESSEL_TRAIN=0)은 rms 불필요)
         rms_path = MODEL_PATH.replace('.pth', '_reward_rms.npz')
-        if os.path.exists(rms_path):
+        if rms_path != MODEL_PATH and os.path.exists(rms_path):
             rms_data = np.load(rms_path)
             reward_rms.mean = rms_data['mean']
             reward_rms.var = rms_data['var']

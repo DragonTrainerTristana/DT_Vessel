@@ -16,9 +16,10 @@ class AgentMemory:
         self.states = []          # [frames * STATE_SIZE]
         self.goals = []           # [2]
         self.self_states = []     # [4]
-        self.actions = []         # [action_size]
+        self.actions = []         # [action_size] ★pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
         self.rewards = []         # scalar
-        self.dones = []           # bool
+        self.dones = []           # bool (진짜 종료: goal/collision → GAE bootstrap 0)
+        self.truncateds = []      # bool (MaxStep timeout 절단 → GAE bootstrap 유지, 미래가치 0으로 안 만듦)
         self.values = []          # scalar
         self.logprobs = []        # scalar
         # 통신 파트너 obs (sender→receiver gradient 재구성용). 각 [K, dim], K=MAX_COMM_PARTNERS
@@ -33,7 +34,7 @@ class AgentMemory:
 
     def clear(self):
         for lst in (self.states, self.goals, self.self_states,
-                    self.actions, self.rewards, self.dones, self.values, self.logprobs,
+                    self.actions, self.rewards, self.dones, self.truncateds, self.values, self.logprobs,
                     self.partner_states, self.partner_goals, self.partner_selfs,
                     self.partner_masks, self.partner_relpos, self.partner_situations,
                     self.positions, self.situations):
@@ -49,6 +50,7 @@ class AgentMemory:
         self.actions.append(action)
         self.rewards.append(reward)
         self.dones.append(done)
+        self.truncateds.append(False)   # 종료 시 mark_done(truncated=...)이 마지막 원소를 갱신
         self.values.append(value)
         self.logprobs.append(logprob)
         self.partner_states.append(partner_states)
@@ -60,14 +62,20 @@ class AgentMemory:
         self.positions.append(position)
         self.situations.append(situation)
 
-    def mark_done(self, final_reward=0):
+    def mark_done(self, final_reward=0, truncated=False):
         """
         에피소드 종료 마킹 및 최종 보상 추가 (마지막 경험에).
+        ★truncated=True(MaxStep timeout 절단): dones는 False로 두고 truncateds[-1]=True →
+          calculate_returns가 value를 bootstrap(미래가치를 0으로 만들지 않음). 진짜 종료(goal/collision)는
+          truncated=False → dones[-1]=True → bootstrap 0. 둘 다 GAE 역전파는 에피소드 경계에서 절단.
         ⚠️ 이후 add()를 막지 않음 → 같은 window 내 새 에피소드 경험도 계속 누적됨.
         """
         if len(self.rewards) > 0:
             self.rewards[-1] += final_reward
-            self.dones[-1] = True
+            if truncated:
+                self.truncateds[-1] = True
+            else:
+                self.dones[-1] = True
 
 
 class Memory:
@@ -121,14 +129,16 @@ class Memory:
 
             agent_rewards = np.array(agent_memory.rewards)
             agent_dones = np.array(agent_memory.dones)
+            agent_truncateds = np.array(agent_memory.truncateds)
             agent_values = np.array(agent_memory.values)
 
-            # 버퍼 마지막 step이 terminal이면 bootstrap=0, 아니면 마지막 value로 truncated bootstrap
+            # 버퍼 마지막 step이 진짜 종료(goal/collision)면 bootstrap=0, 아니면(진행 중 or timeout 절단)
+            #   마지막 value로 truncated bootstrap. (timeout 절단 step은 아래 truncateds가 step별로 처리.)
             last_value = 0 if (len(agent_dones) > 0 and agent_dones[-1]) else agent_values[-1]
 
             agent_returns = calculate_returns(
                 agent_rewards, agent_dones, last_value, agent_values,
-                DISCOUNT_FACTOR, GAE_LAMBDA
+                DISCOUNT_FACTOR, GAE_LAMBDA, truncateds=agent_truncateds
             )
 
             # ★ intent 미래라벨(self-supervised): 각 step t의 미래 K지점 변위를 t시점 body frame으로 회전.
@@ -139,7 +149,8 @@ class Memory:
             if INTENT_COEF > 0.0 and L > 0:
                 pos = np.asarray(agent_memory.positions, dtype=np.float32).reshape(L, -1)[:, :2]  # [L,2]
                 head_deg = np.asarray([s[2] for s in agent_memory.self_states], dtype=np.float32) * 180.0
-                dn = agent_dones.astype(bool)
+                # ★timeout 절단도 에피소드 경계 → respawn 텔레포트가 intent 라벨에 새지 않게 dones와 OR
+                dn = (agent_dones.astype(bool) | agent_truncateds.astype(bool))
                 for t in range(L):
                     hr = math.radians(float(head_deg[t])); ch, sh = math.cos(hr), math.sin(hr)
                     for k in range(INTENT_K):

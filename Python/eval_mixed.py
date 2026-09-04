@@ -19,10 +19,11 @@
   VESSEL_MSG_DIM=6 VESSEL_USE_MOE=1 VESSEL_MOE_SHARED=1 \
   python eval_mixed.py --ckpt qd_MOE_SE_s42.pt --mode radar --csv mixed_s42.csv
 """
-import os, argparse, time
+import os, argparse, time, csv
 import torch
 import config as cfg
 import vessel_gym as vg
+import networks as net          # ★2026-09-05 fix: ckpt 설정 스냅샷 대조용(모듈 전역 읽기)
 from networks import CNNPolicy
 from vessel_gym_train import comm_gather, parse_obs, FrameStack
 
@@ -82,12 +83,15 @@ def main():
     ap.add_argument('--eval_decisions', type=int, default=6000)
     ap.add_argument('--burnin', type=int, default=1500)
     ap.add_argument('--seed', type=int, default=999)
-    ap.add_argument('--ring', type=float, default=0.7)
+    ap.add_argument('--ring', type=float, default=1.0)   # ★0.7→1.0 (씬 원본)
+    ap.add_argument('--crossing', type=int, default=0)   # 2=대척 / 그 외=최소거리 랜덤
     ap.add_argument('--tag', default='')
     ap.add_argument('--sham', action='store_true',
                     help='가짜 대조군: 같은 번호로 편만 가르고 마스킹은 안 건다. '
                          '두 무리 차이가 통신 때문인지 선박 번호 때문인지 판별용.')
     ap.add_argument('--csv', default=None)
+    ap.add_argument('--ep_csv', default=None,
+                    help='에피소드 단위 원본을 이 파일에 남긴다 (배 한 척의 한 항해 = 한 줄)')
     args = ap.parse_args()
 
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -113,11 +117,58 @@ def main():
         recv_mask = comm if args.mode == 'radar' else torch.ones_like(comm)
 
     env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=args.ring, crossing=2, risk_range=420.0,
-                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
-    policy = CNNPolicy(cfg.MSG_DIM, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
+                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
+                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
+                            perpair_coef=-0.15, perpair_exp=3.0)
+    # ★ckpt 를 먼저 읽어 msg_ln(LayerNorm, 2026-08-31) 유무를 스니핑 → 옛/새 체크포인트 모두 strict 로드
     sd = torch.load(ckpt_path, map_location=dev)
-    policy.load_state_dict(sd['model_state_dict'] if 'model_state_dict' in sd else sd)
+    _sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
+    os.environ['VESSEL_MSG_LN'] = '1' if any('msg_ln' in k for k in _sd) else '0'
+    # ★2026-09-05 fix: msg_dim 도 ckpt 에서 스니핑한다 (eval_ckpt.py 와 같은 처리).
+    #   틀렸던 점: cfg.MSG_DIM 은 `import config` 시점(=VESSEL_MSG_DIM 환경변수)에 고정된다.
+    #   H2 팔(MSG_DIM 2·4·8·10·12)로 학습한 ckpt 를 VESSEL_MSG_DIM 없이 돌리면 load_state_dict 가
+    #   shape 불일치로 죽어 혼합함대 평가를 아예 못 돌렸다(같은 저장소의 eval_ckpt 는 되는데 여기만 안 됨).
+    #   ckpt 가 진실이므로 거기서 읽는다. 키가 없으면 조용한 폴백 대신 명시 실패시킨다
+    #   (폭이 우연히 맞으면 틀린 폭의 others_msg 로 '조용히 잘못된 평가'가 되므로).
+    _mk = [k for k in _sd if k.endswith('msg_out.weight')]
+    if not _mk:
+        raise SystemExit('[eval_mixed] msg_out.weight 키 없음 - msg_dim 스니핑 실패. '
+                         '네트워크 구조가 바뀐 것이므로 확인 후 돌릴 것.')
+    _msg_dim = int(_sd[_mk[0]].shape[0])
+    if _msg_dim != cfg.MSG_DIM:
+        import vessel_gym_train as _vgt
+        _vgt.MSG_DIM = _msg_dim      # 모듈 전역을 쓰는 경로(make_others_msg 등)까지 폭을 맞춘다
+        print(f"[eval_mixed] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) - ckpt 값으로 로드", flush=True)
+    # ★2026-09-05 fix: 집계 방식(attention/pos_ground)은 state_dict 키로 구분이 불가능하다.
+    #   msg_encoder(pos_ground)·attn(attention) 모듈은 CNNPolicy.__init__ 이 *조건 없이* 항상 만들기 때문에
+    #   attention 으로 학습한 ckpt 를 VESSEL_USE_ATTENTION 없이 로드해도 strict 로드가 경고 없이 통과하고,
+    #   학습 때와 다른 집계 함수로 굴러간다(comm-OFF 무리는 others_msg≡0 이라 무영향 → comm 무리만 망가지는 비대칭).
+    #   과거에 보고된 Fig7/Fig8 숫자를 조용히 바꾸지 않기 위해 기본은 '경고만', 적용은 opt-in 으로 둔다.
+    _snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
+    _apply_snap = os.environ.get('VESSEL_EVAL_APPLY_SNAPSHOT', '0') == '1'
+    if _snap:
+        # 스냅샷에 없는 키는 '모름' 이므로 현재 값을 기본으로 둔다(없는 키로 헛경고 방지).
+        _mis = [(k, _snap.get(k, getattr(net, n)), getattr(net, n))
+                for k, n in (('use_attention', 'USE_ATTENTION'), ('pos_ground', 'POS_GROUND'),
+                             ('central_critic', 'CENTRAL_CRITIC'))
+                if bool(_snap.get(k, getattr(net, n))) != bool(getattr(net, n))]
+        if _mis and _apply_snap:
+            net.USE_ATTENTION = bool(_snap.get('use_attention', net.USE_ATTENTION))
+            net.POS_GROUND = bool(_snap.get('pos_ground', net.POS_GROUND))
+            net.CENTRAL_CRITIC = bool(_snap.get('central_critic', net.CENTRAL_CRITIC))
+            net.STATE_RECON_COEF = float(_snap.get('state_recon_coef', net.STATE_RECON_COEF))
+            print(f"[eval_mixed] VESSEL_EVAL_APPLY_SNAPSHOT=1 - ckpt 설정으로 덮어씀: {_mis}", flush=True)
+        elif _mis:
+            print(f"[eval_mixed] [!] ckpt 학습 설정과 현재 env 가 다름 {_mis} "
+                  f"(항목=(이름, ckpt, 현재)). 이 상태로 재면 학습 때와 *다른 집계*로 굴러가 "
+                  f"comm 무리만 조용히 틀린다. 학습 때 env 를 그대로 주고 돌리거나 "
+                  f"VESSEL_EVAL_APPLY_SNAPSHOT=1 로 ckpt 설정을 적용할 것.", flush=True)
+    else:
+        print(f"[eval_mixed] [!] 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습) - "
+              f"집계 방식은 키로 알 수 없다. 현재 env attention={net.USE_ATTENTION} "
+              f"pos_ground={net.POS_GROUND} 로 평가함. 학습 때와 다르면 조용히 틀린 숫자가 나온다.", flush=True)
+    policy = CNNPolicy(_msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
+    policy.load_state_dict(_sd)
     policy.eval()
 
     fs = FrameStack(E, N, dev)
@@ -142,6 +193,12 @@ def main():
     ep_head = torch.zeros(E, N, device=dev)
     ep_len = torch.zeros(E, N, device=dev)
     ep_minsep = torch.full((E, N), BIG, device=dev)
+    ep_comp_ok = torch.zeros(E, N, device=dev)      # 에피소드별 규정 준수 판정 누적
+    ep_comp_n = torch.zeros(E, N, device=dev)
+    ep_rows = []                                    # --ep_csv 용 에피소드 원본
+    # ★평가 시작 시점에 배들은 이미 항해 중간이라 첫 종료는 스텝·연료가 잘려 있다.
+    #   한 번 종료돼 새로 스폰된 뒤부터 세야 온전한 항해다 (eval_ckpt.py 와 같은 처리).
+    counted = torch.zeros(E, N, dtype=torch.bool, device=dev)
     prev_head = env.heading.clone()
 
     # 설정 × 무리별 집계기, 그리고 그에 대응하는 [E,N] 마스크
@@ -184,6 +241,9 @@ def main():
                 _hold = (_sit == 2).to(ep_fuel.dtype)
                 _viol = _star * torch.clamp(-_rud, min=0.0) + _hold * _rud.abs()
                 _ok = (_viol < 0.1).float()
+                _gf = _gate.to(ep_comp_n.dtype)
+                ep_comp_ok += _ok * _gf
+                ep_comp_n += _gf
                 for key, gm in grp.items():
                     _gg = _gate & gm
                     if not bool(_gg.any()):
@@ -203,7 +263,7 @@ def main():
             for key, gm in grp.items():
                 A = acc[key]
                 for oc in range(1, 5):
-                    mask = (outcome == oc) & gm
+                    mask = (outcome == oc) & gm & counted
                     c = int(mask.sum())
                     if not c:
                         continue
@@ -214,20 +274,56 @@ def main():
                         A.g['head'] += float(ep_head[mask].sum())
                         A.g['length'] += float(ep_len[mask].sum())
                         A.g['n'] += c
-                tm = term & gm
+                tm = term & gm & counted
                 if int(tm.sum()):
                     A.allsep_sum += float(ep_minsep[tm].clamp(max=vg.RADAR_RANGE * 4).sum())
                     A.allsep_n += int(tm.sum())
+            if args.ep_csv:
+                _ei, _vi = torch.nonzero(term & counted, as_tuple=True)
+                _oc = outcome[_ei, _vi].tolist()
+                _st = ep_len[_ei, _vi].tolist()
+                _fu = ep_fuel[_ei, _vi].tolist()
+                _hd = ep_head[_ei, _vi].tolist()
+                _ms = ep_minsep[_ei, _vi].clamp(max=vg.RADAR_RANGE * 4).tolist()
+                _co = ep_comp_ok[_ei, _vi].tolist()
+                _cn = ep_comp_n[_ei, _vi].tolist()
+                _nc = nocomm[_ei, _vi].tolist()
+                for _j, (_e, _v) in enumerate(zip(_ei.tolist(), _vi.tolist())):
+                    ep_rows.append((_e, _v, SW[_e // args.envs_per],
+                                    'nocomm' if _nc[_j] else 'comm',
+                                    int(_oc[_j]), _st[_j], _fu[_j], _hd[_j],
+                                    _ms[_j], _co[_j], _cn[_j]))
+            counted = counted | term          # 기록한 뒤에 갱신 — 첫 종료는 버린다
             ep_fuel = torch.where(term, torch.zeros_like(ep_fuel), ep_fuel)
             ep_head = torch.where(term, torch.zeros_like(ep_head), ep_head)
             ep_len = torch.where(term, torch.zeros_like(ep_len), ep_len)
             ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)
+            ep_comp_ok = torch.where(term, torch.zeros_like(ep_comp_ok), ep_comp_ok)
+            ep_comp_n = torch.where(term, torch.zeros_like(ep_comp_n), ep_comp_n)
         radar, goal, self_s, sit = parse_obs(obs)
         fs.push(radar, done)
         prev_head = torch.where(done, env.heading, prev_head)
 
     tag = args.tag or os.path.splitext(os.path.basename(ckpt_path))[0]
     nlab = 'Radar-only' if args.mode == 'radar' else 'Receive-only'
+    _md = args.mode + ('_sham' if args.sham else '')
+
+    def _runlog(p):
+        """★2026-09-05 fix: 실행 파라미터를 csv 옆 사이드카에 남긴다.
+        틀렸던 점: csv 에는 tag/mode/nocomm/group 만 들어가 --eval_decisions·--burnin·--ring·
+        --crossing·--seed 이 하나도 안 남았다. 소비자(make_mixed_fleet.py)는 (mode,nocomm,tag)
+        키로 덮어쓰므로, 200결정 스모크가 4500결정 본 run 을 조용히 대체해도 사후에 구분할 길이 없었다.
+        csv 열을 늘리면 기존 파일·소비자가 깨지므로(헤더 불일치) 사이드카 로그로 남긴다."""
+        try:
+            with open(p + '.runs.log', 'a', encoding='utf-8') as lf:
+                lf.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\ttag={tag}\tmode={_md}\t"
+                         f"ckpt={os.path.basename(ckpt_path)}\tmsg_dim={_msg_dim}\t"
+                         f"dec={args.eval_decisions}\tburnin={args.burnin}\t"
+                         f"envs_per={args.envs_per}\tvessels={N}\tsweep={args.sweep}\t"
+                         f"seed={args.seed}\tring={args.ring}\tcrossing={args.crossing}\t"
+                         f"max_partners={args.max_partners}\trows={len(lines)}\n")
+        except OSError as e:
+            print(f"  [!] run 로그 기록 실패: {e}")
     cols = ['eps', 'goal', 'coll', 'to', 'fuel', 'head', 'length', 'minsep',
             'colregs', 'colregs_n', 'sit1', 'sit2', 'sit3', 'sit4']
     lines = []
@@ -241,16 +337,53 @@ def main():
                   f" goal={r['goal']:5.1f}% coll={r['coll']:5.2f}% colregsOK={r['colregs']:5.1f}%"
                   f" minSep={r['minsep']:5.1f}m fuel={r['fuel']:6.1f} head={r['head']:6.0f}deg"
                   f" len={r['length']:5.0f} (eps={r['eps']})")
-            lines.append([tag, args.mode + ('_sham' if args.sham else ''), k, g] + [f"{r[c]:.4f}" for c in cols])
+            lines.append([tag, _md, k, g] + [f"{r[c]:.4f}" for c in cols])
     if args.csv:
         path = args.csv if os.path.isabs(args.csv) else os.path.join(SCRATCH, args.csv)
         new = not os.path.exists(path)
+        # ★2026-09-05 fix: 같은 키가 이미 파일에 있으면 시끄럽게 알린다.
+        #   틀렸던 점: 'a' 로 이어 쓰는데 소비자(make_mixed_fleet.py:load)는 (mode,nocomm,tag) 키를
+        #   덮어써 *뒤 행이 이긴다*. 즉 같은 --tag/--mode 로 짧은 스모크를 한 번 더 돌리면
+        #   본 run 행이 경고 한 줄 없이 대체되고, eps 열을 눈으로 안 보면 알아챌 수 없었다.
+        #   행을 지우거나 형식을 바꾸면 기존 결과가 흔들리므로(과거 숫자 보존) 경고만 띄운다.
+        if not new:
+            try:
+                with open(path, encoding='utf-8') as _f:
+                    _prev = {(r.get('tag'), r.get('mode'), r.get('nocomm'), r.get('group')): r
+                             for r in csv.DictReader(_f)}
+            except (OSError, UnicodeDecodeError, csv.Error) as e:
+                _prev = {}
+                print(f"  [!] 기존 csv 를 못 읽어 중복 검사 생략: {e}")
+            _dup = [ln for ln in lines
+                    if (str(ln[0]), str(ln[1]), str(ln[2]), str(ln[3])) in _prev]
+            if _dup:
+                print(f"  [!] 중복 {len(_dup)}행 - 같은 (tag,mode,nocomm,group)이 이미 있음. "
+                      f"소비자는 *뒤 행*을 쓰므로 앞 행은 무시된다. 스모크로 본 run 을 덮는 게 "
+                      f"아닌지 확인할 것 (실행 이력: {os.path.basename(path)}.runs.log)")
+                for ln in _dup:
+                    _o = _prev[(str(ln[0]), str(ln[1]), str(ln[2]), str(ln[3]))]
+                    print(f"      {ln[0]}|{ln[1]}|{ln[2]}|{ln[3]}: 기존 eps={_o.get('eps')} "
+                          f"goal={_o.get('goal')} → 새 eps={ln[4]} goal={ln[5]}")
         with open(path, 'a', encoding='utf-8') as f:
             if new:
                 f.write('tag,mode,nocomm,group,' + ','.join(cols) + '\n')
             for ln in lines:
                 f.write(','.join(str(v) for v in ln) + '\n')
+        _runlog(path)
         print(f"  csv -> {path}")
+    if args.ep_csv:
+        p2 = args.ep_csv if os.path.isabs(args.ep_csv) else os.path.join(SCRATCH, args.ep_csv)
+        new2 = not os.path.exists(p2)
+        with open(p2, 'a', encoding='utf-8') as f:
+            if new2:
+                f.write('tag,mode,nocomm,group,env,vessel,outcome,steps,'
+                        'fuel,head,minsep,colregs_ok,colregs_n\n')
+            for (_e, _v, _k, _g, _oc, _st, _fu, _hd, _ms, _co, _cn) in ep_rows:
+                f.write(f'{tag},{_md},{_k},{_g},{_e},{_v},{_oc},{_st:.0f},'
+                        f'{_fu:.4f},{_hd:.3f},{_ms:.3f},{_co:.0f},{_cn:.0f}\n')
+        if not args.csv:
+            _runlog(p2)     # ★2026-09-05 fix: --csv 없이 돌린 경우도 실행 파라미터는 남긴다
+        print(f'  episode csv -> {p2}   ({len(ep_rows):,} 행)')
 
 
 if __name__ == '__main__':

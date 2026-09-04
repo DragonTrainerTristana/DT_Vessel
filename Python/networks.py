@@ -148,6 +148,15 @@ class StateReconDecoder(nn.Module):
         self.register_buffer('stat_inited', torch.zeros(1))
         self.register_buffer('loss_ema', torch.ones(len(self.GROUPS)))
         self.momentum = 0.01
+        # ★2026-09-05 fix(opt-in): 그룹 EMA 정규화가 *갱신 후* 값으로 나눠 자기억제적이었음
+        #   (분모에 현재 배치 손실이 momentum만큼 섞임 → gl 급등 시 비율이 1/momentum=100에서 잘림).
+        #   정석은 *갱신 전* 값으로 정규화. 과거 학습 재현을 조용히 깨지 않도록 기본은 옛 동작 유지,
+        #   VESSEL_RECON_EMA_PRE=1 로만 교정 동작. state_dict 불변 → 구 ckpt 로드 영향 없음.
+        #   ※감사가 함께 지적한 '초기 1.0 프라이어 왜곡'은 해당 없음 — 타깃이 z-score라 init 시
+        #     모든 그룹 손실이 E[z^2]≈1에서 출발함(라벨 원단위 500배 차이는 z-score가 이미 제거).
+        #     즉 프라이어 1.0은 오히려 정확한 스케일 → ema_inited 버퍼 추가(=구 ckpt 키 불일치) 불요.
+        import os as _os_ema
+        self.ema_pre = _os_ema.environ.get('VESSEL_RECON_EMA_PRE', '0') == '1'
 
     def _slices(self):
         out, s0 = {}, 0
@@ -195,10 +204,13 @@ class StateReconDecoder(nn.Module):
         for gi, (g, (a, b)) in enumerate(self._slices().items()):
             gl = se[:, a:b].sum() / mf[:, a:b].sum().clamp(min=1.0)
             raw[g] = float(gl.detach())
+            w_pre = self.loss_ema[gi].detach().clone()          # 갱신 *전* 값(교정 경로용)
             if self.training:
                 with torch.no_grad():
                     self.loss_ema[gi] = (1 - self.momentum) * self.loss_ema[gi] + self.momentum * gl.detach()
-            total = total + gl / (self.loss_ema[gi].detach() + 1e-4)
+            # ★2026-09-05 fix: ema_pre=1이면 갱신 전 값으로 정규화(자기억제 제거). 기본(0)은 옛 동작.
+            w = w_pre if self.ema_pre else self.loss_ema[gi].detach()
+            total = total + gl / (w + 1e-4)
         return total / len(self.GROUPS), raw
 
 
@@ -483,12 +495,18 @@ class _ControlActorCore(nn.Module):
         return torch.tanh(self.fc2(torch.cat((radar_feat, goal_f, self_f, gated), dim=-1)))
 
     def head(self, z):
-        """z[M,128] → mean[M,act], logstd[M,act]. consumer_coupling이면 decode를 z에 concat."""
-        zc = torch.cat([z, self.consumer_decoder(z)], dim=-1) if self.consumer_coupling else z
+        """z[M,hidden] → mean[M,act], logstd[M,act], dec(coupling이면 복원값, 아니면 None).
+        ★2026-09-05 fix: coupling일 때 계산한 consumer_decoder 출력을 *함께 반환*. 기존엔 같은 z로
+          evaluate_actions가 consumer_decode를 다시 돌려 미니배치마다 두 번 forward했음(MoE면 5코어
+          마스킹 루프까지 재실행). 같은 파라미터·같은 입력이라 값·gradient는 동일 → 결과 비트동일,
+          비용만 절감. 또한 앞으로 decoder에 dropout 등 확률요소가 들어가도 '정책이 쓴 복원값'과
+          '손실이 벌한 복원값'이 갈라지지 않음."""
+        dec = self.consumer_decoder(z) if self.consumer_coupling else None
+        zc = torch.cat([z, dec], dim=-1) if dec is not None else z
         a = torch.tanh(self.fc3(zc))
         mean = self.action_mean(a)
         logstd = self.action_logstd.expand(z.shape[0], -1)
-        return mean, logstd
+        return mean, logstd, dec
 
 
 class ControlActor(nn.Module):
@@ -516,6 +534,9 @@ class ControlActor(nn.Module):
         else:
             self.core = _ControlActorCore(frames, msg_dim, action_size)
         self.core_hidden = (self.experts[0] if self.use_moe else self.core).hidden
+        # ★2026-09-05 fix: coupling에서 head가 이미 만든 복원값의 1회용 캐시 (z 객체, dec).
+        #   _route가 채우고 pop_consumer_dec가 꺼내 비움 → 중복 forward 제거. 미스면 재계산(기존 경로).
+        self._dec_cache = None
 
     def cores(self):
         return list(self.experts) if self.use_moe else [self.core]
@@ -543,7 +564,8 @@ class ControlActor(nn.Module):
         sit_oh = _situation_onehot(situation, M, x_f) if SITUATION_INPUT else None
         if not self.use_moe:
             z = self.core.backbone(x_f, goal_f, self_f, om_f, sit_oh)
-            mean, logstd = self.core.head(z)
+            mean, logstd, dec = self.core.head(z)
+            self._cache_dec(z, dec)
             return z, mean, logstd, batch_size, n_agent
         # 상황별 hard-route (코어 통째). 각 sample은 자기 상황 코어만 통과 → 그 코어만 gradient.
         if situation is not None:
@@ -553,16 +575,35 @@ class ControlActor(nn.Module):
         z = x_f.new_zeros(M, self.core_hidden)
         mean = x_f.new_zeros(M, self.action_size)
         logstd = x_f.new_zeros(M, self.action_size)
+        dec_full = None
         for k in range(self.num_experts):
             mask = (sit == k)
             if mask.any():
                 zk = self.experts[k].backbone(x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
                                               sit_oh[mask] if sit_oh is not None else None)
-                mk, lk = self.experts[k].head(zk)
+                mk, lk, dk = self.experts[k].head(zk)
                 z[mask] = zk
                 mean[mask] = mk
                 logstd[mask] = lk
+                if dk is not None:   # coupling: 코어별 복원값을 전체 배치로 재조립(모든 행이 정확히 한 코어 소속)
+                    if dec_full is None:
+                        dec_full = x_f.new_zeros(M, dk.shape[-1])
+                    dec_full[mask] = dk
+        self._cache_dec(z, dec_full)
         return z, mean, logstd, batch_size, n_agent
+
+    def _cache_dec(self, z, dec):
+        """★2026-09-05 fix: head가 계산한 복원값을 (z 객체, dec)로 캐시. dec가 None(coupling OFF)이면 미캐시."""
+        self._dec_cache = (z, dec) if dec is not None else None
+
+    def pop_consumer_dec(self, z, situation=None):
+        """캐시된 복원값을 *1회용*으로 반환. 캐시가 없거나 z 객체가 다르면 consumer_decode 재계산(기존 경로).
+        객체 동일성으로만 재사용 → 스테일 캐시 사용 불가(PPO 정합 안전)."""
+        c = self._dec_cache
+        self._dec_cache = None
+        if c is not None and c[0] is z:
+            return c[1]
+        return self.consumer_decode(z, situation)
 
     def consumer_decode(self, z, situation=None):
         """C5c: z[M,128] → 파트너 의도 복원 [M, consumer_k*GOAL_SIZE]. 라우팅된 코어의 consumer_decoder 사용."""
@@ -605,6 +646,7 @@ class ControlActor(nn.Module):
         logprob = logprob.view(batch_size, n_agent, -1)
         action_mean = action_mean.view(batch_size, n_agent, -1)
         action_raw = action_raw.view(batch_size, n_agent, -1)
+        self._dec_cache = None   # ★2026-09-05 fix: rollout 경로는 캐시 소비자가 없음 → 그래프 참조 즉시 해제
         return action, logprob, action_mean, action_raw
 
     def get_logprob_entropy(self, x, goal, self_state, others_msg, action_raw, situation=None):
@@ -810,6 +852,7 @@ class CNNPolicy(nn.Module):
         self.state_recon = (StateReconDecoder(msg_dim, THREAT_K, INTENT_K, NUM_COLREGS_SITUATIONS)
                             if STATE_RECON_COEF > 0.0 else None)
         self._last_state_recon = None   # evaluate_actions가 (loss, 그룹dict) 저장 — 반환 시그니처 불변 유지
+        self._central_warned = False    # 중앙 critic 무력화 경고 1회용 플래그(아래 forward)
 
     def _get_others_msg(self, msg, comm_partners=None, agent_id_list=None, comm_relpos=None,
                         self_state=None, goal=None):
@@ -974,9 +1017,17 @@ class CNNPolicy(nn.Module):
             others_msg = others_msg * msg_gain
         return others_msg
 
+    def _central_critic_active(self):
+        """중앙 critic 브랜치(glob_enc)가 *실제로* 만들어졌는지 — 모듈 상수 대신 인스턴스로 판정.
+        (eval_ckpt가 networks.CENTRAL_CRITIC를 ckpt 스니핑 값으로 덮어쓴 뒤 생성하므로 상수 독해는 부정확)."""
+        try:
+            return getattr(self.critic.cores()[0], 'glob_enc', None) is not None
+        except Exception:
+            return False
+
     def forward(self, x, goal, self_state,
                 return_msg=False, comm_partners=None, agent_id_list=None, comm_relpos=None,
-                situation=None, return_raw=False):
+                situation=None, return_raw=False, global_feat=None):
         """
         Rollout forward. Returns value, action, logprob, mean [, msg, others_msg] [, action_raw]
         ★return_raw=True면 pre-tanh action_raw를 튜플 끝에 추가 반환(학습 rollout이 memory에 저장 →
@@ -995,8 +1046,19 @@ class CNNPolicy(nn.Module):
                                           self_state=self_state, goal=goal)
         # 3. 행동 (situation으로 상황별 head 라우팅)
         action, logprob, mean, action_raw = self.ctr_actor(x, goal, self_state, others_msg, situation)
-        # 4. 가치 (situation one-hot 조건화)
-        value = self.critic(x, goal, self_state, others_msg, situation)
+        # 4. 가치 (situation 라우팅 + 중앙 critic 전역상태)
+        # ★2026-09-05 fix: global_feat를 critic까지 전달. 기존엔 CNNPolicy.forward가 인자를 아예 안 받아
+        #   CENTRAL_CRITIC=1로 Unity(main.py) 경로를 돌리면 rollout·update 둘 다 glob_enc가 zeros만 받아
+        #   64D 상수 bias로 퇴화 → '중앙 critic 썼다'는 기록과 달리 critic이 전역상태를 한 번도 못 봤음(조용한 무력화).
+        #   default None = 기존 호출부 전부 비트동일. 실제 CTDE는 호출부(main.py)가 전역상태를 넘겨야 성립
+        #   → 넘기지 않은 채 CENTRAL_CRITIC=1이면 stderr로 1회 경고(조용한 무력화 차단).
+        if global_feat is None and not self._central_warned and self._central_critic_active():
+            self._central_warned = True
+            import sys as _sys_cc
+            print('[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 '
+                  '→ critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.',
+                  file=_sys_cc.stderr)
+        value = self.critic(x, goal, self_state, others_msg, situation, global_feat=global_feat)
 
         if return_msg and return_raw:
             return value, action, logprob, mean, msg, others_msg, action_raw
@@ -1157,7 +1219,8 @@ class CNNPolicy(nn.Module):
             Ksl = self.ctr_actor.consumer_k
             tgt_c = partner_goal[:, :Ksl, :]                                          # [N,Ksl,GOAL_SIZE] 거리순 nearest-K
             msk_c = partner_mask[:, :Ksl, :]                                          # [N,Ksl,1]
-            pred_c = self.ctr_actor.consumer_decode(z_ctrl, situation).view(x.shape[0], Ksl, GOAL_SIZE)  # [N,Ksl,GOAL_SIZE] (코어 라우팅)
+            # ★2026-09-05 fix: coupling이면 head가 이미 만든 복원값 재사용(중복 forward 제거). 아니면 재계산.
+            pred_c = self.ctr_actor.pop_consumer_dec(z_ctrl, situation).view(x.shape[0], Ksl, GOAL_SIZE)  # [N,Ksl,GOAL_SIZE] (코어 라우팅)
             denom_c = msk_c.sum().clamp(min=1.0) * GOAL_SIZE
             consumer_loss = ((pred_c - tgt_c).pow(2) * msk_c).sum() / denom_c
         else:

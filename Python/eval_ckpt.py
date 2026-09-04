@@ -7,6 +7,7 @@ aliasing으로 요동하는 문제를 우회. 체크포인트를 로드해 다�
 
 사용: VESSEL_MSG_DIM=6 VESSEL_USE_MOE=1 python eval_ckpt.py --ckpt vg_OFF_s43.pt --arm OFF
      (arm/dim/moe는 체크포인트 학습 시와 동일 env로 맞춰야 함)
+     GPU 지정: --device cuda:1  (독립 프로세스 병렬로 여러 개 돌릴 땐 프로세스마다 다르게 줄 것)
 """
 import os, sys, argparse
 import numpy as _np
@@ -19,6 +20,14 @@ from vessel_gym_train import comm_gather, parse_obs, FrameStack, make_others_msg
 
 
 def main():
+    # ★2026-09-05 fix: 기본 콘솔(cp949)에서 print 한 줄 때문에 평가 전체가 죽던 것 방지.
+    #   실측: msg_dim 스니핑 print 의 em dash 에서 UnicodeEncodeError → 몇 시간짜리 평가가
+    #   결과 출력 직전에 통째로 날아갈 수 있음. 인코딩은 그대로 두고 에러 처리만 replace 로
+    #   바꾸므로 숫자·동작은 불변(못 찍는 글자만 '?' 가 됨).
+    try:
+        sys.stdout.reconfigure(errors='replace')
+    except Exception:
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument('--ckpt', required=True)
     ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])
@@ -36,9 +45,19 @@ def main():
     ap.add_argument('--crossing', type=int, default=0)           # 2=대척 / 그 외=최소거리 랜덤 (학습과 동일해야 함)
     # ★ckpt 의 학습 arm 과 --arm 이 다르면 기본은 중단. 의도한 교차평가(예: ON 정책의 통신을 끊어 재기)만 이 플래그로 허용.
     ap.add_argument('--allow_arm_mismatch', action='store_true')
+    # ★2026-09-05 fix: GPU 인덱스를 고를 수단이 없어 항상 cuda:0 에 몰렸음.
+    #   무위험 속도개선이 '독립 프로세스 병렬(이 머신 ~6개)'인데, 6개가 전부 물리 GPU0 에
+    #   4096 에이전트씩 올라가 메모리 경합·OOM 또는 직렬화된 속도가 됨. 미지정이면 기존 동작 그대로.
+    ap.add_argument('--device', default=None, help='예: cuda:1 (미지정이면 cuda / cpu)')
+    # ★2026-09-05 fix: 평가 창 끝 절단(censoring) 보정 — opt-in. 0=기존 동작(과거 숫자 재현).
+    #   창 끝에 걸린 에피소드는 길이에 비례해 뽑히므로(length-biased) 긴 에피소드=timeout 이 더
+    #   많이 잘려 TO% 과소·goal% 과대가 됨. 기본값을 바꾸면 과거 보고 숫자가 조용히 달라지므로
+    #   기본은 끄고, 대신 아래에서 '잘린 개수'를 항상 출력함.
+    ap.add_argument('--drain', type=int, default=0,
+                    help='창 종료 후 진행 중 에피소드를 마감하는 데 쓸 최대 결정 수 (0=끄기, 기존 동작)')
     args = ap.parse_args()
 
-    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+    dev = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
     E, N = args.envs, args.vessels
     torch.manual_seed(args.seed)
     scr = os.path.dirname(os.path.abspath(__file__))
@@ -46,9 +65,20 @@ def main():
     ckpt_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ckpt_path = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ckpt_dir, args.ckpt)
 
+    # ★2026-09-05 fix: 보상 계수를 리터럴로 박아두면 학습과 조용히 갈림.
+    #   학습(vessel_gym_train.py:390~392)은 VESSEL_FARFIELD_COEF / VESSEL_PERPAIR_COEF 를 env 로 읽는데
+    #   평가만 리터럴이라, 그 env 로 스윕한 ckpt 를 평가하면 *학습과 다른 보상함수*로 채점됨
+    #   (outcome 은 살아남지만 epReward 비교·리턴 보고가 학습 목표와 다른 함수가 됨). 에러도 안 남.
+    #   → 이름·기본값을 학습과 동일하게 맞추고, 기본값과 다르면 stdout 에 찍어 눈에 보이게 함.
+    #   perpair_exp 는 학습이 리터럴 3.0 이므로 여기서도 리터럴 유지(eval 에만 env 를 열면 반대로 갈림).
+    _ff = float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0'))
+    _pp = float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15'))
+    if (_ff, _pp) != (0.0, -0.15):
+        print(f"[eval] 보상계수 env override: farfield={_ff} perpair={_pp} "
+              f"(학습 때와 같은 env 인지 확인할 것)", flush=True)
     env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
                             ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
-                            farfield_coef=0.0, perpair_coef=-0.15, perpair_exp=3.0)
+                            farfield_coef=_ff, perpair_coef=_pp, perpair_exp=3.0)
     # ★ckpt 를 먼저 읽어 msg_ln(LayerNorm, 2026-08-31) 유무를 스니핑 → 옛/새 체크포인트 모두 strict 로드
     sd = torch.load(ckpt_path, map_location=dev)
     _sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
@@ -63,7 +93,7 @@ def main():
     if _msg_dim != cfg.MSG_DIM:
         import vessel_gym_train as _vgt
         _vgt.MSG_DIM = _msg_dim
-        print(f"[eval] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) — ckpt 값으로 로드", flush=True)
+        print(f"[eval] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) - ckpt 값으로 로드", flush=True)
 
     # ★2026-09-05 fix (blocker): 집계 방식 불일치가 조용히 통과하던 것을 막는다.
     #   문제: CNNPolicy.__init__ 은 msg_encoder(pos_ground용)와 attn(attention용)을 *조건 없이* 항상 만든다.
@@ -94,7 +124,7 @@ def main():
     else:
         net.CENTRAL_CRITIC = _sniff_cc
         net.STATE_RECON_COEF = 1.0 if _sniff_sr else 0.0
-        print(f"[eval] ⚠️ 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습). "
+        print(f"[eval] [!] 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습). "
               f"central_critic={_sniff_cc} state_recon={_sniff_sr} 는 키로 스니핑했으나 "
               f"**집계 방식(attention/pos_ground)은 키로 알 수 없음** — 현재 env 값 "
               f"attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} 로 평가함. "
@@ -325,7 +355,26 @@ def main():
             r8_res[k] += list(zip(pr_off_max[mk].tolist(), _drop[mk].tolist(), pr_dcpa0[mk].tolist()))
 
     # 평가: 완주 outcome pooling + 지표
-    for _dstep in range(args.eval_decisions):
+    # ★2026-09-05 fix: 창 끝 절단(censoring).
+    #   기존엔 eval_decisions 만큼 돌고 그냥 끝내서, 그 시점 진행 중이던 에피소드가 통째로 사라졌음
+    #   (시작 쪽 절단은 counted 게이트로 막았는데 끝 쪽은 무처리). 창 끝에 걸릴 확률은 에피소드
+    #   길이에 비례하므로 timeout 처럼 긴 에피소드가 더 많이 잘림 → TO% 과소·goal% 과대.
+    #   더구나 편향 크기가 팔의 길이 분포에 비례해 팔마다 달라 두 팔 비교의 부호가 뒤집힐 수 있음.
+    #   → 기본값(--drain 0)은 과거 숫자 재현을 위해 그대로 두고, 루프 뒤에 절단량을 항상 출력함.
+    #     --drain K 를 주면 창 종료 후 최대 K 결정까지 더 돌려 진행 중이던 에피소드만 마감함.
+    _pending = None          # 창 끝 시점에 아직 안 끝난 에이전트 [E,N] (drain 대상)
+    _dstep = -1
+    while True:
+        _dstep += 1
+        if _dstep >= args.eval_decisions:
+            if args.drain <= 0:
+                break
+            if _pending is None:
+                _pending = ep_len > 0
+                print(f"   [drain] 창 끝 미완 {int(_pending.sum())}개 마감 시작 "
+                      f"(최대 {args.drain}결정)", flush=True)
+            if (not bool(_pending.any())) or (_dstep - args.eval_decisions) >= args.drain:
+                break
         # ── step 전 유효 상태로 지표 누적 ──
         a = act(fs.get(), goal, self_s, sit)
         sr = env.speed / torch.clamp(env.max_speed, min=1e-6)
@@ -462,8 +511,12 @@ def main():
         obs, rew_step, done, outcome = env.step(a)
         ep_reward += rew_step
         # ── 종료 에피소드: 지표 기록 후 리셋 ──
+        # ★2026-09-05 fix: drain 구간(_pending is not None)에서는 '창 끝에 걸려 있던' 에피소드만
+        #   집계에 넣는다. 안 그러면 이미 마감된 배가 새로 시작한 에피소드까지 딸려 들어와
+        #   창이 팔마다 다른 길이로 늘어난다. drain 이 꺼져 있으면 _pending is None → 기존 동작 그대로.
+        _cnt_gate = counted if _pending is None else (counted & _pending)
         for oc in range(1, 5):
-            mask = (outcome == oc) & counted      # 경계 걸친 첫 에피소드 제외
+            mask = (outcome == oc) & _cnt_gate     # 경계 걸친 첫 에피소드 제외
             c = int(mask.sum())
             if c:
                 counts[oc] += c; total += c
@@ -475,7 +528,7 @@ def main():
                 msum[oc]['n'] += c
         term = (outcome != 0)
         if int(term.sum()):
-            _rec = term & counted
+            _rec = term & _cnt_gate
             if int(_rec.sum()):
                 ms = ep_minsep[_rec].clamp(max=vg.RADAR_RANGE * 4)
                 all_minsep_sum += float(ms.sum()); all_minsep_n += int(_rec.sum())
@@ -485,6 +538,8 @@ def main():
             ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)
             ep_reward = torch.where(term, torch.zeros_like(ep_reward), ep_reward)
             counted = counted | term          # 기록 *후* 갱신 → 첫 종료는 제외, 이후부터 집계
+            if _pending is not None:
+                _pending = _pending & (~term)   # ★2026-09-05 fix: drain — 마감된 에이전트는 대기에서 제외
             # ★조우: 종료(충돌 포함)로 끊긴 조우도 5스텝 이상이면 집계한다.
             #   버리면 '충돌로 끝난 비준수 조우'가 통째로 빠져 준수율이 낙관 편향됨.
             enc_finalize(term & (enc_sit > 0))
@@ -507,6 +562,22 @@ def main():
             pr_in = torch.where(_t3, torch.zeros_like(pr_in), pr_in)
         radar, goal, self_s, sit = parse_obs(obs); fs.push(radar, done)
         prev_head = torch.where(done, env.heading, prev_head)
+
+    # ★2026-09-05 fix: 절단 실태를 항상 남김 — 팔마다 잘린 양이 다른지 눈으로 확인 가능해야 하고,
+    #   출력에 안 남으면 사후 보정도 불가능했음.
+    _op = (ep_len > 0) & counted        # 집계 대상(첫 종료를 이미 본 배)만이 실제 손실분
+    _nop = int(_op.sum())
+    _nall = int((ep_len > 0).sum())
+    _oplen = float(ep_len[_op].mean()) if _nop else 0.0
+    print(f"   [censored] 창 끝 미완 에피소드 {_nop}개 (전체 미완 {_nall}개, 평균 진행 {_oplen:.0f}결정), 집계 제외"
+          + (" (drain 후 잔여)" if args.drain > 0 else " (--drain N 으로 마감 가능)"), flush=True)
+    # ★2026-09-05 fix: 실행 파라미터를 stdout 에 남김. burnin 기본값(1200)과 문서에 기록된 실행
+    #   명령(--burnin 1500)이 서로 달라, --burnin 을 준 실행과 안 준 실행의 숫자가 다른데 출력만
+    #   보고는 어느 쪽인지 구분이 불가능했음. 기본값 자체는 과거 숫자 재현 때문에 바꾸지 않고,
+    #   무슨 값으로 돌렸는지 기록만 남김.
+    print(f"   [run] burnin={args.burnin} dec={args.eval_decisions} drain={args.drain} "
+          f"ring={args.ring} crossing={args.crossing} seed={args.seed} "
+          f"envs={E} vessels={N} maxp={args.max_partners} dev={dev}", flush=True)
 
     if total == 0:
         print(f"{os.path.basename(ckpt_path):26s} | no terminations"); return
