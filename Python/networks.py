@@ -16,6 +16,7 @@ sender→receiver gradient가 0이었음. 이제 파트너 obs를 저장해두�
 파트너 obs로 재실행(rollout과 동일 집계: sum/mean/scale/attention/pos_ground 미러)하여
 "내 메시지가 옆 배 회피를 도왔나" gradient가 흐르게 함.
 """
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,6 +29,9 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     COMM_CONSUMER_COEF, COMM_CONSUMER_K, COMM_CONSUMER_COUPLING, USE_ORACLE,
                     SITUATION_INPUT, MOE_WIDTH, MOE_SHARED, POS_GROUND, STATE_RECON_COEF,
                     CENTRAL_CRITIC)
+
+
+_RADAR_LEAKY = os.environ.get('VESSEL_RADAR_ACT', 'relu').lower() == 'leaky'
 
 
 def _share_radar_encoder(experts):
@@ -90,16 +94,28 @@ class RadarEncoder(nn.Module):
             _flat = self._conv(torch.zeros(1, frames, n_rays)).shape[1]
         self.fc = nn.Linear(_flat, out_dim)
 
+    # ★2026-09-05 진단·완화 스위치: VESSEL_RADAR_ACT=leaky 면 LeakyReLU(0.01), 기본 relu = 비트동일.
+    #   왜 필요한가 — 실측된 붕괴 원인이 이 인코더의 dying ReLU 임:
+    #     2026-09-04 off_s45 의 ctr_actor 레이더 인코더가 step2M->6M 사이 정확히 0.000000 변함
+    #     (같은 런 critic 레이더는 2105, 정상 시드는 1656/2154). 레이더를 무장애로 바꿔도 |Δaction|=0.
+    #     장애물을 알려주는 채널은 레이더뿐이라 장애물 충돌로 터짐(oColl 57~74%).
+    #   64런 실측 붕괴율 4/64 = 6.3%. GAE trunc·진행보상 계수·StateRecon 통계와 무관(전부 A/B 로 기각).
+    #   ReLU 가 4겹(conv1~3 + fc)이고 fc 뒤가 죽으면 30 유닛 전멸 -> gradient 영구 0 = 회복 불가.
+    #   LeakyReLU 는 음수쪽 기울기를 남겨 그 흡수상태를 없앤다. 활성함수 교체는 신경망 설계 변경이라
+    #   기본값은 바꾸지 않고 스위치로만 둠(저자 승인 사항).
+    def _act(self, t):
+        return F.leaky_relu(t, 0.01) if _RADAR_LEAKY else F.relu(t)
+
     def _conv(self, x):
-        a = F.relu(self.conv1(x))
-        a = F.relu(self.conv2(a))
-        a = F.relu(self.conv3(a))
+        a = self._act(self.conv1(x))
+        a = self._act(self.conv2(a))
+        a = self._act(self.conv3(a))
         return a.reshape(a.shape[0], -1)
 
     def forward(self, x):
         """x: [batch, n_agent, frames*n_rays] 또는 [M, frames*n_rays] → [M, out_dim] (post-ReLU)."""
         x = x.reshape(-1, self.frames, self.n_rays)
-        return F.relu(self.fc(self._conv(x)))
+        return self._act(self.fc(self._conv(x)))
 
 
 class IntentDecoder(nn.Module):
