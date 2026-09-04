@@ -78,7 +78,9 @@ def _env_float(key, default):
     v = os.environ.get(key)
     return float(v) if v is not None else default
 
-COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 2100 * VESSEL_SCALE) # 통신 범위 420m (C# GlobalScale.COMM_RANGE와 매칭. COLREGS_DETECTION(보상 56m)과는 분리)
+# ★2026-08-30 420 → 200 (사용자 결정): 통신 반경 = 보상이 반응하는 반경(vessel_gym.REWARD_RANGE)으로 통일.
+#   기존엔 보상 risk 가 56m 하드컷이라 56~420m '통신으로만 아는 구간'에 걸린 보상이 전체의 0.31%뿐이었다(실측).
+COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 200.0) # 통신 범위 200m (vessel_gym.COMM_RANGE 와 같은 env 로 함께 움직임)
 # ★기본 4 (2026-07-03 사용자 결정으로 8→4 원복): nearest-4 within COMM_RANGE.
 #   이력: 원래 4 → 2026-06-12에 far-band(56~420m) 커버 목적으로 8로 확대(활성 씬 16척, 밴드 점유 8~10척 실측)
 #   → 2026-07-03에 4로 원복. far-band 커버가 필요한 실험은 VESSEL_MAX_PARTNERS=8로 명시 설정할 것.
@@ -153,6 +155,21 @@ THREAT_K = _env_int('VESSEL_THREAT_K', 3)            # 복원할 top-K 최근접
 # ★별도 GoalDecoder head → 정책/가치 무오염(H1a 보존). receiver는 게이트로 무시 가능.
 # default 0.0 = OFF = 비트동일(GoalDecoder 미호출).
 GOAL_COMM_COEF = _env_float('VESSEL_GOAL_COMM_COEF', 0.0)
+
+# ===== 통합 상태복원 aux (2026-09-04, COMM_PLAN.md 4-1) =====
+# 사람이 라벨을 고르지 않는다: 메시지가 sender 상태 전부(goal/self/situation/threat/future)를
+# 복원 가능하게 강제. 성분별 z-score(러닝 통계) + 그룹별 EMA 정규화 + 동등 가중.
+# 근거: 기존 5-손실은 gradient 89%가 THREAT 하나로 쏠림(_diag_aux_grad), 의도 라벨은
+#       수치 스케일이 작아(우현변위 std 0.013) 계수를 통일해도 자동으로 굶음 → 표준화 필수.
+# 0(기본) = 미사용(구 체크포인트 로드 호환 포함 비트동일). >0이면 기존 5계수는 0으로 둘 것(이중계상 방지).
+STATE_RECON_COEF = _env_float('VESSEL_STATE_RECON_COEF', 0.0)
+
+# ===== 중앙 critic — CTDE (2026-09-04, COMM_PLAN.md 4-2) =====
+# 학습 때만 critic이 전역 함대 상태(전 선박 상대위치·침로·속도)를 추가로 봄. 실행 정책(actor)은 국소 유지.
+# 근거: 분산 critic은 "내 양보 → 남의 이득" 협력 크레딧이 잡음에 묻힘(충돌 100%가 협응 실패형).
+# critic은 배포 시 버려지므로 공정성 문제 없음(CTDE 표준). 양 arm 동일 적용.
+# 0(기본) = 기존 분산 critic 비트동일(구 체크포인트 로드 호환).
+CENTRAL_CRITIC = _env_str('VESSEL_CENTRAL_CRITIC', '0') == '1'
 
 # ============================================================================
 # Role-broadcast self-supervised (메시지 = sender의 COLREGs 상황/역할; Phase 2)

@@ -26,7 +26,8 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     INTENT_COEF, INTENT_K, THREAT_COEF, THREAT_K, GOAL_COMM_COEF,
                     ROLE_COMM_COEF, USE_MOE, NUM_COLREGS_SITUATIONS, MAX_COMM_PARTNERS,
                     COMM_CONSUMER_COEF, COMM_CONSUMER_K, COMM_CONSUMER_COUPLING, USE_ORACLE,
-                    SITUATION_INPUT, MOE_WIDTH, MOE_SHARED, POS_GROUND)
+                    SITUATION_INPUT, MOE_WIDTH, MOE_SHARED, POS_GROUND, STATE_RECON_COEF,
+                    CENTRAL_CRITIC)
 
 
 def _share_radar_encoder(experts):
@@ -119,6 +120,86 @@ class IntentDecoder(nn.Module):
 
     def forward(self, msg):
         return self.dec(msg)   # [..., K*3]
+
+
+class StateReconDecoder(nn.Module):
+    """통합 상태복원 디코더 (2026-09-04, COMM_PLAN.md 4-1) — 라벨을 사람이 고르지 않는다.
+
+    메시지 하나로 sender 상태 전부를 복원하도록 강제:
+      그룹 = goal(2) / self_state(4) / situation one-hot(5) / threat(K_t*4, mask) / future(K_i*3, mask)
+    ★성분별 z-score: 러닝 mean/var(모멘텀 0.01)로 표준화 — 의도 라벨처럼 수치가 작은 성분이
+      MSE에서 자동으로 굶는 것을 막는다(실측: 우현변위 std 0.013 → gradient 0.8%).
+    ★그룹별 EMA 정규화 + 동등 평균: 손실 원값이 그룹 간 500배 차이나므로(ROLE 4e-5 vs CONSUMER 0.02)
+      각 그룹 손실을 자기 EMA로 나눠 gradient 기여를 지속적으로 균등화.
+    STATE_RECON_COEF=0이면 인스턴스 자체가 안 만들어짐(구 체크포인트 strict 로드 호환)."""
+    GROUPS = ('goal', 'self', 'sit', 'threat', 'future')
+
+    def __init__(self, msg_dim, threat_k, intent_k, num_sit=5):
+        super(StateReconDecoder, self).__init__()
+        self.dims = {'goal': GOAL_SIZE, 'self': SELF_STATE_SIZE, 'sit': num_sit,
+                     'threat': threat_k * 4, 'future': intent_k * 3}
+        self.num_sit = num_sit
+        D = sum(self.dims.values())
+        self.out_dim = D
+        self.net = nn.Sequential(nn.Linear(msg_dim, 128), nn.ReLU(), nn.Linear(128, D))
+        # 성분별 러닝 표준화 통계 + 그룹별 손실 EMA
+        self.register_buffer('run_mean', torch.zeros(D))
+        self.register_buffer('run_var', torch.ones(D))
+        self.register_buffer('stat_inited', torch.zeros(1))
+        self.register_buffer('loss_ema', torch.ones(len(self.GROUPS)))
+        self.momentum = 0.01
+
+    def _slices(self):
+        out, s0 = {}, 0
+        for g in self.GROUPS:
+            out[g] = (s0, s0 + self.dims[g]); s0 += self.dims[g]
+        return out
+
+    def loss(self, msg, goal, self_state, situation, own_threat, own_threat_mask,
+             own_future, own_future_mask):
+        """msg [N,1,msg_dim] → (총손실 스칼라, 그룹별 원손실 dict[float] — 로깅용)."""
+        N = msg.shape[0]
+        sit_oh = F.one_hot(situation.reshape(N).long().clamp(0, self.num_sit - 1),
+                           self.num_sit).float().unsqueeze(1)               # [N,1,5]
+        tm = torch.ones_like(own_threat) if own_threat_mask is None else own_threat_mask
+        fm = torch.ones_like(own_future) if own_future_mask is None else own_future_mask
+        tgt = torch.cat([goal, self_state, sit_oh, own_threat, own_future], dim=-1)  # [N,1,D]
+        msk = torch.cat([torch.ones_like(goal), torch.ones_like(self_state),
+                         torch.ones_like(sit_oh), tm, fm], dim=-1)
+        tf = tgt.reshape(N, -1); mf = msk.reshape(N, -1)
+        # 러닝 z-score 갱신 (mask 유효 표본 기준)
+        if self.training:
+            with torch.no_grad():
+                cnt = mf.sum(0).clamp(min=1.0)
+                bm = (tf * mf).sum(0) / cnt
+                bv = (((tf - bm).pow(2)) * mf).sum(0) / cnt
+                # ★2026-09-05 fix: 유효 표본이 0인 성분은 통계를 갱신하지 않는다.
+                #   기존엔 mask 가 전부 0인 성분도 bm=0·bv=0 으로 EMA 에 섞여 run_mean→0, run_var→1e-8 로
+                #   지수 감쇠했다. 그 성분의 mask 가 다시 살아나는 첫 배치에서 z=(tf-0)/1e-3 로 폭발한다.
+                #   future(intent) 라벨은 에피소드 경계·버퍼 끝에서 통째로 마스크되므로 실제로 발생하는 경로다.
+                valid = (mf.sum(0) > 0)
+                if float(self.stat_inited) == 0.0:
+                    self.run_mean.copy_(torch.where(valid, bm, self.run_mean))
+                    self.run_var.copy_(torch.where(valid, bv.clamp(min=1e-8), self.run_var))
+                    self.stat_inited.fill_(1.0)
+                else:
+                    new_m = self.run_mean * (1 - self.momentum) + self.momentum * bm
+                    new_v = self.run_var * (1 - self.momentum) + self.momentum * bv.clamp(min=1e-8)
+                    self.run_mean.copy_(torch.where(valid, new_m, self.run_mean))
+                    self.run_var.copy_(torch.where(valid, new_v, self.run_var))
+        sd = self.run_var.clamp(min=1e-6).sqrt()
+        z = ((tf - self.run_mean) / sd) * mf                                 # 표준화 타깃
+        pred = self.net(msg).reshape(N, -1)
+        se = (pred - z).pow(2) * mf
+        raw, total = {}, 0.0
+        for gi, (g, (a, b)) in enumerate(self._slices().items()):
+            gl = se[:, a:b].sum() / mf[:, a:b].sum().clamp(min=1.0)
+            raw[g] = float(gl.detach())
+            if self.training:
+                with torch.no_grad():
+                    self.loss_ema[gi] = (1 - self.momentum) * self.loss_ema[gi] + self.momentum * gl.detach()
+            total = total + gl / (self.loss_ema[gi].detach() + 1e-4)
+        return total / len(self.GROUPS), raw
 
 
 class ThreatDecoder(nn.Module):
@@ -257,6 +338,14 @@ class _MessageActorCore(nn.Module):
         self.radar_encoder = RadarEncoder(frames, STATE_SIZE, f_dim, width)
         # f_dim + goal(2) + self_state(4) + situation one-hot(SIT_INPUT_DIM, 기본 0)
         self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM, self.hidden)
+        # ★msg_out 앞 LayerNorm (2026-08-31 사용자 승인 — tanh 포화 방지):
+        #   실측: 기존 구조에서 시드 절반(s43·s44 등)의 메시지가 mean|tanh|=1.000 으로 전 원소 포화 =
+        #   gradient 0 = 학습 영구 정지. 원인은 fc2 은닉(post-ReLU, 비유계)이 msg_out 을 거치며 pre-tanh 가
+        #   수십까지 자라는 것. LayerNorm 이 pre-tanh 입력 스케일을 O(1) 로 유지 → tanh 선형구간 유지.
+        #   VESSEL_MSG_LN=0 으로 옛 구조(포화 위험) 재현 가능. 평가 스크립트는 ckpt 키에 'msg_ln' 유무를
+        #   스니핑해 자동 설정(옛 체크포인트 strict 로드 호환).
+        import os as _os_ln
+        self.msg_ln = nn.LayerNorm(self.hidden) if _os_ln.environ.get('VESSEL_MSG_LN', '1') == '1' else None
         self.msg_out = nn.Linear(self.hidden, msg_dim)
         # ★생산측 소진폭 init (2026-06-12 채널동결 fix): weight+bias zero-init은 msg≡tanh(0)=0을 만들어
         #   소비측 zero-init과 직렬 곱 새들 형성 → 채널 전체 grad 항등 0, 1M step 비트동결(실측).
@@ -274,6 +363,8 @@ class _MessageActorCore(nn.Module):
         else:
             a = torch.cat((a, goal_flat, self_state_flat), dim=-1)
         a = F.relu(self.fc2(a))
+        if self.msg_ln is not None:
+            a = self.msg_ln(a)              # pre-tanh 스케일 O(1) 고정 → 포화 방지
         return torch.tanh(self.msg_out(a))  # bounded [-1, 1]
 
 
@@ -559,19 +650,31 @@ class _CriticCore(nn.Module):
         self.hidden = _w(128, width, floor=8)
         self.radar_encoder = RadarEncoder(frames, STATE_SIZE, f_dim, width)  # 360 raw ray → 학습형 Conv1D 압축
         # f_dim + goal(2) + self_state(4) + situation one-hot(SIT_INPUT_DIM, 기본 0) + others_msg(msg_dim, ★항상 마지막)
-        self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM + msg_dim, self.hidden)
+        # ★중앙 critic(CTDE, 2026-09-04): 전 선박 (상대위치·침로·속도·거리) 6D → per-ship 인코딩 → mean pool 64D.
+        #   CENTRAL_CRITIC=0이면 브랜치 미생성(구 ckpt strict 로드 호환·비트동일).
+        self.glob_enc = (nn.Sequential(nn.Linear(6, 64), nn.ReLU(), nn.Linear(64, 64))
+                         if CENTRAL_CRITIC else None)
+        _glob_dim = 64 if CENTRAL_CRITIC else 0
+        self.fc2 = nn.Linear(f_dim + 2 + 4 + SIT_INPUT_DIM + _glob_dim + msg_dim, self.hidden)
         with torch.no_grad():
             self.fc2.weight[:, -msg_dim:].mul_(0.1)   # 메시지 슬라이스 소진폭 init (채널동결 fix)
         self.msg_gate = nn.Parameter(torch.tensor(0.0))
         self.value_out = nn.Linear(self.hidden, 1)
 
-    def forward(self, x_f, goal_f, self_f, others_msg_f, sit_oh=None):
+    def forward(self, x_f, goal_f, self_f, others_msg_f, sit_oh=None, glob_f=None):
         gated = others_msg_f * torch.sigmoid(self.msg_gate)
         v = self.radar_encoder(x_f)   # [M, RADAR_FEAT_DIM] (post-ReLU)
+        parts = [v, goal_f, self_f]
         if SITUATION_INPUT:
-            v = F.relu(self.fc2(torch.cat((v, goal_f, self_f, sit_oh, gated), dim=-1)))
-        else:
-            v = F.relu(self.fc2(torch.cat((v, goal_f, self_f, gated), dim=-1)))
+            parts.append(sit_oh)
+        if self.glob_enc is not None:
+            # glob_f [M, N_ships, 6] → per-ship 인코딩 후 mean pool (순열 불변)
+            # ★glob_f=None 방어: 평가·미러 스크립트가 전역 상태 없이 부를 수 있음 → 0 대체(결정론적)
+            if glob_f is None:
+                glob_f = x_f.new_zeros(x_f.shape[0], 1, 6)
+            parts.append(self.glob_enc(glob_f).mean(dim=1))
+        parts.append(gated)                      # 메시지 슬라이스는 항상 마지막(소진폭 init 계약)
+        v = F.relu(self.fc2(torch.cat(parts, dim=-1)))
         return self.value_out(v)   # [M, 1]
 
 
@@ -612,16 +715,18 @@ class Critic(nn.Module):
         md = self.msg_dim; cs = self.cores()
         return float(sum(float(c.fc2.weight[:, :-md].norm()) for c in cs) / len(cs))
 
-    def forward(self, x, goal, self_state, others_msg, situation=None):
+    def forward(self, x, goal, self_state, others_msg, situation=None, global_feat=None):
         batch_size, n_agent, _ = x.shape
         M = batch_size * n_agent
         x_f = x.reshape(M, -1)
         goal_f = goal.reshape(M, -1)
         self_f = self_state.reshape(M, -1)
         om_f = others_msg.reshape(M, -1)
+        # ★중앙 critic: global_feat [..., N_ships, 6] → [M, N_ships, 6]
+        gf_f = global_feat.reshape(M, global_feat.shape[-2], 6) if global_feat is not None else None
         sit_oh = _situation_onehot(situation, M, x_f) if SITUATION_INPUT else None
         if not self.use_moe:
-            v = self.core(x_f, goal_f, self_f, om_f, sit_oh)
+            v = self.core(x_f, goal_f, self_f, om_f, sit_oh, gf_f)
         else:
             if situation is not None:
                 sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
@@ -632,7 +737,8 @@ class Critic(nn.Module):
                 mask = (sit == k)
                 if mask.any():
                     v[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
-                                              sit_oh[mask] if sit_oh is not None else None)
+                                              sit_oh[mask] if sit_oh is not None else None,
+                                              gf_f[mask] if gf_f is not None else None)
         return v.view(batch_size, n_agent, 1)
 
 
@@ -698,6 +804,12 @@ class CNNPolicy(nn.Module):
         #   라벨=sender 자기 situation(evaluate_actions 인자, self-prediction). 정책/가치 무오염(별도 head).
         self.role_comm_coef = ROLE_COMM_COEF
         self.role_decoder = RoleDecoder(msg_dim, NUM_COLREGS_SITUATIONS)
+
+        # ★통합 상태복원 (2026-09-04): STATE_RECON_COEF>0일 때만 생성(구 ckpt strict 로드 호환).
+        self.state_recon_coef = STATE_RECON_COEF
+        self.state_recon = (StateReconDecoder(msg_dim, THREAT_K, INTENT_K, NUM_COLREGS_SITUATIONS)
+                            if STATE_RECON_COEF > 0.0 else None)
+        self._last_state_recon = None   # evaluate_actions가 (loss, 그룹dict) 저장 — 반환 시그니처 불변 유지
 
     def _get_others_msg(self, msg, comm_partners=None, agent_id_list=None, comm_relpos=None,
                         self_state=None, goal=None):
@@ -898,7 +1010,7 @@ class CNNPolicy(nn.Module):
                          partner_x, partner_goal, partner_self, partner_mask,
                          partner_relpos, action_raw, own_future=None, own_future_mask=None,
                          own_threat=None, own_threat_mask=None, situation=None,
-                         partner_situations=None):
+                         partner_situations=None, global_feat=None):
         """
         PPO 업데이트용. ★통신 sender→receiver gradient 수정★
         통신 ON이면 파트너 obs로 MessageActor를 재실행(미분가능)하여 others_msg를 재구성.
@@ -1024,6 +1136,18 @@ class CNNPolicy(nn.Module):
         logprob, entropy, _, z_ctrl = self.ctr_actor.get_logprob_entropy(
             x, goal, self_state, others_msg, action_raw, situation
         )
+        # ★통합 상태복원 손실 (2026-09-04): own msg 하나로 상태 전부 복원. 기존 5-손실 대체
+        #   (사용 시 기존 계수는 0으로 → 이중계상 없음). 반환 9-튜플 불변 — _last_state_recon 속성으로 전달.
+        if (USE_COMMUNICATION and self.state_recon is not None and self.state_recon_coef > 0.0
+                and own_threat is not None and own_future is not None and situation is not None):
+            own_msg_sr = self.msg_actor(x, goal, self_state, situation)
+            _sr_loss, _sr_raw = self.state_recon.loss(
+                own_msg_sr, goal, self_state, situation, own_threat, own_threat_mask,
+                own_future, own_future_mask)
+            self._last_state_recon = (_sr_loss, _sr_raw)
+        else:
+            self._last_state_recon = (torch.zeros((), device=x.device), {})
+
         # ★C5c consumer 손실: 수신측 backbone z로 파트너 의도(goal masked-mean) 복원 → MSE가 fc2 메시지슬라이스로
         #   gradient(수신 정책이 파트너 의도를 표상하게 강제). USE_COMMUNICATION·COMM_CONSUMER_COEF>0·非oracle만.
         #   comm-OFF/COEF=0이면 0(미가산=수신 무영향, 비트동일). oracle은 정보 직접이라 불요(skip).
@@ -1038,5 +1162,5 @@ class CNNPolicy(nn.Module):
             consumer_loss = ((pred_c - tgt_c).pow(2) * msk_c).sum() / denom_c
         else:
             consumer_loss = torch.zeros((), device=x.device)
-        value = self.critic(x, goal, self_state, others_msg, situation)
+        value = self.critic(x, goal, self_state, others_msg, situation, global_feat=global_feat)
         return value, logprob, entropy, msg_reg, intent_loss, threat_loss, goal_loss, role_loss, consumer_loss

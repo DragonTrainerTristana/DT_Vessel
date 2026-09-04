@@ -189,17 +189,17 @@ def test_logprob_mirror(use_attention, use_moe=False):
     sit = torch.as_tensor(sc['situations'], dtype=torch.long, device=DEV).unsqueeze(0) if use_moe else None
 
     with torch.no_grad():
-        value_r, action, logprob_r, mean, msg, others_msg = pol.forward(
+        value_r, action, logprob_r, mean, msg, others_msg, action_raw = pol.forward(
             x, goal, self_s, return_msg=True,
             comm_partners=sc['comm_partners'], agent_id_list=sc['agent_id_list'],
-            comm_relpos=sc['comm_relpos'], situation=sit
-        )   # action/logprob [1,N,*]
+            comm_relpos=sc['comm_relpos'], situation=sit, return_raw=True
+        )   # action/logprob [1,N,*], action_raw = pre-tanh 샘플(update가 그대로 재사용)
 
-    # evaluate_actions 입력 형식 [N,1,*]
+    # evaluate_actions 입력 형식 [N,1,*] — ★raw를 전달(atanh 역변환 제거로 무손실 정합)
     x_u = x.transpose(0, 1).contiguous()
     goal_u = goal.transpose(0, 1).contiguous()
     self_u = self_s.transpose(0, 1).contiguous()
-    act_u = action.transpose(0, 1).contiguous()
+    act_u = action_raw.transpose(0, 1).contiguous()
     sit_u = sit.transpose(0, 1).contiguous() if sit is not None else None
 
     px = torch.as_tensor(sc['p_states'], dtype=torch.float32, device=DEV)
@@ -254,12 +254,12 @@ def test_msg_gate_shared():
     goal = torch.as_tensor(sc['goals'], dtype=torch.float32, device=DEV).unsqueeze(0)
     self_s = torch.as_tensor(sc['selfs'], dtype=torch.float32, device=DEV).unsqueeze(0)
     with torch.no_grad():
-        value_r, action, logprob_r, mean, msg, others_msg = pol.forward(
+        value_r, action, logprob_r, mean, msg, others_msg, action_raw = pol.forward(
             x, goal, self_s, return_msg=True,
             comm_partners=sc['comm_partners'], agent_id_list=sc['agent_id_list'],
-            comm_relpos=sc['comm_relpos'])
+            comm_relpos=sc['comm_relpos'], return_raw=True)
     x_u = x.transpose(0, 1).contiguous(); goal_u = goal.transpose(0, 1).contiguous()
-    self_u = self_s.transpose(0, 1).contiguous(); act_u = action.transpose(0, 1).contiguous()
+    self_u = self_s.transpose(0, 1).contiguous(); act_u = action_raw.transpose(0, 1).contiguous()
     px = torch.as_tensor(sc['p_states'], dtype=torch.float32, device=DEV)
     pg = torch.as_tensor(sc['p_goals'], dtype=torch.float32, device=DEV)
     ps = torch.as_tensor(sc['p_selfs'], dtype=torch.float32, device=DEV)
@@ -284,7 +284,10 @@ def test_moe_critic_msg_slice():
     RADAR_FEAT_DIM+2+4+msg_dim, 메시지슬라이스(마지막 msg_dim 열)가 ×0.1 init으로 나머지보다 작은지 검증."""
     cfg, networks = _reload(use_comm=True, use_attention=False, use_moe=True)
     md = cfg.MSG_DIM
-    in_features = cfg.RADAR_FEAT_DIM + 2 + 4 + md   # one-hot 없음(코어 통째 라우팅)
+    # ★중앙 critic(CTDE, 2026-09-04): CENTRAL_CRITIC=1이면 전역 pool 64가 msg 슬라이스 *앞에* 끼어듦.
+    #   메시지 슬라이스=마지막 md열 계약은 불변 → 그 검증은 그대로 수행.
+    _glob = 64 if getattr(cfg, 'CENTRAL_CRITIC', False) else 0
+    in_features = cfg.RADAR_FEAT_DIM + 2 + 4 + _glob + md   # one-hot 없음(코어 통째 라우팅)
     pol = _build_policy(cfg, networks)
     cores = pol.critic.cores()
     shape_ok = (len(cores) == cfg.NUM_COLREGS_SITUATIONS) and all(c.fc2.in_features == in_features for c in cores)
@@ -297,6 +300,61 @@ def test_moe_critic_msg_slice():
                 last_m_norm=last_m_norm, rest_norm=rest_norm,
                 msg_cols_mean=msg_cols_mean, rest_cols_mean=rest_cols_mean,
                 in_features=cores[0].fc2.in_features, expected=in_features)
+
+
+def test_saturated_action_ratio():
+    """★atanh-clamp 버그 수정 검증(2026-08-03): action_mean bias를 강제로 크게 만들어 mean을 +3 clamp
+    천장에 붙임 → 샘플 다수가 tanh 포화(|raw|>3.8). 새 경로(raw 저장)는 forward logprob과 정합(≈0),
+    구 경로(tanh→atanh(clamp(·,±0.999)) 역변환)는 발산 → 수정 효과를 ratio로 정량화."""
+    cfg, networks = _reload(use_comm=False, use_attention=False)
+    pol = _build_policy(cfg, networks)
+    with torch.no_grad():
+        for c in pol.ctr_actor.cores():
+            c.action_mean.bias.data.fill_(10.0)      # mean → +3 clamp 천장 → 포화 유도
+    sc = _make_scene(cfg)
+    x = torch.as_tensor(sc['states'], dtype=torch.float32, device=DEV).unsqueeze(0)
+    goal = torch.as_tensor(sc['goals'], dtype=torch.float32, device=DEV).unsqueeze(0)
+    self_s = torch.as_tensor(sc['selfs'], dtype=torch.float32, device=DEV).unsqueeze(0)
+    from torch.distributions import Normal as _N
+    with torch.no_grad():
+        _, action, logprob_r, _, _, _, action_raw = pol.forward(
+            x, goal, self_s, return_msg=True,
+            comm_partners=sc['comm_partners'], agent_id_list=sc['agent_id_list'],
+            comm_relpos=sc['comm_relpos'], return_raw=True)
+        # ★결정론적 포화 주입(2026-09-04): 표본 포화가 난수 순서에 의존해 0%가 나오는 flake 제거.
+        #   저장된 raw 절반을 ±4.2로 강제 → '포화 raw가 저장됐을 때 NEW 경로가 logprob을 재현하고
+        #   OLD(atanh clamp) 경로는 발산한다'는 검증 대상 성질을 항상 실제로 시험하게 만든다.
+        _half = action_raw.shape[1] // 2
+        action_raw[:, :_half, 0] = 4.2
+        action_raw[:, :_half, 1] = -4.2
+        action = torch.tanh(action_raw)          # OLD 경로 입력(저장 tanh)도 주입 반영
+        om = torch.zeros(1, sc['n_agents'], cfg.MSG_DIM, device=DEV)
+        z, amean, alogstd, B, Nn = pol.ctr_actor._route(x, goal, self_s, om, None)
+        amean = torch.clamp(amean, -3.0, 3.0); alogstd = torch.clamp(alogstd, -2.3, 0.0)
+        dist = _N(amean, torch.exp(alogstd))
+        raw_flat = action_raw.reshape(B * Nn, -1)
+        act_flat = action.reshape(B * Nn, -1)
+        lp_r = logprob_r.reshape(-1)
+        # 새 경로: 저장된 raw 그대로
+        a_new = torch.tanh(raw_flat)
+        lp_new = (dist.log_prob(raw_flat) - torch.log(1 - a_new.pow(2) + 1e-6)).sum(-1)
+        # 구 경로: tanh 저장값 → atanh(clamp) 역변환 (기존 버그 재현)
+        a_cl = torch.clamp(act_flat, -0.999, 0.999)
+        raw_old = 0.5 * torch.log((1 + a_cl) / (1 - a_cl))
+        lp_old = (dist.log_prob(raw_old) - torch.log(1 - a_cl.pow(2) + 1e-6)).sum(-1)
+        sat_frac = (raw_flat.abs() > 3.8).float().mean().item()
+        # ★참조 분리(2026-09-04): 주입 행은 forward 시점 logprob(lp_r)이 없음 →
+        #   NEW 미러 검사 = *원본 행*에서 forward logprob 재현 (본래 목적 그대로)
+        #   OLD 발산 검사 = 수학적 참조 lp_new 대비 *전체 행* (주입 행이 포화를 보장)
+        _untouched = torch.zeros(lp_r.shape[0], dtype=torch.bool, device=lp_r.device)
+        _untouched.view(1, -1)[:, _half:] = True
+        diff_new = (lp_r[_untouched] - lp_new[_untouched]).abs().max().item()
+        diff_old = (lp_new - lp_old).abs().max().item()
+        ratio_new = float(torch.exp(lp_new - lp_r).max())
+        r_old = torch.exp(lp_old - lp_r)
+        ratio_old_min, ratio_old_max = float(r_old.min()), float(r_old.max())
+    return dict(sat_frac=sat_frac, diff_new=diff_new, diff_old=diff_old,
+                ratio_new=ratio_new, ratio_old_min=ratio_old_min, ratio_old_max=ratio_old_max)
 
 
 def main():
@@ -366,6 +424,16 @@ def main():
     print(f"   cores = {moe['n_cores']}, fc2.in_features = {moe['in_features']} (expected {moe['expected']}): {moe['shape_ok']}")
     print(f"   msg cols |w| mean = {moe['msg_cols_mean']:.4f}  vs  rest cols |w| mean = {moe['rest_cols_mean']:.4f}")
     print(f"   (msg cols smaller => x0.1 hit the correct last-M columns)   {'PASS' if ok else 'FAIL'}")
+
+    # --- 6. 포화 action PPO ratio (atanh-clamp 버그 수정) ---
+    print("\n[6] saturated-action PPO ratio (atanh-clamp bug fix, 2026-08-03)")
+    sat = test_saturated_action_ratio()
+    ok = (sat['diff_new'] < 1e-4) and (sat['diff_old'] > 1e-2)
+    results['saturated_ratio_fix'] = (sat['diff_new'], ok)
+    print(f"   saturated frac(|raw|>3.8) = {sat['sat_frac']*100:.0f}%")
+    print(f"   NEW (raw stored):  max|dlogprob| = {sat['diff_new']:.3e}  ratio<={sat['ratio_new']:.4f}   (mirror holds)")
+    print(f"   OLD (atanh clamp): max|dlogprob| = {sat['diff_old']:.3e}  ratio in [{sat['ratio_old_min']:.3f}, {sat['ratio_old_max']:.3f}]   (corrupted)")
+    print(f"   {'PASS (new~0, old diverges)' if ok else 'FAIL'}")
 
     print("\n" + "=" * 72)
     all_ok = all(v[1] for v in results.values())

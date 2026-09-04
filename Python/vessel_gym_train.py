@@ -27,6 +27,7 @@ GOAL_SIZE = cfg.GOAL_SIZE
 FRAMES = cfg.FRAMES
 STATE = cfg.STATE_SIZE       # 360
 MSG_DIM = cfg.MSG_DIM
+DEG_RAD = 3.141592653589793 / 180.0
 
 
 def parse_obs(obs):
@@ -56,11 +57,33 @@ class FrameStack:
 
 
 def make_others_msg(env, arm, E, N, device):
-    """arm별 others_msg [E,N,MSG_DIM] (상수 입력)."""
+    """arm별 others_msg [E,N,MSG_DIM] (상수 입력 — 정책 파라미터와 무관해 update 에서 그대로 재사용).
+
+    ★RANDOM (난수 메시지 대조군, 2026-09-05 구현):
+      메시지 자리에 *내용 없는 난수*를 넣고 학습시키는 통제군. `ABLATION_PLAN.md` §3-b ③ 이
+      "심사자가 먼저 물어볼 대조군"으로 지목했으나 미구현이던 항목이다.
+      가르는 것: 통신 ON 이 OFF 를 이겼을 때 그 이득이 **메시지에 담긴 정보** 때문인지,
+      아니면 **메시지 경로가 붙으며 늘어난 파라미터·gradient 경로**(정규화 효과) 때문인지.
+        난수 ≈ OFF  < 진짜메시지  → 이득은 정보에서 옴 (통신 주장 성립)
+        난수 ≈ 진짜메시지          → 이득은 구조에서 옴 (통신이라 부를 수 없음)
+      ⚠️PPO ratio 안전성: 난수는 파트너 obs 의 함수가 아니므로 sender→receiver gradient 가 없다.
+        그래서 OFF·ORACLE 과 같은 *상수 입력* 경로로 넣는다. rollout 이 만든 난수를 버퍼('om')에
+        저장하고 update 가 그 값을 그대로 쓰므로 rollout=update 가 **구성적으로** 보장된다
+        (별도 미러 검증이 필요 없다). 수신측 fc2 메시지 슬라이스 파라미터와 그 gradient 경로는
+        진짜 메시지 팔과 동일하게 살아 있다 = 파라미터 효과만 남긴 통제.
+      ⚠️분포 정합: 난수의 스케일은 비교 대상 팔의 실측 others_msg 표준편차에 맞춰야 공정하다.
+        `_diag_msg_channel.py` 가 찍는 `om_sd` 를 읽어 `VESSEL_MSG_RANDOM_SD` 로 주입할 것.
+        기본 0.20 은 m2 C1~C6 실측 om_sd 0.14~0.23 의 중앙 근처값이다(runs/m2_ablation/diag/channel.jsonl).
+    """
     om = torch.zeros(E, N, MSG_DIM, device=device)
     if arm == 'ORACLE':
         pg = env.partner_goals_oracle()            # [E,N,2]
         om[..., :GOAL_SIZE] = pg
+    elif arm == 'RANDOM':
+        sd = float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20))
+        # 균등분포로 tanh 와 같은 유계 지지집합을 유지하되 표준편차를 sd 에 맞춘다: U(-a,a), a = sd*sqrt(3)
+        a = sd * 1.7320508075688772
+        om = (torch.rand(E, N, MSG_DIM, device=device) * 2.0 - 1.0) * a
     return om
 
 
@@ -85,7 +108,125 @@ def batched_gae(rewards, values, dones, truncs, last_value, gamma, lam):
     return returns, adv
 
 
+class ValueNorm:
+    """리턴 running 정규화 (MAPPO value normalization, 편향보정 EMA).
+
+    ★왜 필요한가 (2026-08-30 실측): 리턴이 평균 153·표준편차 17 스케일이라 value_loss 가 422 까지 커지고,
+      critic gradient 혼자 norm 10,980 을 만든다. clip_grad_norm_ 은 policy.parameters() *전체*를 한 덩어리로
+      자르므로(MAX_GRAD_NORM=0.5) actor 도 같이 1/22,500 로 눌린다. 더 나쁜 건 방향이다 — 통신 ON 이면
+      critic 이 others_msg 를 통해 MessageActor 로도 gradient 를 보내는데, 그 크기가 policy_loss 대비
+      1775.6 : 0.058 = 30,600 : 1 이었다. 즉 메시지가 '받는 배가 잘 행동하게'가 아니라 '가치를 잘 맞히게'
+      학습됐다. 정규화 후 같은 비가 105 : 1 로 떨어진다(실측).
+    ★누적(Welford) 대신 EMA 인 이유: 학습이 진행되면 리턴 분포가 이동한다(정책이 좋아지므로). 무한누적이면
+      count 가 수백만이 돼 후반부에 통계가 사실상 동결되고, 목표값이 정규화 공간에서 다시 발산한다.
+      beta=0.98 → 유효창 ~50 update = 표류는 따라가되 목표는 안정.
+    ⚠️'50 update 가 학습의 몇 %인가'는 --envs 에 의존한다. 총 update 수 = steps / (envs·vessels·rollout).
+      --envs 128(RUNS.md 표준): 16M / 65,536 = 244 update → 유효창 20%  ← beta=0.98 은 이 값 기준으로 잡았다
+      --envs  32            : 16M / 16,384 = 977 update → 유효창  5%  (통계가 4배 반응적 = 불안정)
+      envs 를 줄여 쓸 거면 beta 를 함께 올려야 같은 유효창이 된다(32 라면 0.995 ≈ 200 update ≈ 20%).
+      VESSEL_VALNORM_BETA 로 조정 가능.
+    critic 은 *정규화 공간*의 값을 출력한다 → GAE·bootstrap 은 denormalize 해서 원 스케일로 쓰고,
+      value_loss 만 정규화 공간에서 계산한다. 체크포인트에 통계를 함께 저장(이어학습·분석용).
+    """
+    def __init__(self, device, beta=None, eps=1e-6):
+        self.beta = float(os.environ.get('VESSEL_VALNORM_BETA', '0.98')) if beta is None else beta
+        self.eps = eps
+        self.m1 = torch.zeros((), device=device)     # EMA of E[x]   (편향 있음)
+        self.m2 = torch.zeros((), device=device)     # EMA of E[x^2] (편향 있음)
+        self.debias = torch.zeros((), device=device) # 편향보정 분모
+
+    def update(self, x):
+        b = self.beta
+        xm = x.mean().detach()
+        xs = (x * x).mean().detach()
+        self.m1 = self.m1 * b + xm * (1.0 - b)
+        self.m2 = self.m2 * b + xs * (1.0 - b)
+        self.debias = self.debias * b + (1.0 - b)
+
+    def _stats(self):
+        d = self.debias.clamp(min=self.eps)
+        mean = self.m1 / d
+        var = (self.m2 / d - mean * mean).clamp(min=self.eps)
+        return mean, var.sqrt()
+
+    def normalize(self, x):
+        m, s = self._stats()
+        return (x - m) / s
+
+    def denormalize(self, x):
+        m, s = self._stats()
+        return x * s + m
+
+    def state(self):
+        m, s = self._stats()
+        return {'m1': float(self.m1), 'm2': float(self.m2), 'debias': float(self.debias),
+                'beta': self.beta, 'mean': float(m), 'std': float(s)}
+
+    def load(self, d):
+        if not d:
+            return
+        for k in ('m1', 'm2', 'debias'):
+            setattr(self, k, torch.as_tensor(d[k], device=self.m1.device, dtype=self.m1.dtype))
+        self.beta = d.get('beta', self.beta)
+
+
+def compute_own_future(pos, head_deg, done, intent_k, horizon, pos_scale):
+    """★intent 미래라벨 (memory.py:220~ 벡터화 이식). 각 스텝 t 의 미래 K 지점 변위를
+    t 시점 body frame 으로 회전. done 경계를 넘으면 mask=0 (respawn 텔레포트 누설 방지).
+
+    pos [T,E,N,2] · head_deg [T,E,N] · done [T,E,N] (bool, 그 스텝에서 종료)
+    Returns fut, fut_mask 둘 다 [T,E,N,K*3] = K 개 [국소 우현변위, 국소 전방변위, Δ침로]
+
+    ⚠️memory.py 와 동일 규약: 회전은 ch=cos(h), sh=sin(h) 로
+      loc_star = dx*ch - dz*sh,  loc_fwd = dx*sh + dz*ch  (Unity atan2(x,z) 규약)
+      Δ침로는 wrap[-180,180] 후 /180, 변위는 /INTENT_POS_SCALE.
+    ⚠️버퍼 끝을 넘는 미래(j>=T)는 mask=0. memory.py 의 `break` 와 동치.
+    """
+    T = pos.shape[0]
+    hr = head_deg * DEG_RAD
+    ch, sh = torch.cos(hr), torch.sin(hr)                       # [T,E,N]
+    # dn_cum[t] = t 까지의 누적 종료 수 → 구간 (t, j) 에 종료가 있었는지를 차이로 판정
+    dn_cum = torch.cumsum(done.to(pos.dtype), dim=0)            # [T,E,N]
+    outs, masks = [], []
+    for k in range(intent_k):
+        h = (k + 1) * horizon
+        f = torch.zeros_like(pos[..., 0])                       # [T,E,N]
+        star = torch.zeros_like(f); fwd = torch.zeros_like(f); dh = torch.zeros_like(f)
+        m = torch.zeros_like(f)
+        if h < T:
+            src = slice(0, T - h); dst = slice(h, T)
+            d = pos[dst] - pos[src]                             # [T-h,E,N,2]
+            dx, dz = d[..., 0], d[..., 1]
+            star[src] = dx * ch[src] - dz * sh[src]
+            fwd[src] = dx * sh[src] + dz * ch[src]
+            _dh = head_deg[dst] - head_deg[src]
+            dh[src] = torch.remainder(_dh + 180.0, 360.0) - 180.0
+            # 구간 [t, t+h) 에 종료가 하나도 없어야 유효 (memory.py 의 dn[t:j].any() 와 동치)
+            # sum(done[t .. j-1]) = dn_cum[j] - done[j] - dn_cum[t] + done[t]
+            #   (memory.py 의 dn[t:j].any() 와 동치 — 시작점 t 를 *포함*한다)
+            crossed = (dn_cum[dst] - done[dst].to(pos.dtype)
+                       - dn_cum[src] + done[src].to(pos.dtype))
+            m[src] = (crossed <= 0).to(pos.dtype)
+        outs.append(torch.stack([star / pos_scale, fwd / pos_scale, dh / 180.0], dim=-1) * m.unsqueeze(-1))
+        masks.append(m.unsqueeze(-1).expand(-1, -1, -1, 3))
+    return torch.cat(outs, dim=-1), torch.cat(masks, dim=-1)
+
+
 _THREAT_ANG = None
+def build_global_feat(env):
+    """★중앙 critic(CTDE) 전역 상태: 배 i에게 모든 배 j의 (상대위치/COMM_R, sin침로, cos침로, 속도비, 거리/COMM_R).
+    [E,N,N,6]. j=i 행은 상대위치 0 + 자기 운동학 = 무해. critic 전용(학습때만) — actor 는 국소 유지."""
+    pos, hd = env.pos, env.heading * DEG_RAD
+    rel = (pos.unsqueeze(1) - pos.unsqueeze(2)) / cfg.COMM_RANGE          # [E,i,j,2] = pos_j - pos_i
+    d = rel.norm(dim=-1, keepdim=True)                                    # [E,i,j,1]
+    sh, ch = torch.sin(hd), torch.cos(hd)
+    spd = env.speed / torch.clamp(env.max_speed, min=1e-6)
+    kin = torch.stack([sh, ch, spd], dim=-1)                              # [E,j,3]
+    E, N = pos.shape[0], pos.shape[1]
+    kin = kin.unsqueeze(1).expand(E, N, N, 3)
+    return torch.cat([rel, kin, d], dim=-1)                               # [E,N,N,6]
+
+
 def compute_own_threat(x, threat_k, device):
     """★threat-relay 라벨(GPU 이식, memory.py L172~ 미러): 각 배의 ego-radar(frame-stack 최신 프레임)에서
     top-K 최근접 위협 기하 [sin방위,cos방위,거리,closing] 추출. → 메시지가 '내가 본 위협'을 인코딩하도록
@@ -156,19 +297,51 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     prelpos = torch.stack([torch.sin(bearing), torch.cos(bearing),
                            (topd / COMM_R).clamp(max=1.0)], dim=-1) * pmask   # [E,N,Kc,3], padding=0
     # others_msg: msg_actor(파트너) → msg_encoder(pos_ground) → masked mean (evaluate_actions 미러)
-    px_f = px.reshape(E * N, Kc, -1); pg_f = pg.reshape(E * N, Kc, -1)
-    ps_f = ps.reshape(E * N, Kc, -1); psit_f = psit.reshape(E * N, Kc)
     prel_f = prelpos.reshape(E * N, Kc, -1); pmask_f = pmask.reshape(E * N, Kc, 1)
-    msg_part = policy.msg_actor(px_f, pg_f, ps_f, psit_f)                     # [E*N,Kc,MSG_DIM]
-    localized = policy.msg_encoder(torch.cat([prel_f, msg_part], dim=-1))     # [E*N,Kc,MSG_DIM]
-    Kcount = pmask_f.sum(dim=1, keepdim=True).clamp(min=1.0)
-    others_msg = ((localized * pmask_f).sum(dim=1, keepdim=True) / Kcount).reshape(E, N, -1)
+    # ★2026-08-31 중복 제거: 기존엔 파트너 obs 를 gather 한 뒤 msg_actor 를 E*N*Kc 개에 돌렸다.
+    #   그런데 배 j 의 메시지는 j 의 obs 에만 의존하므로 수신자와 무관하다 → K(=4)배 중복 계산이었다.
+    #   메시지를 배당 1회(E*N)만 만들고 gather 한다. networks._get_others_msg(Unity 경로)와 동일한 방식이며
+    #   msg_actor 가 sample 단위 함수(MoE 라우팅도 자기 situation)라 결과는 수학적으로 동일하다.
+    #   ⚠️px/pg/ps/psit 는 update(evaluate_actions)가 sender→receiver gradient 용으로 쓰므로 그대로 반환한다.
+    msg_all = policy.msg_actor(x, goal, self_s, sit)                          # [E,N,MSG_DIM] 배당 1회
+    msg_part = msg_all[b, topi].reshape(E * N, Kc, -1)                        # [E*N,Kc,MSG_DIM] gather
+    # ★집계 3분기 — networks.evaluate_actions 의 분기와 *같은 순서·같은 함수형*이어야 PPO ratio 가 유효하다.
+    #   우선순위: attention > pos_ground > sum/mean/scale. 마지막에 msg_gain 까지 동일하게 건다.
+    #   ⚠️2026-09-05 fix (blocker): 이전에는 "attention 아니면 무조건 pos_ground(msg_encoder)" 였다.
+    #     그래서 VESSEL_POS_GROUND=0 (sum/mean 대조군)으로 돌리면
+    #        rollout = pos_ground(msg_encoder) / update = sum   으로 갈려 comm-ON 팔만 ratio 가 조용히 깨졌다.
+    #     에러 없이 학습이 망가지므로 그 설정으로 돌린 gym 실행은 무효다. attention 분기 누락(09-04)과 같은 계열의 버그.
+    #   ⚠️VESSEL_MSG_GAIN 도 update(networks.py)에만 걸려 있어 rollout 에 누락돼 있었다 — 여기서 같이 건다.
+    Kcount = pmask_f.sum(dim=1, keepdim=True).clamp(min=1.0)                  # [E*N,1,1]
+    agg_mode = os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
+    nearest_scale = float(os.environ.get('VESSEL_NEAREST_SCALE', 0))
+    msg_gain = float(os.environ.get('VESSEL_MSG_GAIN', 1.0))
+    if nearest_scale > 0:
+        agg_mode = 'scale'
+    if getattr(policy, 'use_attention', False):
+        # ★attention 집계 (2026-09-04): evaluate_actions의 attention 분기와 *같은 모듈·같은 함수형*
+        #   (q=[self,goal], 토큰=[relpos⊕msg], aggregate_batch) → PPO ratio 유효.
+        q_in = torch.cat([self_s, goal], dim=-1).reshape(E * N, 1, -1)        # [E*N,1,6]
+        others_msg = policy.attn.aggregate_batch(q_in, prel_f, msg_part, pmask_f).reshape(E, N, -1)
+    elif getattr(policy, 'pos_ground', False):
+        localized = policy.msg_encoder(torch.cat([prel_f, msg_part], dim=-1))     # [E*N,Kc,MSG_DIM]
+        others_msg = ((localized * pmask_f).sum(dim=1, keepdim=True) / Kcount).reshape(E, N, -1)
+    else:
+        s = (msg_part * pmask_f).sum(dim=1, keepdim=True)                     # [E*N,1,MSG_DIM]
+        if agg_mode == 'mean':
+            s = s / Kcount
+        elif agg_mode == 'scale':
+            s = s * (nearest_scale / Kcount)
+        others_msg = s.reshape(E, N, -1)
+    if msg_gain != 1.0:
+        others_msg = others_msg * msg_gain
     return others_msg, (px, pg, ps, pmask, prelpos, psit)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON'])  # ON=학습형 comm
+    # OFF=통신 없음 / ORACLE=참 파트너 goal 주입(정보 상한) / ON=학습형 comm / RANDOM=난수 메시지 대조군
+    ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])
     ap.add_argument('--comm_on_at', type=int, default=0)   # ON arm: comm 켜는 decision 임계(curriculum). 0=처음부터
     ap.add_argument('--max_partners', type=int, default=cfg.MAX_COMM_PARTNERS)  # msg 처리: 4=aggregation, 1=nearest-1
     ap.add_argument('--ckpt_every', type=float, default=0.0)  # M단위 중간 체크포인트(0=끄기)
@@ -177,7 +350,25 @@ def main():
     ap.add_argument('--vessels', type=int, default=16)
     ap.add_argument('--seed', type=int, default=42)
     ap.add_argument('--rollout', type=int, default=64)        # rollout 길이(결정)
-    ap.add_argument('--ring', type=float, default=0.7)
+    ap.add_argument('--ring', type=float, default=1.0)   # ★2026-08-27: 0.7→1.0 (씬 원본). 0.7 은 goal 4개가
+                                                         #   장애물 표면에 얹혀 도달률 0% 였음. C# 기본도 1.0.
+    ap.add_argument('--crossing', type=int, default=0)   # 2=대척(구 기본) / 그 외=최소거리 랜덤(씬 기본)
+    # ★재개(2026-08-31): 저장된 체크포인트에서 이어 학습. --resume_at 은 '이미 끝낸 결정 수'로,
+    #   total_decisions 초기값이자 CSV step 오프셋이 된다(학습곡선이 끊기지 않게).
+    #   ⚠️Adam 모멘트가 체크포인트에 있으면 함께 복원한다. 없으면(구 체크포인트) 0에서 다시 쌓이는데,
+    #     lr 3e-4·beta(0.9,0.999) 기준 수백 step 이면 회복되므로 12M 이어달리기에선 무시할 수준이다.
+    ap.add_argument('--resume', default=None, help='이어 학습할 체크포인트 경로')
+    ap.add_argument('--resume_at', type=int, default=0, help='이미 완료한 결정 수(로그·종료조건 기준)')
+    # ★재개 워밍업 (2026-09-03): --resume 은 가중치·Adam·ValueNorm 만 복원하고 환경은 새로 reset()
+    #   한다. 그러면 전 선박이 *같은 위상*으로 동시에 출발해, 한 에피소드 주기 동안 보상이 크게
+    #   출렁인다(실측: 출발 직후 2.49 → 에피소드 절반 1.02 → 1주기 뒤 1.70 으로 복귀).
+    #   평상시엔 배들이 서로 다른 단계에 흩어져 있어 평균이 안정적인데 리셋이 그걸 맞춰버린 것.
+    #   그 구간이 분기 학습의 34%(36/107 업데이트)를 차지해 *그림뿐 아니라 학습도* 오염된다.
+    #   → 학습·기록 없이 환경만 굴려 위상을 흩은 뒤 시작한다. 에이전트당 결정 수로 지정.
+    #   ⚠️워밍업은 arm 과 무관하게 항상 통신 OFF(others_msg=0)로 굴린다. 그래야 두 팔이
+    #     *같은 환경 상태*에서 출발해 분기 비교가 성립한다.
+    ap.add_argument('--resume_warmup', type=int, default=0,
+                    help='재개 직후 학습·기록 없이 굴릴 에이전트당 결정 수 (권장: 수렴 에피소드 길이 ~1200)')
     ap.add_argument('--save', default=None)
     ap.add_argument('--csv', default=None)   # 조밀 학습곡선 CSV 경로(None이면 save 기반 자동)
     args = ap.parse_args()
@@ -188,18 +379,67 @@ def main():
     torch.manual_seed(args.seed)
 
     # commgate 수요 보상 (ORACLE·OFF 동일)
+    # ★2026-08-30 보상 반경 통일 (사용자 결정): 레이더 밴드(0~56m)와 통신 밴드(56~200m)를 *같은 항*으로 비용화.
+    #   reward_range=COMM_RANGE(200) → colcourse/perpair 가 200m 까지 연속으로 걸린다(56m 절벽 제거).
+    #   farfield PBRS 는 같은 구간을 telescoping 으로 또 건드리므로 기본 OFF(중복). VESSEL_FARFIELD_COEF 로 부활 가능.
     env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=device, seed=args.seed,
-                            ring_scale=args.ring, crossing=2, risk_range=420.0,
+                            ring_scale=args.ring, crossing=args.crossing,
+                            risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
                             # ★reward#1 fix 2026-08: per-pair 벌점을 risk³로 집중(exp 1.6→3.0)+계수↓(-0.3→-0.15)
                             #   → 중간위험 다중선박 통과 허용, 고위험만 강함. (colcourse/proximity 집중과 짝)
-                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
+                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),
+                            perpair_coef=float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15')),
+                            perpair_exp=3.0)
     policy = CNNPolicy(MSG_DIM, cfg.CONTINUOUS_ACTION_SIZE, FRAMES).to(device)
     opt = torch.optim.Adam(policy.parameters(), lr=cfg.LEARNING_RATE)
+    vnorm = ValueNorm(device)   # ★리턴 정규화 (critic 출력 = 정규화 공간)
+
+    # ★재개: 가중치 + ValueNorm 통계 + (있으면) Adam 모멘트 복원
+    if args.resume:
+        _ck = torch.load(args.resume, map_location=device)
+        policy.load_state_dict(_ck['model_state_dict'] if 'model_state_dict' in _ck else _ck)
+        vnorm.load(_ck.get('value_norm'))
+        if 'optimizer_state_dict' in _ck:
+            opt.load_state_dict(_ck['optimizer_state_dict'])
+            _os_msg = 'Adam 복원'
+        else:
+            _os_msg = 'Adam 없음(재축적)'
+        print(f"[resume] {os.path.basename(args.resume)} 에서 이어감 | {args.resume_at/1e6:.2f}M 완료분 | "
+              f"ValueNorm {_ck.get('value_norm')} | {_os_msg}", flush=True)
+
+    # ★arm ON 인데 통신이 꺼져 있으면 rollout(comm_gather 는 USE_COMMUNICATION 을 안 봄)과
+    #   update(networks.evaluate_actions 는 0으로 만듦)의 others_msg 가 달라져 PPO ratio 가 조용히 깨진다.
+    assert not (args.arm == 'ON' and not cfg.USE_COMMUNICATION), \
+        "--arm ON 인데 VESSEL_USE_COMM=0 임. rollout != update 로 PPO 가 깨짐 — 둘 중 하나를 맞출 것"
+    # ★2026-09-05 fix: ORACLE 은 rollout 을 make_others_msg(참 goal 주입)로 만드는데, --arm ON 이면
+    #   rollout 은 학습채널(comm_gather)을 쓰고 update(networks.evaluate_actions)는 USE_ORACLE 분기를 타
+    #   *참 goal* 을 주입한다 → rollout != update 로 ratio 가 조용히 깨진다. 조합 자체를 막는다.
+    assert not (args.arm == 'ON' and os.environ.get('VESSEL_ORACLE', '0') == '1'), \
+        "--arm ON 과 VESSEL_ORACLE=1 은 같이 못 씀. update 가 oracle 분기를 타서 rollout 과 어긋남 " \
+        "(oracle 통제군은 --arm ORACLE 로 돌릴 것)"
+    # ★난수 대조군은 상수 입력 경로(OFF/ORACLE와 동일)로 흐르므로 통신 채널 학습이 없어야 정상이다.
+    if args.arm == 'RANDOM':
+        print(f"[arm RANDOM] 난수 메시지 대조군 — others_msg ~ U(-a,a), sd="
+              f"{float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)):.3f} "
+              f"(비교 팔의 실측 om_sd 에 맞출 것: _diag_msg_channel.py)", flush=True)
 
     fs = FrameStack(E, N, device)
     obs = env.reset()
     radar, goal, self_s, sit = parse_obs(obs)
     fs.reset_all(radar)
+
+    # ── 재개 워밍업: 학습·기록 없이 환경만 굴려 에이전트 위상을 흩는다 ──
+    if args.resume and args.resume_warmup > 0:
+        _t0w = time.time()
+        for _ in range(args.resume_warmup):
+            with torch.no_grad():
+                _x = fs.get()
+                _om = torch.zeros(E, N, MSG_DIM, device=device)   # 항상 통신 OFF (두 팔 동일 상태)
+                _a, _, _, _ = policy.ctr_actor(_x, goal, self_s, _om, sit)
+            obs, _, _done, _ = env.step(_a)
+            radar, goal, self_s, sit = parse_obs(obs)
+            fs.push(radar, _done)
+        print(f'[warmup] 재개 워밍업 {args.resume_warmup} 결정/에이전트 완료 ({time.time()-_t0w:.0f}s) — 학습·기록 없음', flush=True)
 
     # ── 혼합 함대 학습(선택) ──────────────────────────────────────────────
     # 함대의 일부 선박이 통신 장비 없이 *학습 단계부터* 항해한다. 평가할 때만 통신을
@@ -227,26 +467,44 @@ def main():
               f"{int(_rxonly.sum())}/{E}", flush=True)
 
     T = args.rollout
-    total_decisions = 0
+    total_decisions = args.resume_at      # ★재개 시 이어서 카운트 (--steps 는 '총' 결정 수)
     outcome_counts = torch.zeros(5, device=device)
     t_start = time.time()
     update_i = 0
-    ckpt_mark = 0
+    # ★재개 시 이미 저장된 마크에서 시작 (2026-08-31 fix). 0 으로 두면 재개 직후 첫 업데이트에서
+    #   mark > 0 이 성립해 *방금 재개한 그 체크포인트*를 덮어쓴다. 9M 경계에서 재개하면
+    #   comm_on_at 을 이미 넘은 상태라, 통신 OFF 모델이어야 할 .step9M.pt 가
+    #   통신 ON 1업데이트분으로 조용히 바뀜다(ABLATION_PLAN §4 가 이 파일을 OFF 모델로 지정).
+    ckpt_mark = int(args.resume_at // int(args.ckpt_every * 1e6)) if args.ckpt_every > 0 else 0
     # ★조밀 로깅(2026-08): 매 update마다 (step, raw_reward, ema) CSV 기록 → 깨끗한 학습곡선용(참고 figure 스타일).
     csv_path = args.csv or (os.path.splitext(args.save)[0] + '_curve.csv' if args.save else None)
-    csv_f = open(csv_path, 'w', encoding='utf-8') if csv_path else None
-    if csv_f:
+    _csv_mode = 'a' if (args.resume and csv_path and os.path.exists(csv_path)) else 'w'
+    csv_f = open(csv_path, _csv_mode, encoding='utf-8') if csv_path else None
+    if csv_f and _csv_mode == 'w':
         csv_f.write('step,raw_reward,ema_reward\n')
     ema_r = None
+    # ★상태복원 그룹별 손실 감시 CSV (2026-09-04): gradient 쏠림을 학습 '도중에' 본다
+    _sr_log = {}
+    aux_f = None
+    if cfg.STATE_RECON_COEF > 0.0 and csv_path:
+        _aux_path = os.path.splitext(csv_path)[0] + '_aux.csv'
+        aux_f = open(_aux_path, _csv_mode, encoding='utf-8')
+        if _csv_mode == 'w':
+            aux_f.write('step,goal,self,sit,threat,future\n')
 
     while total_decisions < args.steps:
         # ─── rollout ───
         # ★comm curriculum: ON arm이고 comm_on_at 넘으면 학습형 comm 활성(이 rollout 내내 일관 → PPO 정합)
         comm_active = (args.arm == 'ON' and total_decisions >= args.comm_on_at)
         keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
+        if cfg.CENTRAL_CRITIC:
+            keys += ['gf']
+        use_intent = comm_active and (cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
+        if use_intent:
+            keys += ['pos', 'hdg']
         if comm_active:
             keys += ['px', 'pg', 'ps', 'pmask', 'prel', 'psit']
-        use_threat = comm_active and cfg.THREAT_COEF > 0.0
+        use_threat = comm_active and (cfg.THREAT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
         if use_threat:
             keys += ['othr', 'othrm']
         buf = {k: [] for k in keys}
@@ -260,13 +518,19 @@ def main():
                 else:
                     om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
                 action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit)
-                value = policy.critic(x, goal, self_s, om, sit).squeeze(-1)
+                _gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
+                value = vnorm.denormalize(policy.critic(x, goal, self_s, om, sit,
+                                                        global_feat=_gf).squeeze(-1))
             obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
             for oc in range(5):
                 outcome_counts[oc] += (outcome == oc).sum()
+            if use_intent:
+                buf['pos'].append(env.pos.clone()); buf['hdg'].append(env.heading.clone())
             buf['x'].append(x); buf['goal'].append(goal); buf['self'].append(self_s)
             # ★act = pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
             buf['sit'].append(sit); buf['om'].append(om); buf['act'].append(action_raw)
+            if cfg.CENTRAL_CRITIC:
+                buf['gf'].append(_gf)
             buf['logp'].append(logp.squeeze(-1)); buf['val'].append(value)
             buf['rew'].append(reward); buf['done'].append(done.float())
             buf['trunc'].append(torch.zeros_like(done.float()))
@@ -281,32 +545,50 @@ def main():
             total_decisions += E * N
 
         # last value
+        # ★버그fix(2026-08-30): arm='ON' 일 때 make_others_msg 가 zeros 를 돌려줘, rollout 의 T 스텝은
+        #   실제 통신 입력으로 value 를 재고 마지막 bootstrap 만 통신 없는 입력으로 쟀다(GAE 계통오차).
         with torch.no_grad():
-            om = make_others_msg(env, args.arm, E, N, device)
-            last_v = policy.critic(fs.get(), goal, self_s, om, sit).squeeze(-1)
+            if comm_active:
+                om, _ = comm_gather(policy, env, fs.get(), goal, self_s, sit, args.max_partners,
+                                    send_mask=send_mask, recv_mask=recv_mask)
+            else:
+                om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
+            last_v = vnorm.denormalize(policy.critic(
+                fs.get(), goal, self_s, om, sit,
+                global_feat=build_global_feat(env) if cfg.CENTRAL_CRITIC else None).squeeze(-1))
 
         # stack [T,E,N,...]
         S = {k: torch.stack(v) for k, v in buf.items()}
         returns, adv = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v,
                                    cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        # ★리턴 정규화: 통계 갱신 후 value target 을 정규화 공간으로 (critic 출력과 같은 공간)
+        vnorm.update(returns)
+        returns = vnorm.normalize(returns)
 
         # flatten [T*E*N, ...]
         def flat(t): return t.reshape(-1, *t.shape[3:]) if t.dim() > 3 else t.reshape(-1)
         fx = flat(S['x']); fg = flat(S['goal']); fsf = flat(S['self']); fsit = flat(S['sit'])
         fom = flat(S['om']); fact = flat(S['act']); flogp = flat(S['logp'])
         fret = flat(returns); fadv = flat(adv)
+        fgf = flat(S['gf']) if cfg.CENTRAL_CRITIC else None      # [M, N_ships, 6]
         M = fx.shape[0]
         if comm_active:
             fpx = flat(S['px']); fpg = flat(S['pg']); fps = flat(S['ps'])
             fpmask = flat(S['pmask']); fprel = flat(S['prel']); fpsit = flat(S['psit'])
         if use_threat:
             fothr = flat(S['othr']); fothrm = flat(S['othrm'])
+        if use_intent:
+            _fut, _futm = compute_own_future(S['pos'], S['hdg'], S['done'].bool(),
+                                             cfg.INTENT_K, cfg.INTENT_HORIZON, cfg.INTENT_POS_SCALE)
+            ffut = flat(_fut); ffutm = flat(_futm)
 
         # ─── PPO update ───
-        idx_all = torch.randperm(M, device=device)
+        # ★2026-09-05 fix: randperm 을 epoch 루프 *안*으로. 밖에 있으면 N_EPOCH 회가 전부 같은
+        #   미니배치 분할을 반복해 epoch 간 표본 상관이 생긴다(PPO 표준은 epoch 마다 재셔플).
         mb = cfg.MINIBATCH_SIZE
         for _ in range(cfg.N_EPOCH):
+            idx_all = torch.randperm(M, device=device)
             for s in range(0, M, mb):
                 mi = idx_all[s:s + mb]
                 aux = 0.0
@@ -315,14 +597,28 @@ def main():
                     # ★threat-relay: own_threat 라벨 제공 → 메시지가 '내 레이더가 본 위협' 인코딩(THREAT_COEF).
                     othr_b = fothr[mi].unsqueeze(1) if use_threat else None
                     othrm_b = fothrm[mi].unsqueeze(1) if use_threat else None
+                    fut_b = ffut[mi].unsqueeze(1) if use_intent else None
+                    futm_b = ffutm[mi].unsqueeze(1) if use_intent else None
                     val_u, logp_u, entropy, msg_reg, it_l, tt_l, gl_l, rl_l, cl_l = policy.evaluate_actions(
                         fx[mi], fg[mi], fsf[mi], fpx[mi], fpg[mi], fps[mi], fpmask[mi], fprel[mi],
-                        fact[mi], own_threat=othr_b, own_threat_mask=othrm_b,
-                        situation=fsit[mi], partner_situations=fpsit[mi])
+                        fact[mi], own_future=fut_b, own_future_mask=futm_b,
+                        own_threat=othr_b, own_threat_mask=othrm_b,
+                        situation=fsit[mi], partner_situations=fpsit[mi],
+                        global_feat=fgf[mi] if fgf is not None else None)
                     logp_new = logp_u.squeeze(1).squeeze(-1)
                     value_new = val_u.squeeze(1).squeeze(-1)
+                    # ★버그fix(2026-08-30): cl_l(consumer_loss)을 언팩만 하고 aux 에 안 더해
+                    #   VESSEL_COMM_CONSUMER_COEF 가 이 학습기에서 항상 무효였다. 기본값 0 이라 기존 run 과는 비트동일.
                     aux = (cfg.MSG_L2_COEF * msg_reg + cfg.GOAL_COMM_COEF * gl_l
-                           + cfg.INTENT_COEF * it_l + cfg.THREAT_COEF * tt_l + cfg.ROLE_COMM_COEF * rl_l)
+                           + cfg.INTENT_COEF * it_l + cfg.THREAT_COEF * tt_l + cfg.ROLE_COMM_COEF * rl_l
+                           + cfg.COMM_CONSUMER_COEF * cl_l)
+                    # ★통합 상태복원 (2026-09-04): 반환 시그니처 불변 — 속성으로 수령
+                    if cfg.STATE_RECON_COEF > 0.0:
+                        _sr_l, _sr_raw = policy._last_state_recon
+                        aux = aux + cfg.STATE_RECON_COEF * _sr_l
+                        for _g, _v in _sr_raw.items():
+                            _sr_log[_g] = _sr_log.get(_g, 0.0) + _v
+                            _sr_log['_n'] = _sr_log.get('_n', 0) + (1 if _g == 'goal' else 0)
                 else:
                     # ctr_actor/critic는 [batch, n_agent, dim] 기대 → n_agent=1로 unsqueeze
                     x_b = fx[mi].unsqueeze(1); g_b = fg[mi].unsqueeze(1); s_b = fsf[mi].unsqueeze(1)
@@ -330,7 +626,9 @@ def main():
                     logp_new, entropy, _, _ = policy.ctr_actor.get_logprob_entropy(
                         x_b, g_b, s_b, om_b, act_b, sit_b)
                     logp_new = logp_new.squeeze(1).squeeze(-1)
-                    value_new = policy.critic(x_b, g_b, s_b, om_b, sit_b).squeeze(1).squeeze(-1)
+                    value_new = policy.critic(x_b, g_b, s_b, om_b, sit_b,
+                                              global_feat=fgf[mi] if fgf is not None else None
+                                              ).squeeze(1).squeeze(-1)
                 ratio = torch.exp(logp_new - flogp[mi])
                 a_mb = fadv[mi]
                 pg1 = ratio * a_mb
@@ -352,7 +650,9 @@ def main():
                 ckpt_mark = mark
                 cp = f"{os.path.splitext(args.save)[0]}.step{mark * args.ckpt_every:g}M.pt"
                 torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm,
-                            'seed': args.seed, 'steps': total_decisions}, cp)
+                            'seed': args.seed, 'steps': total_decisions,
+                            'value_norm': vnorm.state(),
+                            'optimizer_state_dict': opt.state_dict()}, cp)
         # ★매 update 조밀 로깅: raw reward + EMA(깨끗한 곡선). ~2400 point/16M run.
         if csv_f:
             raw_r = float(S['rew'].mean().item())
@@ -360,13 +660,22 @@ def main():
             csv_f.write(f"{total_decisions},{raw_r:.5f},{ema_r:.5f}\n")
             if update_i % 20 == 0:
                 csv_f.flush()
+        if aux_f and _sr_log.get('_n', 0) > 0:
+            _n = _sr_log.pop('_n')
+            aux_f.write(f"{total_decisions}," + ",".join(
+                f"{_sr_log.get(g, 0.0) / _n:.6f}" for g in ('goal', 'self', 'sit', 'threat', 'future')) + "\n")
+            _sr_log = {}
+            if update_i % 20 == 0:
+                aux_f.flush()
         if update_i % 5 == 0:
             # ★종료 에피소드 기준 % (이전의 전-agent-step 분모는 running이 지배해 커브가 안 읽혔음)
             term = outcome_counts[1:].sum().clamp(min=1)
             pct = (outcome_counts[1:] / term * 100).tolist()      # [goal, vColl, oColl, TO]
             eps = int(term.item())
             mean_len = (5 * T * E * N) / max(eps, 1)              # 윈도우 agent-결정 / 종료 수
-            sps = total_decisions / (time.time() - t_start)
+            # ★재개 보정(2026-08-31): t_start 는 재시작하는데 total_decisions 는 이어받아
+            #   그대로 나누면 dec/s 가 수십배로 부풀려 진행이 정상인 것처럼 보임.
+            sps = (total_decisions - args.resume_at) / max(time.time() - t_start, 1e-6)
             print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
                   f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
                   f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s")
@@ -376,7 +685,9 @@ def main():
         csv_f.close()
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
-    torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed}, save)
+    torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,
+                'steps': total_decisions, 'value_norm': vnorm.state(),
+                'optimizer_state_dict': opt.state_dict()}, save)
     print(f"saved → {save} ({total_decisions/1e6:.2f}M decisions, {(time.time()-t_start)/60:.1f}min)")
 
 

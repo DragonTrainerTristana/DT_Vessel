@@ -45,9 +45,55 @@ RADAR_RAYS = 360
 RAY_HEIGHT = 0.2             # obs 평면 판정엔 무영향(수평 ray) — 기록용
 GOAL_NORM_K = 150.0
 GOAL_REACHED = 3.0
-COMM_RANGE = 420.0           # (정책 통신 파트너용, sim은 위치만 제공)
+COMM_RANGE = float(os.environ.get('VESSEL_COMM_RANGE', '200.0'))  # (정책 통신 파트너용, sim은 위치만 제공)
+# ★2026-08-30 420 → 200 (사용자 결정): 통신 반경과 *보상이 반응하는 반경*을 하나로 맞춘다.
+#   기존 구조는 보상 risk 가 56m 에서 하드컷(dist>56 → risk=0)이고 56~420m 는 telescoping PBRS 뿐이라
+#   '통신으로만 아는 구간'에 걸린 보상이 전체의 0.31% 였다(실측) = 통신을 쓸 이유가 사실상 0.
+#   이제 VESSEL_REWARD_RANGE(기본=COMM_RANGE)까지 충돌코스 비용이 *연속*으로 걸린다.
+#   ★2026-08-27: 하드코딩 420 → env. config.py:81 이 같은 VESSEL_COMM_RANGE 를 읽으므로 한 변수로 양쪽이 움직인다.
+# ★goal 배정 최소거리 (C# VesselManager.minGoalDistance 대응, 원좌표 기준). crossing!=2 모드에서만 사용.
+#   C# 기본 2.5m 는 선체 길이보다 작아 사실상 무제약 → 70m 짜리 '옆동네' 여정이 섞였다.
+#   400m: 스폰당 후보 6~9개 유지(랜덤성 확보) + 최단 여정 430m + 목표 16개 전부 사용 (2026-08-27 측정).
+MIN_GOAL_DIST = float(os.environ.get('VESSEL_MIN_GOAL_DIST', '400.0'))
 
-DETECTION_RANGE = 56.0       # COLREGS_DETECTION
+# ── C# COLREGsHandler/GlobalScale 상수 (BASE × VESSEL_SCALE 0.2). 시간항은 스케일 불변 ──
+EARLY_ACTION_TIME       = 21.5   # Rule 16 조기행동 시점(s)
+SUBSTANTIAL_ACTION_TIME = 11.5   # Rule 16 충분행동 시점(s)
+RULE_17B_TIME           = 7.0    # stand-on 이 행동 *가능*해지는 시점(s)
+RULE_17C_TIME           = 3.5    # stand-on 이 행동 *해야 하는* 시점(s)
+RULE_17B_DIST           = 18.0   # BASE 90 × 0.2
+RULE_17C_DIST           = 9.0    # BASE 45 × 0.2
+SAFE_PASSING            = 12.0   # BASE 60 × 0.2 (Rule 8(d) 안전 통과 거리)
+CRITICAL_CPA            = 6.0    # BASE 30 × 0.2
+EFFECTIVE_SPEED_MIN     = 0.7    # BASE 3.5 × 0.2
+MIN_SPEED_REDUCTION     = 0.1    # BASE 0.5 × 0.2
+LOW_SPEED_THRESHOLD     = 0.2    # VesselAgent.lowSpeedThreshold
+
+# ── ★2026-08-30 C# 미포팅 보상항 이식 (사용자 결정: "전부 포팅") ──
+#   근거: vessel_gym v1 은 물리·센서·상황판정까지만 옮기고 보상은 v2 로 미뤘는데, v2 가 12항에서 끊겼다.
+#   빠진 항의 공통점 = *상대를 특정해 이전 스텝 상태를 기억*해야 하는 것들(prevDcpa, prevVesselStates).
+#   구조적 한계가 아니라 포팅 미완이었으므로 C# 기본값 그대로 옮긴다.
+# ★2026-08-31 0.3→2.0 (사용자 승인): 정직 이식 시 조우당 +0.4 = 충돌코스 벌점의 0.2% 로 무의미했음.
+#   2.0 이면 회피 완수(ΔDCPA~24m) 한 번이 조우당 +2.5 급 = 직진선이 같은 시간 받는 수동 보상과 동급.
+EARLY_AVOID_COEF   = float(os.environ.get('VESSEL_EARLY_AVOID_COEF', '2.0'))   # DCPA 벌리면 +보상
+EARLY_RISK_GATE    = float(os.environ.get('VESSEL_EARLY_RISK_GATE', '0.1'))    # earlyAvoid 발화 게이트
+EARLY_RELAX_TCPA   = os.environ.get('VESSEL_EARLY_RELAX_TCPA', '1') == '1'     # tcpa 게이트 제거(any tcpa)
+COLREGS_RISK_GATE  = float(os.environ.get('VESSEL_COLREGS_GATE', '0.3'))       # 준수보상 발화 게이트
+CMD_MISMATCH_COEF  = float(os.environ.get('VESSEL_CMD_MISMATCH_COEF', '-0.03'))# 타속 포화 패널티
+PROXRAMP_COEF      = float(os.environ.get('VESSEL_PROXRAMP_COEF', '0'))        # C# 기본 0=off
+PROXRAMP_DIST      = float(os.environ.get('VESSEL_PROXRAMP_DIST', '24.0'))     # = DCPA_RISK
+LOS_GATE           = os.environ.get('VESSEL_LOS_GATE', '0') == '1'             # 가려진 위협 보상 제외
+SPEED_AVOID_UNLOCK = os.environ.get('VESSEL_SPEED_AVOID_UNLOCK', '0') == '1'
+SPEED_UNLOCK_GATE  = float(os.environ.get('VESSEL_SPEED_UNLOCK_GATE', '0.3'))
+# 'unity'    = C# 이식 + 2026-08-31 균형 수술(기본): 안전통과 보너스 제거, 직진선 크기 ±0.5 통일.
+# 'unity_cs' = C# EvaluateCompliance 원본 크기 그대로(수술 전) — ablation/재현용.
+# 'simple'   = 2026-08-30 이전 파이썬 축약본(좌현 벌점만) — 옛 run 재현용.
+COLREGS_MODE       = os.environ.get('VESSEL_COLREGS_MODE', 'unity').lower()
+
+DETECTION_RANGE = 56.0       # COLREGS_DETECTION (상황판정·COLREGs 게이트·situation obs 전용 — 불변)
+# ★보상이 반응하는 반경 (2026-08-30). DETECTION_RANGE 는 '규정 판정 거리', REWARD_RANGE 는 '비용 부과 거리'로 분리.
+#   기본 = COMM_RANGE(200m) → 레이더 밴드(0~56)와 통신 밴드(56~200)가 *같은 항, 같은 함수형*으로 비용을 받는다.
+#   56 으로 두면 이전 동작과 비트동일(anti-regression). VESSEL_REWARD_RANGE 로 override.
 TCPA_RISK_DENOM = 30.0
 DCPA_RISK = 24.0
 HEAD_ON_ANGLE = 15.0
@@ -84,7 +130,11 @@ GOAL_PTS_SCENE = (
 # ★2026-08 진단 기반 상향(16000→30000, 1600→3000 결정): timeout 시점 목표까지 중앙값 68.9m(초기 373m)
 #   = 목표 근처 4%뿐 → 반경 문제 아니고 *시간부족*. 여정 373m에 직선만도 ~900결정 필요한데 회피
 #   detour(headTravel 1491°≈4회전)로 1600을 초과. 밀도·척수·기하는 그대로 두고 시간만 부여(난이도 유지).
-MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS', '30000'))   # → 3000 결정
+#   ★2026-08-27 재산정(ring 1.0): 여정 430~636m. 실측 시간계수 k=우회/스로틀 (열린목표 도착 216건,
+#   시간초과 검열 0건) 중앙 1.35 · 최대 2.64. 몬테카를로 2M → 구조적 시간초과 3000결정 0.651% /
+#   4000 0.025% / 4500 0.004%. 4500 채택(절대하한 1989결정의 2.26배). 평균 에피소드는 예산과 무관하게 1424결정.
+MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS',
+                        os.environ.get('VESSEL_MAX_STEP', '45000')))   # → 4500 결정 (C# VESSEL_MAX_STEP 과 이름 호환)
 COLLISION_PENALTY = float(os.environ.get('VESSEL_COLLISION_PENALTY', '-300.0'))
 # ★가치정렬 reward 실험용(2026-08-09): 안전·효율 가중을 학습목표에 반영 — 양 arm 동일 적용이라 공정
 FUEL_COEF = float(os.environ.get('VESSEL_FUEL_COEF', '0.02'))
@@ -128,7 +178,7 @@ class VesselBatchEnv:
     def __init__(self, num_envs=256, n_vessels=16, device='cpu', seed=0,
                  ring_scale=1.0, crossing=2, risk_range=56.0, dtype=torch.float32,
                  farfield_coef=0.0, perpair_coef=0.0, perpair_exp=1.6,
-                 farpair_coef=None, farpair_exp=None):
+                 farpair_coef=None, farpair_exp=None, reward_range=None):
         self.E, self.N = num_envs, n_vessels
         self.device = torch.device(device)
         self.dtype = dtype
@@ -144,6 +194,9 @@ class VesselBatchEnv:
                             if farpair_exp is None else farpair_exp)
         self.perpair_coef = perpair_coef
         self.perpair_exp = perpair_exp
+        # ★보상 반경: None 이면 env(VESSEL_REWARD_RANGE) → 없으면 DETECTION_RANGE(=이전 동작 비트동일)
+        self.reward_range = (float(os.environ.get('VESSEL_REWARD_RANGE', DETECTION_RANGE))
+                             if reward_range is None else float(reward_range))
         self.gen = torch.Generator(device=self.device).manual_seed(seed)
 
         E, N = self.E, self.N
@@ -160,6 +213,14 @@ class VesselBatchEnv:
         self.prev_dist = z(E, N)       # progress 보상용
         self.prev_far_risk = z(E, N)   # far-field PBRS용 (리셋 시 -1)
         self.prev_rudder = z(E, N)     # smoothness용
+        # ★C# 이식용 추적 상태 (VesselAgent.prevDcpa / prevVesselStates 대응)
+        self.prev_dcpa = z(E, N) - 1.0     # 최고위험선 DCPA 직전값 (-1 = 미초기화)
+        # ★prev_dcpa 가 '어느 배'의 것인지 (2026-08-31 결함 수정). danger_idx 는 매 결정 argmax 로 다시
+        #   뽑히므로 상대가 바뀌면 prev_dcpa(A의 DCPA) - dcpa(B의 DCPA) = 서로 다른 배의 거리 차 = 무의미.
+        #   실측: 이 경우가 배-결정의 0.1% 인데 earlyAvoid 보상 총액의 7.5%(학습후) = 건당 평균의 ~75배
+        #   스파이크. 드물고 큰 값은 advantage 정규화를 왜곡해 PPO 를 불안정하게 만든다.
+        self.prev_danger_idx = torch.full((E, N), -1, device=self.device, dtype=torch.long)
+        self.danger_idx = torch.zeros(E, N, device=self.device, dtype=torch.long)  # 최고위험 상대 index
         self.step_count = torch.zeros(E, N, device=self.device, dtype=torch.long)
         self.situation = torch.zeros(E, N, device=self.device, dtype=torch.long)  # obs[368], 1-step stale
         self.dropout_left = torch.zeros(E, N, device=self.device, dtype=torch.long)  # 센서고장 잔여(결정 수)
@@ -180,12 +241,21 @@ class VesselBatchEnv:
         self.spawn_pts = torch.tensor(SPAWN_PTS_SCENE, device=self.device, dtype=self.dtype)   # [20,2]
         self.n_spawn = self.spawn_pts.shape[0]
         self.goal_pts = torch.tensor(GOAL_PTS_SCENE, device=self.device, dtype=self.dtype)     # [16,2]
-        # goal 배정 (C# AssignGoalForVessel, CROSSING=2): antipode = -spawn(원좌표) 에 가장 가까운
-        # goalPoint를 리스트 순서 strict-< 스캔으로 선택(동률 = 앞선 인덱스 승리 — argmin 첫 최소와 동일).
-        # ⚠️CROSSING=1(최원거리)은 일부 스폰에서 다른 goal이 나옴(검산됨) — 이 sim은 대척(=2)만 구현.
-        #   commgate Stage 1/2는 전부 CROSSING=2라 무영향. crossing!=2로 쓸 거면 최원거리 스캔 추가할 것.
+        # goal 배정 — 두 모드 (C# AssignGoalForVessel 미러)
+        #  crossing==2 : 대척. antipode = -spawn(원좌표) 최근접 goal 을 리스트 순서 strict-< 스캔으로 선택
+        #                (동률 = 앞선 인덱스 승리 = argmin 첫 최소). 결정론적 [20] 사상.
+        #                ⚠️동률이 14/20 스폰에서 발생 → goal 15 는 영영 미사용, goal 0 은 스폰 3개 공유(편중).
+        #  crossing!=2 : 씬 기본. MIN_GOAL_DIST 이상 떨어진 goal 중 균등 랜덤 (VesselManager.cs:468-492).
+        #                리셋마다 재추첨하므로 여기선 후보 마스크만 만든다. 편중·미사용 없음.
+        #  ⚠️CROSSING=1(최원거리)은 미구현 — 필요하면 최원거리 스캔 추가할 것.
         d2 = ((-self.spawn_pts[:, None, :]) - self.goal_pts[None, :, :]).pow(2).sum(-1)        # [20,16]
-        self.goal_map = d2.argmin(dim=1)                                                        # [20]
+        self.goal_map = d2.argmin(dim=1)                                                        # [20] (crossing==2 전용)
+        # 최소거리 후보 마스크 — 거리는 *원좌표* 기준(C# 은 ApplyRingScale 전 Transform.position 을 씀)
+        _sg = torch.linalg.norm(self.spawn_pts[:, None, :] - self.goal_pts[None, :, :], dim=-1)  # [20,16]
+        self.goal_valid = _sg >= MIN_GOAL_DIST                                                  # [20,16]
+        _empty = ~self.goal_valid.any(dim=1)      # 후보 0개면 제약 해제 (C# _validGoalBuffer 폴백 미러)
+        if bool(_empty.any()):
+            self.goal_valid[_empty] = True
 
     # ─────────────────────────── 스폰 / 리셋 ───────────────────────────
     def reset(self):
@@ -231,8 +301,16 @@ class VesselBatchEnv:
         base = self.spawn_pts[self.spawn_idx]                  # [E,N,2]
         base = base * self.ring_scale                          # ring homothety (중심=원점, C# ApplyRingScale)
 
-        # 목표 배정: 씬 goalPoint 16개 중 antipode 최근접 (원좌표로 매핑 후 ring scale — C# 순서 동일)
-        goal = self.goal_pts[self.goal_map[self.spawn_idx]] * self.ring_scale   # [E,N,2]
+        # 목표 배정 (원좌표로 고른 뒤 ring scale — C# 순서 동일)
+        if self.crossing == 2:
+            goal = self.goal_pts[self.goal_map[self.spawn_idx]] * self.ring_scale   # 대척, 결정론적
+        else:
+            # MIN_GOAL_DIST 이상 후보 중 균등 랜덤. 점유 제외 스폰 선택과 같은 방식(무효는 -1로 눌러 argmax 제외).
+            _valid = self.goal_valid[self.spawn_idx]                                # [E,N,16]
+            _rg = torch.rand(E, N, self.goal_pts.shape[0], generator=self.gen,
+                             device=self.device, dtype=self.dtype)
+            _rg = torch.where(_valid, _rg, torch.full_like(_rg, -1.0))
+            goal = self.goal_pts[_rg.argmax(dim=-1)] * self.ring_scale              # [E,N,2]
 
         # 초기 heading = goal 방위 + U(-10,10)°
         to_goal = goal - base
@@ -268,6 +346,9 @@ class VesselBatchEnv:
         self.prev_dist = torch.where(m, torch.linalg.norm(goal - base, dim=-1), self.prev_dist)
         self.prev_far_risk = torch.where(m, torch.full_like(self.prev_far_risk, -1.0), self.prev_far_risk)  # 첫 스텝 PBRS 스킵
         self.prev_rudder = torch.where(m, torch.zeros_like(self.prev_rudder), self.prev_rudder)
+        # ★C# 이식: 재스폰 시 추적 상태 초기화 (prevDcpa=-1 → 첫 스텝 earlyAvoid 스킵)
+        self.prev_dcpa = torch.where(m, torch.full_like(self.prev_dcpa, -1.0), self.prev_dcpa)
+        self.prev_danger_idx = torch.where(m, torch.full_like(self.prev_danger_idx, -1), self.prev_danger_idx)
 
     # ─────────────────────────── 동역학 (10 서브스텝) ───────────────────────────
     def _apply_action(self, actions):
@@ -428,10 +509,16 @@ class VesselBatchEnv:
         dcpa = torch.where(rel_speed < 0.01, torch.linalg.norm(rel_pos, dim=-1),
                            torch.linalg.norm(pos_at, dim=-1))
 
-        # risk (근거리, dist<=56 & rawTCPA>=0)
-        distance_risk = 1.0 - dist / DETECTION_RANGE
+        # risk — ★2026-08-30 이중 정의로 분리:
+        #   near_risk : dist<=DETECTION_RANGE(56). situation 판정·COLREGs 게이트·저속 게이트 전용. *이전과 비트동일*.
+        #   risk      : dist<=reward_range(기본 COMM_RANGE=200). 충돌코스 비용(colcourse/perpair) 전용.
+        #   → 레이더 밴드와 통신 밴드가 같은 함수형으로 연속 비용을 받는다(56m 절벽 제거).
+        RR = max(self.reward_range, 1e-6)
+        distance_risk_near = 1.0 - dist / DETECTION_RANGE          # 옛 정의(불변)
+        distance_risk = 1.0 - torch.clamp(dist / RR, 0, 1)          # 보상용(0~RR 연속)
         tcpa_risk = 1.0 / (1.0 + tcpa / TCPA_RISK_DENOM)
         dcpa_risk = 1.0 - torch.clamp(dcpa / DCPA_RISK, 0, 1)
+        base_risk_near = distance_risk_near * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3
         base_risk = distance_risk * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3
 
         # situation cascade
@@ -444,8 +531,19 @@ class VesselBatchEnv:
         valid = valid & (~clear_pp) & (~clear_ss)
         # HeadOn: |b|<15 & |ob|<15
         headon = valid & (absB < HEAD_ON_ANGLE) & (absOB < HEAD_ON_ANGLE)
-        # Overtaking: |ob|>112.5 (선미섹터)
-        overtake = valid & (~headon) & (absOB > CROSSING_ANGLE)
+        # Overtaking — C# COLREGsHandler.cs 는 진입 경로가 *둘*이다. 둘 다 미러할 것.
+        #   ★2026-08-27 fix: 기존 코드는 |ob|>112.5 만 보고 둘을 뭉갰음(속도 조건 없음).
+        #   누락 시 느린 배가 앞배를 Overtaking 으로 오판 → situation obs·MoE 라우팅·risk 배수·
+        #   COLREGs 보상항 4곳이 동시에 오염됨.
+        #   (A) :95-97  |ob|>112.5 AND 내 속도 > 상대x1.1  → Overtaking
+        #   (B) :117-120 위에서 탈락했더라도 |b|<=5(내겐 정면)면서 |ob|>112.5 면 속도조건 *없이* Overtaking.
+        #       근거(원 주석): 0~5°에서 내 bearing 부호는 노이즈고 ob 가 ±180° 근방이라 좌/우 판정 불가.
+        #       TCPA>0 로 closing 확정이므로 Rule 13(내가 keep-clear)로 두는 게 안정적.
+        _faster = self.speed[:, :, None] > (self.speed[:, None, :] * 1.1)      # [E,N,N] i가 j보다 빠름
+        _stern = absOB > CROSSING_ANGLE
+        overtake_a = valid & (~headon) & _stern & _faster
+        overtake_b = valid & (~headon) & (~overtake_a) & _stern & (absB <= 5.0)
+        overtake = overtake_a | overtake_b
         # Crossing (사각지대 fix: 5° 하한 제거): |b|<112.5
         crossing_zone = valid & (~headon) & (~overtake) & (absB < CROSSING_ANGLE)
         # 5° 초과: 내 bearing 부호. 5° 이하: 상대 bearing 부호
@@ -462,12 +560,30 @@ class VesselBatchEnv:
         sit_mult = torch.where(sit == SIT_GIVEWAY, torch.full_like(sit_mult, 1.5), sit_mult)
         sit_mult = torch.where(sit == SIT_STANDON, torch.full_like(sit_mult, 1.3), sit_mult)
         sit_mult = torch.where(sit == SIT_OVERTAKING, torch.full_like(sit_mult, 1.2), sit_mult)
-        risk = torch.clamp(base_risk * sit_mult, 0, 1)
-        # 무효 쌍(자기자신·미조우) risk=0
         eye = torch.eye(N, device=self.device, dtype=torch.bool)[None]
-        invalid = eye | (dist > DETECTION_RANGE) | (raw_tcpa < 0)
+        # ★LOS 게이트 (C# UpdateDangerCache: 가려진 위협은 보상 risk 에서 제외 = 못 보는 걸로 안 벌줌).
+        #   C# 은 Physics.Raycast, 여기선 선분(i→j) vs 장애물 원 최근접거리 < r 로 동치 판정.
+        #   기본 OFF(LOS_GATE=0) → 비트동일. 벽은 두 배 사이를 가로막을 수 없어 원만 검사한다.
+        if LOS_GATE and self.obstacles.shape[0] > 0:
+            seg = to_other                                              # [E,N,N,2] i→j
+            seg_len2 = (seg * seg).sum(-1).clamp(min=1e-9)               # [E,N,N]
+            c = self.obstacles.view(1, 1, 1, -1, 2)                      # [1,1,1,K,2]
+            ap = c - pos_i.unsqueeze(3)                                  # [E,N,1,K,2] → broadcast
+            t = (ap * seg.unsqueeze(3)).sum(-1) / seg_len2.unsqueeze(-1) # [E,N,N,K]
+            t = t.clamp(0.0, 1.0)
+            closest = pos_i.unsqueeze(3) + seg.unsqueeze(3) * t.unsqueeze(-1)   # [E,N,N,K,2]
+            occluded = ((closest - c).pow(2).sum(-1).sqrt() < self.obstacle_r).any(dim=-1)  # [E,N,N]
+        else:
+            occluded = torch.zeros_like(eye).expand(dist.shape)
+        # near_risk: 옛 risk 와 완전히 동일 (situation·COLREGs 게이트·저속 게이트가 씀)
+        near_risk = torch.clamp(base_risk_near * sit_mult, 0, 1)
+        invalid_near = eye | (dist > DETECTION_RANGE) | (raw_tcpa < 0) | occluded
+        near_risk = torch.where(invalid_near, torch.zeros_like(near_risk), near_risk)
+        sit = torch.where(invalid_near, torch.full_like(sit, SIT_NONE), sit)
+        # risk: 보상용. reward_range 까지 연속. 56m 밖은 sit_mult=1(상황 미판정)이라 COLREGs 가중 없음.
+        risk = torch.clamp(base_risk * sit_mult, 0, 1)
+        invalid = eye | (dist > RR) | (raw_tcpa < 0) | occluded
         risk = torch.where(invalid, torch.zeros_like(risk), risk)
-        sit = torch.where(invalid, torch.full_like(sit, SIT_NONE), sit)
 
         # far-field risk (56m~riskRange 띠, 상황곱 없음) — commgate far-field 보상용
         far_dist_risk = 1.0 - torch.clamp(dist / max(self.risk_range, 1e-6), 0, 1)
@@ -475,17 +591,23 @@ class VesselBatchEnv:
         far_invalid = eye | (dist <= DETECTION_RANGE) | (dist > self.risk_range) | (raw_tcpa < 0)
         far_risk = torch.where(far_invalid, torch.zeros_like(far_risk), far_risk)
 
-        return {'dist': dist, 'risk': risk, 'sit': sit, 'tcpa': tcpa, 'dcpa': dcpa, 'far_risk': far_risk}
+        return {'dist': dist, 'risk': risk, 'near_risk': near_risk, 'sit': sit,
+                'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk}
 
     def _update_situation(self):
         """obs[368]용: argmax-risk 상대의 situation을 캐시 (Unity: 1-step stale)."""
         pw = self._pairwise()
-        risk = pw['risk']                                            # [E,N,N]
+        # ★near_risk 사용: risk 가 200m 까지 확장돼 argmax 가 먼 배(sit=NONE)를 고르면 situation obs 가
+        #   조용히 0 으로 무너진다. 상황 판정은 항상 56m 근거리 기준.
+        risk = pw['near_risk']                                       # [E,N,N]
         max_risk, arg = risk.max(dim=-1)                             # [E,N]
         sit = pw['sit']                                              # [E,N,N]
         chosen = torch.gather(sit, -1, arg.unsqueeze(-1)).squeeze(-1)
         # 위험 없으면 None
         self.situation = torch.where(max_risk > 0, chosen, torch.zeros_like(chosen))
+        # ★C# cachedDangerousVessel/cachedDangerRisk/cachedDangerSituation 대응 캐시.
+        #   COLREGs 준수보상·earlyAvoid·proxRamp 가 *같은 한 척*의 기하를 쓴다(C# 다선 정합성 fix 미러).
+        self.danger_idx = arg
         self._last_pw = pw
 
     # ─────────────────────────── obs 369D ───────────────────────────
@@ -525,20 +647,28 @@ class VesselBatchEnv:
     # ─────────────────────────── 보상 (12항, 결정 단위) ───────────────────────────
     def _reward(self, actions, radar):
         """[E,N] shaping 보상. Unity CalculateReward를 결정 단위로 옮김(per-step 항은 ×SUBSTEPS).
-        ★근사: Unity는 매 물리스텝(10회) 보상 누적 → 여기선 결정당 1회 계산 후 ×10(항 상수 가정).
+        ★Unity는 매 물리스텝(10회) CalculateReward 를 돈다 — 프리팹 DecisionPeriod=10 +
+          TakeActionsBetweenDecisions=1 로 2026-08-30 검증함. 여기선 결정당 1회 계산 후 ×10(항 상수 가정).
+        ★단 *차분* 항(progress, far-field PBRS, earlyAvoid)은 ×SUBSTEPS 밖에 둔다 — 10번의 차분 합 =
+          한 결정의 차분이므로 곱하면 10배가 된다. (smoothness 는 차분인데 ×SUBSTEPS 안에 있다 =
+          C# 대비 10배. 계수 -0.02 가 그 상태로 튜닝돼 있어 손대지 않음 — 저자 결정 사항.)
         collision/arrival 종료보상은 step()에서 outcome 기반으로 별도 가산."""
         E, N = self.E, self.N
         pw = self._last_pw
         speed_ratio = self.speed / torch.clamp(self.max_speed, min=1e-6)
         r = torch.zeros(E, N, device=self.device, dtype=self.dtype)
-        max_risk = pw['risk'].max(dim=-1).values   # [E,N] 최고 충돌위험 — 저속게이트·colcourse 공용
+        # ★2026-08-30 위험 두 갈래:
+        #   max_risk      = 보상용(0~reward_range 연속) → colcourse/perpair 가 씀
+        #   max_risk_near = 56m 근거리(옛 정의) → 저속게이트·COLREGs 게이트가 씀(이전 동작 보존)
+        max_risk = pw['risk'].max(dim=-1).values
+        max_risk_near = pw['near_risk'].max(dim=-1).values
 
         # 1. time penalty -0.07
         r = r - 0.07
         # 2. forward bonus 0.1×speedRatio
         r = r + 0.1 * speed_ratio
         # 3. low speed penalty -0.15 (★reward#1 fix 2026-08: 위험 없을 때만 → 충돌코스 감속회피 Rule-8 허용)
-        r = r + torch.where((speed_ratio < 0.2) & (max_risk < 0.1), torch.full_like(r, -0.15), torch.zeros_like(r))
+        r = r + torch.where((speed_ratio < 0.2) & (max_risk_near < 0.1), torch.full_like(r, -0.15), torch.zeros_like(r))
         # 4. fuel -0.02×(speedRatio² + 0.5×turn01²), turn01=|명령타각|/maxTurn=|a0|
         turn01 = torch.clamp(actions[..., 0].abs(), 0, 1)
         r = r - FUEL_COEF * (speed_ratio ** 2 + 0.5 * turn01 ** 2)
@@ -560,7 +690,8 @@ class VesselBatchEnv:
             perpair_cost = contrib.sum(dim=-1)
             r = r + self.perpair_coef * perpair_cost
         # 7-b. ★far-field 직접 비용 (2026-08-10, CTDE privileged reward):
-        #   레이더 밖(56m~risk_range=420m, 즉 *통신으로만 알 수 있는* 구간) 충돌위험에 매 스텝 벌점.
+        #   레이더 밖(DETECTION_RANGE~risk_range) 충돌위험에 매 스텝 벌점.
+        #   ⚠️2026-08-30 reward_range 통합 이후로는 risk 가 이미 그 구간을 덮는다 → 함께 켜면 이중계상.
         #   PBRS(#8)는 telescoping이라 최적정책 불변 → 먼 위협 회피 유인이 사실상 0이었음.
         #   이 항은 직접 비용이라 "먼 거리에서 미리 피한다"가 실제로 이득이 된다.
         #   ⚠️보상=privileged(전역), 관측=국소 유지 → 통신 arm만 이 비용을 줄일 수 있음(정보의 가치).
@@ -578,20 +709,133 @@ class VesselBatchEnv:
                                torch.zeros_like(cur_far))
             r = r + pbrs
         self.prev_far_risk = cur_far
-        # 9. ★COLREGs 준수 페널티 (2026-08 Unity CalculateColregsReward 포팅 = "좌현 패널티"):
-        #    max_risk>0.3에서 상황별 비준수 변침을 벌함 → 우현양보/침로유지 관례를 학습 → 조율(deadlock 해소).
-        #    HeadOn(1)/GiveWay(3)/Overtaking(4)=우현 권장 → 좌현(rudder<0) 변침만 페널티(우현은 free).
-        #    CrossingStandOn(2)=침로유지 권장 → |rudder| 페널티. situation은 방금 _update_situation이 갱신.
-        _sit = self.situation                                   # [E,N] 0~4 (가장 위험한 조우 상황)
-        _rud = actions[..., 0]                                  # [-1,1], >0=우현, <0=좌현
-        _cgate = (max_risk > 0.3).to(r.dtype)
-        _riskw = 1.0 + max_risk                                 # 1~2 (Unity riskWeight)
-        _starboard = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r.dtype)
-        _port_pen = _starboard * torch.clamp(-_rud, min=0.0)    # 좌현 변침량(>0), 우현이면 0
-        _hold_pen = (_sit == 2).to(r.dtype) * _rud.abs()        # StandOn: 어떤 변침도 억제
-        r = r - COLREGS_SIM_COEF * _riskw * _cgate * (_port_pen + _hold_pen)
-        # (per-step 항 소계 ×SUBSTEPS: Unity는 물리스텝마다 누적)
+        # ─── 최고위험 상대의 기하 (C# cachedDangerousVessel 미러 — 아래 3항이 *같은 한 척*을 쓴다) ───
+        _j = self.danger_idx                                    # [E,N]
+        _g2 = lambda t: torch.gather(t, 1, _j.unsqueeze(-1).expand(-1, -1, 2))
+        _g1 = lambda t: torch.gather(t, 1, _j)
+        _sit = self.situation                                   # [E,N] 0~4
+        _cgate = (max_risk_near > COLREGS_RISK_GATE).to(r.dtype)
+        _riskw = 1.0 + max_risk_near                            # 1~2 (Unity riskWeight)
+        _pick = lambda t: t.gather(-1, _j.unsqueeze(-1)).squeeze(-1)      # [E,N,N] → [E,N]
+        _tcpa_d = _pick(pw['tcpa'])
+        _dcpa_d = _pick(pw['dcpa'])
+        _dist_d = _pick(pw['dist'])
+        _hd = self.heading * DEG
+        _fwd_i = torch.stack([torch.sin(_hd), torch.cos(_hd)], dim=-1)    # [E,N,2]
+
+        # ★상대가 회피 행동 중인가 (C# VesselAgent.CalculateColregsReward 의 otherVesselTakingAction).
+        #   Rule 17 판정에 필요 — "양보선이 안 피하면 직진선도 행동할 수 있다".
+        #   ⚠️2026-08-30 재검증: 프리팹이 DecisionPeriod=10 + TakeActionsBetweenDecisions=1 이라
+        #     OnActionReceived(→CalculateReward)가 *물리 스텝마다* 돈다. lastTrackingTime 도 매번 갱신되므로
+        #     deltaTime = fixedDeltaTime = 0.04 < 0.1 → C# 의 `deltaTime > 0.1f` 가드는 **항상 실패**한다.
+        #     즉 IsVesselTakingAvoidanceAction(운동 기반)은 C# 에서 도달 불가한 죽은 분기이고,
+        #     실제로 도는 건 아래 else 분기(상대의 현재 타각·속도 휴리스틱)다. 그쪽을 이식한다.
+        #   ⚠️C# 원본은 RudderAngle(도, 최대 30)을 0.3 과 비교한다 = 전타의 1%. 매우 낮은 문턱이지만
+        #     원본 그대로 옮긴다(임의 보정 금지). 정규화 비교를 원하면 별도 결정 사항.
+        _other_taking = (_g1(self.rudder).abs() > 0.3) | (_g1(self.speed) < _g1(self.max_speed) * 0.7)
+
+        # 7-c. ★Terminal-proximity ramp (C# 0-3b, proxRampCoef 기본 0=off).
+        #   실제 근접거리×접근율만 사용(포화 없는 거리 gradient) → 마지막 접근을 매 스텝 확실히 벌한다.
+        if PROXRAMP_COEF < 0.0:
+            _pos_j = _g2(self.pos); _hdg_j = _g1(self.heading) * DEG; _spd_j = _g1(self.speed)
+            _to = _pos_j - self.pos
+            _sep = torch.linalg.norm(_to, dim=-1).clamp(min=1e-3)
+            _fwd_j = torch.stack([torch.sin(_hdg_j), torch.cos(_hdg_j)], dim=-1)
+            _relv = _fwd_j * _spd_j.unsqueeze(-1) - _fwd_i * self.speed.unsqueeze(-1)
+            _closing = -(_relv * (_to / _sep.unsqueeze(-1))).sum(-1)      # +면 접근
+            _prox01 = torch.clamp(1.0 - _sep / PROXRAMP_DIST, min=0.0)
+            _cl01 = torch.clamp(_closing / (2.0 * self.max_speed), 0, 1)
+            # ★C# 은 cachedDangerousVessel != null 에서만 발화. risk 0 이면 danger_idx 가 argmax 기본값(0)이라
+            #   엉뚱한 배의 기하가 들어온다 → max_risk_near > 0 으로 유효성 게이트.
+            r = r + torch.where((max_risk_near > 0) & (_sep < PROXRAMP_DIST) & (_closing > 0),
+                                PROXRAMP_COEF * _prox01 * _prox01 * _cl01, torch.zeros_like(r))
+
+        # 9. ★COLREGs 준수 보상.
+        #   COLREGS_MODE='unity'(기본): C# COLREGsHandler.EvaluateCompliance 전체 이식.
+        #     - HeadOn/GiveWay/Overtaking: 좌현 변침(-0.5) / 우현 변침(+0.5)  ← 우현 *보상*이 파이썬엔 없었음
+        #     - StandOn tcpa>RULE_17B: 침로유지(+1.0) + 속도유지(+1.0 / -1.0 / -2.0)
+        #     - StandOn tcpa<=RULE_17B: Rule 17(b)(c) 회피 허용 → |타각|>0.3 이면 +0.5  ← 파이썬은 벌점이었음
+        #     - Rule 8(d) 안전통과: dcpa > SAFE_PASSING 이면 +0.5
+        #     ⚠️C# EvaluateCompliance 는 recommendedRudder 를 쓰지 않는다(인자만 받고 미사용) →
+        #       GetRecommendedAction 은 StandOn 의 recommendedSpeed 계산에만 필요. 그 부분만 이식했다.
+        #     ⚠️타각은 C# 과 동일하게 *실제(슬루된)* 타각. 파이썬 축약본은 명령 타각을 썼다.
+        #   COLREGS_MODE='simple': 2026-08-30 이전 파이썬 축약본(좌현 벌점만) — 옛 run 재현용.
+        if COLREGS_MODE in ('unity', 'unity_cs'):
+            # ★2026-08-31 보상 수술 (사용자 승인). 실측 근거: 이식 직후 분해에서 이 항의 90%가 '수동 유지'
+            #   (직진선 속도 49% + 안전통과 33% + 침로 20%)였고 회피 기동 보상은 4.4%뿐이었음.
+            #   (a) Rule 8(d) 안전통과 보너스 *제거* — 실통과 41m 씬에서 DCPA>12m 는 거의 항상 참 =
+            #       행동 무관 상수. 위험게이트 안 +3.0/결정 > 충돌코스 -0.34 → '배 옆 어슬렁'이 순이익이
+            #       되는 도착적 유인. DCPA 는 지표(eval)에만 남긴다.
+            #   (b) 직진선 보상 크기를 양보선과 동일한 ±0.5 로 통일 (+1.0/-2.0 → +0.5/-1.0).
+            #   (c) 회피 '성공' 신호는 earlyAvoid 0.3→2.0 (9-b, 상단 상수).
+            #   unity_cs = C# 원본 크기 그대로(수술 전) — ablation/재현용.
+            _cs = COLREGS_MODE == 'unity_cs'
+            _keep_w = 1.0 if _cs else 0.5
+            _spd_hi, _spd_lo, _spd_md = (1.0, -2.0, -1.0) if _cs else (0.5, -1.0, -0.5)
+            _nr = self.rudder / MAX_TURN_RATE                   # 실제 타각 정규화
+            _give = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r.dtype)
+            _stand = (_sit == 2).to(r.dtype)
+            _zero = torch.zeros_like(r)
+            _comp = _give * (torch.where(_nr < -0.1, torch.full_like(r, -0.5), _zero)
+                             + torch.where(_nr > 0.2, torch.full_like(r, 0.5), _zero))
+            _early17 = (_tcpa_d > RULE_17B_TIME).to(r.dtype)    # Rule 17(a) 구간
+            # Rule 17(a): 침로 유지
+            _comp = _comp + _stand * _early17 * torch.where(_nr.abs() < 0.1, torch.full_like(r, _keep_w), _zero)
+            # Rule 17(a): 속도 유지 — recommendedSpeed = max(speed, EFFECTIVE_SPEED_MIN), 17(c)면 0
+            _eff = torch.clamp(self.speed, min=EFFECTIVE_SPEED_MIN)
+            _may17 = (~_other_taking) & ((_tcpa_d < RULE_17B_TIME) | (_dist_d < RULE_17B_DIST))
+            _shall17 = _may17 & ((_tcpa_d < RULE_17C_TIME) | (_dcpa_d < RULE_17C_DIST))
+            _rec_spd = torch.where(_shall17, torch.zeros_like(_eff), _eff)
+            _sr_c = self.speed / _rec_spd.clamp(min=1e-6)
+            _spd_ok = (_rec_spd > 0).to(r.dtype)
+            _spd_term = torch.where(_sr_c >= 0.9, torch.full_like(r, _spd_hi),
+                          torch.where(_sr_c < 0.5, torch.full_like(r, _spd_lo), torch.full_like(r, _spd_md)))
+            _comp = _comp + _stand * _early17 * _spd_ok * _spd_term
+            # Rule 17(b),(c): 필요시 회피
+            _comp = _comp + _stand * (1.0 - _early17) * torch.where(_nr.abs() > 0.3, torch.full_like(r, 0.5), _zero)
+            if _cs:
+                # Rule 8(d) 안전 통과 보너스 — unity_cs 전용(위 (a) 참고)
+                _comp = _comp + torch.where(_dcpa_d > SAFE_PASSING, torch.full_like(r, 0.5), _zero)
+            _comp = _comp * (_sit > 0).to(r.dtype)              # situation None → 0 (C# 조기 return)
+            r = r + COLREGS_SIM_COEF * _comp * _riskw * _cgate
+        else:
+            _rud = actions[..., 0]
+            _starboard = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r.dtype)
+            _port_pen = _starboard * torch.clamp(-_rud, min=0.0)
+            _hold_pen = (_sit == 2).to(r.dtype) * _rud.abs()
+            r = r - COLREGS_SIM_COEF * _riskw * _cgate * (_port_pen + _hold_pen)
+
+        # (per-step 항 소계 ×SUBSTEPS — C# 은 물리스텝마다 CalculateReward 를 돈다.
+        #  ★2026-08-30 검증: 프리팹 DecisionPeriod=10 + TakeActionsBetweenDecisions=1 →
+        #    ML-Agents 가 중간 9스텝도 직전 행동으로 OnActionReceived 를 호출한다. MaxStep=45000 이
+        #    4500 결정에 대응하는 것도 이 해석과만 맞음. 즉 ×10 은 옳다.)
         r = r * SUBSTEPS
+
+        # 9-b. ★조기 회피 보상 (C# CalculateColregsReward 말미, earlyAvoidCoef 기본 0.3 — 파이썬에 없던 항).
+        #   DCPA 를 *벌릴 때만* (+) → 회피의 기대값을 +로 만든다. orbit(DCPA 정체)·정지는 0.
+        #   ⚠️★×SUBSTEPS 를 곱하지 않는다: 이건 *차분* 항이다. C# 은 물리스텝마다 Δdcpa_k 를 받아 10번
+        #     더하는데 Σ Δdcpa_k = 한 결정의 Δdcpa 이므로(clamp 선형구간), 결정당 Δ 를 한 번만 세는 게 맞다.
+        #     ×10 하면 C# 의 10배가 된다. progress·far-field PBRS 를 ×SUBSTEPS 밖에 둔 것과 같은 이유.
+        #   ⚠️단, 그렇게 이식하면 이 항은 결정당 +0.002 수준 = 충돌코스 벌점(-0.92)의 0.2% 다.
+        #     "일찍 피하면 이득"이 C# 에도 사실상 없었다는 뜻 — 계수 상향은 저자 결정 사항.
+        _active = (max_risk_near > EARLY_RISK_GATE) & (_sit > 0)
+        _tcpa_ok = torch.ones_like(_active) if EARLY_RELAX_TCPA else (_tcpa_d > SUBSTANTIAL_ACTION_TIME)
+        _gain = _dcpa_d - self.prev_dcpa
+        # ★같은 상대일 때만 발화 (위 prev_danger_idx 주석). ΔDCPA 는 '같은 배와의 최근접거리 변화'여야
+        #   의미가 있다. C# 은 물리스텝(0.04s)마다 재서 상대 교체가 드물었지만 여기선 결정(0.4s) 단위라
+        #   10배 성기다 → 같은 결함이 10배 자주 발생. 미러 위반이 아니라 시간해상도 차이의 보정이다.
+        _same_target = (self.prev_danger_idx == _j)
+        _fire = _active & (self.prev_dcpa >= 0) & _same_target & _tcpa_ok & (_gain > 0)
+        if SPEED_AVOID_UNLOCK:
+            # 감속 회피(타 대신 속도로 DCPA 를 키움)도 거의 full 보상 → "감속=손해" 제거 (C# 언락2)
+            _avoid_w = torch.where(max_risk_near > SPEED_UNLOCK_GATE,
+                                   torch.clamp(speed_ratio, min=LOW_SPEED_THRESHOLD), speed_ratio)
+        else:
+            _avoid_w = speed_ratio
+        r = r + torch.where(_fire, EARLY_AVOID_COEF * torch.clamp(_gain / DCPA_RISK, 0, 1) * _riskw * _avoid_w,
+                            torch.zeros_like(r))
+        self.prev_dcpa = torch.where(_active, _dcpa_d, torch.full_like(_dcpa_d, -1.0))
+        self.prev_danger_idx = torch.where(_active, _j, torch.full_like(_j, -1))
         # 10. navigation progress: (prevDist - d)×3.0  [★reward#1 iter2: ×1.0→×3.0 전진유인 강화 —
         #     중심부 건너기가 영구회피보다 확실히 이득이게. telescoping이라 정지=0(farming 없음)]
         d = torch.linalg.norm(self.goal - self.pos, dim=-1)
@@ -606,6 +850,10 @@ class VesselBatchEnv:
         # 12. smoothness -0.02×|Δ실제타각|/maxTurn ×SUBSTEPS
         rudder_change = (self.rudder - self.prev_rudder).abs() / MAX_TURN_RATE
         r = r - 0.02 * rudder_change * SUBSTEPS
+        # 12-b. ★타속 포화 패널티 (C# CalculateSmoothnessReward, commandMismatchCoef=-0.03 — 파이썬에 없던 항).
+        #   명령 타각이 실제보다 과도 = 타가 못 따라오는 만큼 비효율. 슬루 도입 후 C# 이 새로 추가한 항이다.
+        _sat = torch.clamp((self.cmd_rudder - self.rudder).abs() / MAX_TURN_RATE, 0, 1)
+        r = r + CMD_MISMATCH_COEF * _sat * SUBSTEPS
         self.prev_rudder = self.rudder.clone()
         return r
 
@@ -666,9 +914,12 @@ class VesselBatchEnv:
         goal_hit = d < GOAL_REACHED
         # 장애물 충돌 (선박 OBB vs 원): 선박 중심~원중심 최근접거리(box-local) < obstacle_r
         obs_hit = self._obb_circle_hit(self.obstacles, self.obstacle_r)   # [E,N]
-        # 벽 충돌: 선박 OBB의 최대 반경(꼭짓점)이 경계(벽 내면) 넘으면. 보수적으로 중심+대각반경 사용
-        diag = math.hypot(SHIP_HALF_LEN, SHIP_HALF_BEAM)
-        wall_hit = (self.pos.abs() > (ARENA_INNER - diag)).any(dim=-1)
+        # 벽 충돌: 선박 OBB 를 world x/z 축에 투영한 실제 반extent 사용 (벽이 축정렬이라 이게 정확).
+        #   ★2026-08-27 fix: 기존 대각반경(7.157) 근사는 정횡 자세에서 최대 6.19m 조기 종료였음.
+        #   ring 0.7 은 스폰~벽 117m 라 사실상 미발화였으나 ring 1.0 은 42m 라 실제로 발동한다.
+        _fwd, _stb = self._obb_axes()                                          # [E,N,2]
+        _ext = SHIP_HALF_LEN * _fwd.abs() + SHIP_HALF_BEAM * _stb.abs()        # [E,N,2] x/z 반extent
+        wall_hit = ((self.pos.abs() + _ext) > ARENA_INNER).any(dim=-1)
         # 선박끼리 충돌: OBB-OBB SAT
         vessel_hit = self._obb_obb_hit()                            # [E,N]
         # timeout

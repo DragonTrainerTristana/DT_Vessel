@@ -55,3 +55,12 @@ Python/C*Temprisk_calc.py
 Python/logs.meta
 Python/trajectory_data.meta
 Vessel_Training.meta
+
+# ─── 2026-09-05 재현 브랜치 정리 ───
+# 편집 중 남은 백업본 (디스크에는 남기고 추적만 제외)
+*.bak_*
+# 체크포인트: Dropbox 트리 밖 보관이 원칙 (바탕화면 날짜폴더)
+*.pt
+*.pth
+# 진단 스크립트가 뱉는 원본 결과
+Python/*.jsonl
