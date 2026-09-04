@@ -158,6 +158,8 @@ MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS',
 COLLISION_PENALTY = float(os.environ.get('VESSEL_COLLISION_PENALTY', '-300.0'))
 # ★가치정렬 reward 실험용(2026-08-09): 안전·효율 가중을 학습목표에 반영 — 양 arm 동일 적용이라 공정
 FUEL_COEF = float(os.environ.get('VESSEL_FUEL_COEF', '0.02'))
+# ★진행(shaping) 보상 계수 — 기본 3.0(2026-08 reward#1 iter2 에서 1.0->3.0). 위 주석 참조.
+PROGRESS_COEF = float(os.environ.get('VESSEL_PROGRESS_COEF', '3.0'))
 ARRIVAL_REWARD = 150.0        # ★reward#1 iter2 2026-08: 100→150 (도달 가치↑, 영구회피보다 도달 유리하게)
 TIMEOUT_PENALTY = -50.0       # ★2026-08: timeout=실패 → 완만 페널티(충돌 -300보다 훨씬 약해 충돌 유발 안 함, 배회 억제)
 # ★ablation 토글: COLREGs 준수 페널티 계수 (기본 0.45=1.5×강화). VESSEL_SIM_COLREGS_COEF=0 → COLREGs 강화 OFF arm.
@@ -899,7 +901,14 @@ class VesselBatchEnv:
         # 10. navigation progress: (prevDist - d)×3.0  [★reward#1 iter2: ×1.0→×3.0 전진유인 강화 —
         #     중심부 건너기가 영구회피보다 확실히 이득이게. telescoping이라 정지=0(farming 없음)]
         d = torch.linalg.norm(self.goal - self.pos, dim=-1)
-        r = r + (self.prev_dist - d) * 3.0
+        # ★2026-09-05 진단 스위치: 진행(shaping) 보상 계수. 기본 3.0 = 기존과 비트동일.
+        #   왜 스위치가 필요한가 — shaping 총량이 결과 보상 차이를 압도하고 있음:
+        #     에피소드 전체 shaping = coef x 항해거리(~373m). coef 3.0 이면 1119.
+        #     결과 보상 차이 = 도착(+150) - 충돌(-300) = 450.
+        #     => shaping : 결과 = 2.5 : 1 (계수 1.0 이던 시절엔 0.8 : 1 로 결과가 지배했음)
+        #   그 결과 '목표 향해 직진하다 장애물에 박기'가 '배회하다 시간초과'보다 결정당 70배 유리해져
+        #   중간 국소최적이 생김(2026-09-04 off_s45 붕괴: 장애물충돌 61~74%, goal 9%).
+        r = r + (self.prev_dist - d) * PROGRESS_COEF
         self.prev_dist = d
         # angle: cos(goalAngle)×0.15×speedRatio ×SUBSTEPS
         to_goal = self.goal - self.pos
