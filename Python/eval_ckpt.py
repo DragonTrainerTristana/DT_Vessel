@@ -13,6 +13,7 @@ import numpy as _np
 import torch
 import config as cfg
 import vessel_gym as vg
+import networks as net
 from networks import CNNPolicy
 from vessel_gym_train import comm_gather, parse_obs, FrameStack, make_others_msg
 
@@ -20,7 +21,7 @@ from vessel_gym_train import comm_gather, parse_obs, FrameStack, make_others_msg
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ckpt', required=True)
-    ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON'])
+    ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])
     ap.add_argument('--envs', type=int, default=256)
     ap.add_argument('--vessels', type=int, default=16)
     ap.add_argument('--max_partners', type=int, default=cfg.MAX_COMM_PARTNERS)
@@ -33,6 +34,8 @@ def main():
     ap.add_argument('--seed', type=int, default=999)             # eval seed(학습과 분리)
     ap.add_argument('--ring', type=float, default=1.0)           # 스폰 링 스케일(학습과 동일해야 함). ★0.7→1.0
     ap.add_argument('--crossing', type=int, default=0)           # 2=대척 / 그 외=최소거리 랜덤 (학습과 동일해야 함)
+    # ★ckpt 의 학습 arm 과 --arm 이 다르면 기본은 중단. 의도한 교차평가(예: ON 정책의 통신을 끊어 재기)만 이 플래그로 허용.
+    ap.add_argument('--allow_arm_mismatch', action='store_true')
     args = ap.parse_args()
 
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -61,6 +64,42 @@ def main():
         import vessel_gym_train as _vgt
         _vgt.MSG_DIM = _msg_dim
         print(f"[eval] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) — ckpt 값으로 로드", flush=True)
+
+    # ★2026-09-05 fix (blocker): 집계 방식 불일치가 조용히 통과하던 것을 막는다.
+    #   문제: CNNPolicy.__init__ 은 msg_encoder(pos_ground용)와 attn(attention용)을 *조건 없이* 항상 만든다.
+    #     그래서 USE_ATTENTION=1 로 학습한 체크포인트를 VESSEL_USE_ATTENTION 없이 평가해도
+    #     load_state_dict(strict=True) 가 **경고 없이 통과**한다. 가중치는 다 맞는데 self.use_attention 만
+    #     False 라, 학습 때와 *다른 집계 함수*(attention → pos_ground mean)로 정책이 굴러간다.
+    #     comm-OFF 팔은 others_msg≡0 이라 영향이 없고 comm-ON 팔만 망가지는 비대칭이라 더 위험하다.
+    #     msg_dim·msg_ln 은 키에서 스니핑되지만 집계 방식은 키로 구분이 불가능하다(둘 다 항상 존재).
+    #   해결: 학습기가 체크포인트에 설정 스냅샷('cfg_snapshot')을 저장하고, 평가는 그걸 읽어
+    #     networks 모듈 전역을 덮어쓴 뒤 CNNPolicy 를 만든다(전역은 __init__ 호출 시점에 읽히므로 유효).
+    #     스냅샷이 없는 구 체크포인트는 키로 스니핑 가능한 것만 맞추고 나머지는 크게 경고한다.
+    _snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
+    _sniff_cc = any(k.startswith('critic.') and 'glob_enc' in k for k in _sd)
+    _sniff_sr = any(k.startswith('state_recon') for k in _sd)
+    if _snap:
+        net.USE_ATTENTION = bool(_snap.get('use_attention', net.USE_ATTENTION))
+        net.POS_GROUND = bool(_snap.get('pos_ground', net.POS_GROUND))
+        net.CENTRAL_CRITIC = bool(_snap.get('central_critic', _sniff_cc))
+        net.STATE_RECON_COEF = float(_snap.get('state_recon_coef', 1.0 if _sniff_sr else 0.0))
+        print(f"[eval] ckpt 설정 적용: attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} "
+              f"central_critic={net.CENTRAL_CRITIC} state_recon={net.STATE_RECON_COEF} "
+              f"msg_dim={_msg_dim}", flush=True)
+        # 학습 arm 과 평가 arm 이 어긋나면 다른 실험을 재는 것이므로 즉시 실패시킨다.
+        _ck_arm = _snap.get('arm') or (sd.get('arm') if isinstance(sd, dict) else None)
+        if _ck_arm and _ck_arm != args.arm and not args.allow_arm_mismatch:
+            raise SystemExit(f"[eval] ckpt 는 --arm {_ck_arm} 로 학습됐는데 평가는 --arm {args.arm} 임. "
+                             f"다른 실험을 재게 되므로 중단함 (의도한 교차평가면 --allow_arm_mismatch).")
+    else:
+        net.CENTRAL_CRITIC = _sniff_cc
+        net.STATE_RECON_COEF = 1.0 if _sniff_sr else 0.0
+        print(f"[eval] ⚠️ 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습). "
+              f"central_critic={_sniff_cc} state_recon={_sniff_sr} 는 키로 스니핑했으나 "
+              f"**집계 방식(attention/pos_ground)은 키로 알 수 없음** — 현재 env 값 "
+              f"attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} 로 평가함. "
+              f"학습 때와 다르면 조용히 틀린 숫자가 나오므로 학습 env 를 그대로 주고 돌릴 것.", flush=True)
+
     policy = CNNPolicy(_msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
     policy.load_state_dict(_sd)
     policy.eval()

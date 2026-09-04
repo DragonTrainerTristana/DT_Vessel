@@ -466,6 +466,23 @@ def main():
               f"{_nocomm.float().sum(1).mean():.1f}/{N}척, 듣기만 환경 "
               f"{int(_rxonly.sum())}/{E}", flush=True)
 
+    # ★2026-09-05: 체크포인트에 설정 스냅샷을 함께 저장한다.
+    #   eval_ckpt.py 가 이걸 읽어 집계 방식(attention/pos_ground)을 학습 때와 똑같이 복원한다.
+    #   msg_encoder·attn 은 항상 생성되므로 state_dict 키만으로는 어느 집계로 학습했는지 알 수 없다
+    #   → 스냅샷이 없으면 평가가 다른 집계로 조용히 굴러간다(comm-ON 팔만 망가지는 비대칭).
+    def _cfg_snapshot():
+        return {
+            'arm': args.arm, 'msg_dim': MSG_DIM,
+            'use_attention': bool(cfg.USE_ATTENTION), 'pos_ground': bool(cfg.POS_GROUND),
+            'central_critic': bool(cfg.CENTRAL_CRITIC), 'state_recon_coef': float(cfg.STATE_RECON_COEF),
+            'use_moe': bool(cfg.USE_MOE), 'moe_shared': bool(cfg.MOE_SHARED), 'moe_width': float(cfg.MOE_WIDTH),
+            'msg_ln': os.environ.get('VESSEL_MSG_LN', '1') == '1',
+            'comm_range': float(cfg.COMM_RANGE), 'max_partners': int(args.max_partners),
+            'comm_on_at': int(args.comm_on_at), 'ring': float(args.ring), 'crossing': int(args.crossing),
+            'vessels': int(N), 'envs': int(E), 'rollout': int(args.rollout), 'seed': int(args.seed),
+            'msg_random_sd': float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)) if args.arm == 'RANDOM' else None,
+        }
+
     T = args.rollout
     total_decisions = args.resume_at      # ★재개 시 이어서 카운트 (--steps 는 '총' 결정 수)
     outcome_counts = torch.zeros(5, device=device)
@@ -651,7 +668,7 @@ def main():
                 cp = f"{os.path.splitext(args.save)[0]}.step{mark * args.ckpt_every:g}M.pt"
                 torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm,
                             'seed': args.seed, 'steps': total_decisions,
-                            'value_norm': vnorm.state(),
+                            'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
                             'optimizer_state_dict': opt.state_dict()}, cp)
         # ★매 update 조밀 로깅: raw reward + EMA(깨끗한 곡선). ~2400 point/16M run.
         if csv_f:
@@ -686,7 +703,7 @@ def main():
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,
-                'steps': total_decisions, 'value_norm': vnorm.state(),
+                'steps': total_decisions, 'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
                 'optimizer_state_dict': opt.state_dict()}, save)
     print(f"saved → {save} ({total_decisions/1e6:.2f}M decisions, {(time.time()-t_start)/60:.1f}min)")
 
