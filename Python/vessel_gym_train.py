@@ -84,6 +84,10 @@ def make_others_msg(env, arm, E, N, device):
         # 균등분포로 tanh 와 같은 유계 지지집합을 유지하되 표준편차를 sd 에 맞춘다: U(-a,a), a = sd*sqrt(3)
         a = sd * 1.7320508075688772
         om = (torch.rand(E, N, MSG_DIM, device=device) * 2.0 - 1.0) * a
+    elif arm not in ('OFF', 'ON'):
+        # ★2026-09-07: 예전엔 else 가 없어 모르는 arm 이 *에러 없이* zeros(=OFF)로 학습됐다.
+        #   argparse choices 가 유일한 방어선이었는데 diag_timeout.py 는 choices 조차 없다.
+        raise ValueError(f"make_others_msg: 모르는 arm '{arm}' — OFF/ON/ORACLE/RANDOM 중 하나여야 함")
     return om
 
 
@@ -434,6 +438,12 @@ def main():
     # ★2026-09-05 fix(opt-in): timeout 절단을 GAE 에서 '절단'으로 취급할지.
     #   기본 0 = 기존 동작(상수 trunc=0, timeout 을 진짜 종료로 취급) — 비트동일.
     _trunc_boot = os.environ.get('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
+    _grad_tele = os.environ.get('VESSEL_GRAD_TELEMETRY', '0') == '1'   # 모듈별 grad norm·clip 계수 (진단 전용)
+    _gacc = {}
+    _clip_per_module = os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1'
+    if _clip_per_module:
+        print('[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 '
+              f'{cfg.MAX_GRAD_NORM} 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.', flush=True)
     if _trunc_boot:
         print('[gae] VESSEL_TIMEOUT_BOOTSTRAP=1 - timeout 은 절단으로 처리(V(s_t) bootstrap). '
               '기본(0)과 학습 결과가 다름 ― 과거 run 과 직접 비교 금지', flush=True)
@@ -507,6 +517,20 @@ def main():
             'comm_on_at': int(args.comm_on_at), 'ring': float(args.ring), 'crossing': int(args.crossing),
             'vessels': int(N), 'envs': int(E), 'rollout': int(args.rollout), 'seed': int(args.seed),
             'msg_random_sd': float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)) if args.arm == 'RANDOM' else None,
+            # ★2026-09-07: 레이더 인코더 활성함수·head 는 가중치에 안 남는다(활성함수) / 키로만 구분된다(head).
+            #   평가가 학습과 다른 활성함수로 돌면 에러 없이 조용히 틀리므로 여기 기록해 eval_ckpt 가 복원한다.
+            'radar_act': os.environ.get('VESSEL_RADAR_ACT', 'relu').lower(),
+            'radar_head': os.environ.get('VESSEL_RADAR_HEAD', 'flat').lower(),
+            'radar_bottleneck_ch': int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8)),
+            # ★2026-09-07: 아래는 가중치에 흔적이 안 남는 값들 — 스냅샷이 유일한 근거다.
+            #   평가가 학습과 다른 값으로 돌면 에러 없이 다른 실험을 재게 된다(msg_random_sd 가 실제 사례:
+            #   0.14 로 학습해도 평가는 env 기본 0.20 을 썼다). eval_ckpt 가 이 키들을 되읽는다.
+            'msg_token_gain': float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0)),
+            'clip_per_module': os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1',
+            'msg_l2_coef': float(cfg.MSG_L2_COEF),
+            'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum').lower(),
+            'msg_gain': float(os.environ.get('VESSEL_MSG_GAIN', 1.0)),
+            'timeout_bootstrap': _trunc_boot,
         }
 
     # ★2026-09-05: intent/state-recon 라벨 정렬 버그를 고쳤다(pos/hdg 를 env.step *앞*에서 기록).
@@ -755,9 +779,62 @@ def main():
                               f'정책이 레이더를 못 보는 상태(dying ReLU)로 굳는 중일 수 있음 — '
                               f'2026-09-04 off_s45 붕괴와 같은 지문. ctr_actor 전체 grad={_rg:.3e}. '
                               f'장애물 충돌률(oColl)을 확인할 것.', flush=True)
-                    nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
+                    # ★2026-09-07 진단 텔레메트리(opt-in, VESSEL_GRAD_TELEMETRY=1 · 기본 off = 비트동일):
+                    #   clip_grad_norm_ 은 policy.parameters() *전체*를 한 벡터로 자른다. 통신 ON 팔에만 있는
+                    #   보조 손실(MSG_L2·StateRecon 등) 기울기가 그 벡터에 얹히면 clip 계수가 작아져
+                    #   ControlActor 의 실효 학습률까지 같이 눌린다 — OFF 팔엔 없는 비대칭. 모듈별 norm 과
+                    #   clip 계수를 업데이트마다 찍어 그 크기를 잰다.
+                    if _grad_tele:
+                        def _gn(ps):
+                            _s = [(_p.grad.detach().float() ** 2).sum() for _p in ps if _p.grad is not None]
+                            return float(torch.stack(_s).sum().sqrt()) if _s else 0.0   # OFF 팔은 msg grad 없음
+                        _gt = {'ctr': _gn(policy.ctr_actor.parameters()),
+                               'cri': _gn(policy.critic.parameters()),
+                               'msg': _gn(policy.msg_actor.parameters()),
+                               'comm': _gn(list(policy.msg_encoder.parameters()) + list(policy.attn.parameters())),
+                               'aux': _gn([_p for _n, _m in policy.named_children()
+                                           if _n in ('intent_decoder', 'threat_decoder', 'goal_decoder',
+                                                     'role_decoder', 'state_recon')
+                                           for _p in _m.parameters()]),
+                               'total': _gn(policy.parameters())}
+                        _gt['clip'] = min(1.0, cfg.MAX_GRAD_NORM / max(_gt['total'], 1e-12))
+                        for _k, _v in _gt.items():
+                            _gacc[_k] = _gacc.get(_k, 0.0) + _v
+                        _gacc['n'] = _gacc.get('n', 0) + 1
+                    # ★2026-09-07 모듈별 clip (VESSEL_CLIP_PER_MODULE=1, 기본 0 = 기존 동작 비트동일).
+                    #   왜 — clip_grad_norm_(policy.parameters()) 는 *전체를 한 벡터*로 보고 자른다.
+                    #     통신 ON 팔에만 있는 보조 손실(StateRecon 등)이 msg_actor 기울기를 키우면
+                    #     clip 계수가 작아져 ControlActor 의 실효 학습률까지 같이 눌린다 — OFF 엔 없는 비대칭.
+                    #     실측(0.4M, 시드43, 6번째 업데이트): ON msg=31.25 total=31.42 clip=0.018 → ctr 실효 0.005
+                    #                                        OFF msg=0     total=2.04  clip=0.329 → ctr 실효 0.088  (17배)
+                    #     StateRecon 만 끄면 ON 도 0.115 로 회복 → 원인 확정.
+                    #   해법 — 세 망을 각각 MAX_GRAD_NORM 으로 자른다. 한 망이 커도 다른 망의 스텝이 안 줄어든다.
+                    #     나머지(통신 집계·보조 디코더)는 한 덩어리로 묶어 같은 한도를 건다.
+                    if _clip_per_module:
+                        _seen = set()
+                        _groups = []
+                        for _m in (policy.msg_actor, policy.ctr_actor, policy.critic):
+                            _ps = [p for p in _m.parameters() if id(p) not in _seen]
+                            _seen.update(id(p) for p in _ps)
+                            _groups.append(_ps)
+                        _rest = [p for p in policy.parameters() if id(p) not in _seen]
+                        if _rest:
+                            _groups.append(_rest)
+                        for _ps in _groups:
+                            if _ps:
+                                nn.utils.clip_grad_norm_(_ps, cfg.MAX_GRAD_NORM)
+                    else:
+                        nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
                     opt.step()
 
+            if _grad_tele and _gacc.get('n'):
+                _n = _gacc['n']
+                print('[grad] upd=%d  norm  ctr=%.3f  cri=%.3f  msg=%.3f  comm=%.4f  aux=%.3f  total=%.3f'
+                      '  | clip=%.4f  → ctr 실효 스텝 = ctr×clip = %.4f' % (
+                          update_i, _gacc['ctr'] / _n, _gacc['cri'] / _n, _gacc['msg'] / _n, _gacc['comm'] / _n,
+                          _gacc['aux'] / _n, _gacc['total'] / _n, _gacc['clip'] / _n,
+                          _gacc['ctr'] / _n * _gacc['clip'] / _n), flush=True)
+                _gacc = {}
             update_i += 1
             # ★중간 체크포인트(2026-08-10): --ckpt_every M마다 저장 → 각 지점을 frozen eval로 찍어
             #   '신뢰할 수 있는 학습곡선'(에피소드 return) 생성. 학습 창 aliasing 우회.

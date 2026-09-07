@@ -108,11 +108,55 @@ def main():
     _snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
     _sniff_cc = any(k.startswith('critic.') and 'glob_enc' in k for k in _sd)
     _sniff_sr = any(k.startswith('state_recon') for k in _sd)
+    # ★2026-09-07 레이더 인코더 head·활성함수 복원.
+    #   head 는 키로 확실히 안다('radar_encoder.reduce.weight' 유무 + 그 shape 의 채널 수).
+    #   활성함수는 가중치에 흔적이 없어 스냅샷이 유일한 근거 → 없으면 relu 로 두고 크게 경고.
+    _rk = [k for k in _sd if k.endswith('radar_encoder.reduce.weight')]
+    net._RADAR_HEAD = 'bottleneck' if _rk else 'flat'
+    if _rk:
+        net._RADAR_BOTTLENECK_CH = int(_sd[_rk[0]].shape[0])
+    _snap_act = (_snap or {}).get('radar_act')
+    if _snap_act is not None:
+        net._RADAR_LEAKY = (str(_snap_act).lower() == 'leaky')
+    elif os.environ.get('VESSEL_RADAR_ACT'):
+        net._RADAR_LEAKY = os.environ['VESSEL_RADAR_ACT'].lower() == 'leaky'
+        print(f"[eval] [!] 스냅샷에 radar_act 가 없어 env VESSEL_RADAR_ACT={os.environ['VESSEL_RADAR_ACT']} 로 평가함. "
+              f"학습 때 값과 다르면 조용히 틀린 숫자가 나옴.", flush=True)
+    else:
+        net._RADAR_LEAKY = False
+    print(f"[eval] 레이더 인코더: head={net._RADAR_HEAD}"
+          f"{'(ch=%d)' % net._RADAR_BOTTLENECK_CH if _rk else ''} act={'leaky' if net._RADAR_LEAKY else 'relu'}"
+          f"{'' if _snap_act is not None else '  [활성함수는 스냅샷 없음 — 학습 env 와 같은지 확인할 것]'}", flush=True)
     if _snap:
         net.USE_ATTENTION = bool(_snap.get('use_attention', net.USE_ATTENTION))
         net.POS_GROUND = bool(_snap.get('pos_ground', net.POS_GROUND))
         net.CENTRAL_CRITIC = bool(_snap.get('central_critic', _sniff_cc))
         net.STATE_RECON_COEF = float(_snap.get('state_recon_coef', 1.0 if _sniff_sr else 0.0))
+        # ★2026-09-07: 가중치에 흔적이 안 남는 값들을 스냅샷에서 되읽어 주입한다.
+        #   빠뜨리면 학습 분포 != 평가 분포인데 에러가 없다. msg_random_sd 가 그 실증 사례였다
+        #   (0.14 로 학습해도 make_others_msg 가 env 기본 0.20 을 씀).
+        #   ⚠️_MSG_TOKEN_GAIN 은 모듈 로드 시점에 읽히므로 여기서 모듈 전역을 직접 덮어써야 한다.
+        if _snap.get('msg_token_gain') is not None:
+            net._MSG_TOKEN_GAIN = float(_snap['msg_token_gain'])
+        for _k_env, _k_snap in (('VESSEL_MSG_RANDOM_SD', 'msg_random_sd'),
+                                ('VESSEL_AGG_MODE', 'agg_mode'),
+                                ('VESSEL_MSG_GAIN', 'msg_gain')):
+            _v = _snap.get(_k_snap)
+            if _v is not None:
+                os.environ[_k_env] = str(_v)
+        _ck_mp = _snap.get('max_partners')
+        if _ck_mp is not None and int(_ck_mp) != int(args.max_partners):
+            print(f"[eval] [!] ckpt 는 max_partners={_ck_mp} 로 학습됐는데 평가는 {args.max_partners} 임 "
+                  f"- 학습값으로 맞춤 (--max_partners 로 덮어쓰려면 명시할 것)", flush=True)
+            args.max_partners = int(_ck_mp)
+        _ck_cr = _snap.get('comm_range')
+        if _ck_cr is not None and abs(float(_ck_cr) - float(vg.COMM_RANGE)) > 1e-6:
+            print(f"[eval] [!] ckpt 는 comm_range={_ck_cr} 로 학습됐는데 평가 env 는 {vg.COMM_RANGE} 임. "
+                  f"VESSEL_COMM_RANGE={_ck_cr} 로 주고 다시 돌릴 것 (relpos 정규화·보상반경이 달라짐).",
+                  flush=True)
+        print(f"[eval] 통신 설정: msg_token_gain={getattr(net, '_MSG_TOKEN_GAIN', 1.0)} "
+              f"max_partners={args.max_partners} comm_range={vg.COMM_RANGE} "
+              f"msg_l2={_snap.get('msg_l2_coef')} clip_per_module={_snap.get('clip_per_module')}", flush=True)
         print(f"[eval] ckpt 설정 적용: attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} "
               f"central_critic={net.CENTRAL_CRITIC} state_recon={net.STATE_RECON_COEF} "
               f"msg_dim={_msg_dim}", flush=True)

@@ -104,6 +104,14 @@ CASES = [
     # ★msg_gain 케이스 (2026-09-05): gain 이 update(networks) 에만 걸리고 rollout(comm_gather) 에
     #   누락돼 있었음. 1.0 이 아니면 ratio 가 깨짐.
     ('msg_gain 0.5',           {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MSG_GAIN': '0.5'}, 4, False),
+    # ★msg_token_gain 케이스 (2026-09-07): attention 토큰 안에서 msg 를 상수배하는 스위치.
+    #   GroundedAttention 안에 있어 rollout·update 가 같은 함수를 타지만, 만약 누군가
+    #   comm_gather 쪽에 토큰을 직접 만드는 코드를 넣으면 즉시 갈린다 — 그걸 잡는 케이스.
+    #   attention 경로에만 유효하므로 USE_ATTENTION=1 과 함께 건다.
+    ('msg_token_gain 8',       {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1',
+                                'VESSEL_MSG_TOKEN_GAIN': '8.0'}, 4, False),
+    ('token_gain 8 + dim12',   {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1',
+                                'VESSEL_MSG_TOKEN_GAIN': '8.0', 'VESSEL_MSG_DIM': '12'}, 4, False),
 ]
 
 if __name__ == '__main__':

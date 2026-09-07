@@ -33,6 +33,89 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
 
 _RADAR_LEAKY = os.environ.get('VESSEL_RADAR_ACT', 'relu').lower() == 'leaky'
 
+# ★2026-09-07 레이더 인코더 head 스위치: VESSEL_RADAR_HEAD=flat(기본, 비트동일) | bottleneck
+#   왜 — fc(2880→30) 붕괴의 원인이 *fan-in* 임을 측정으로 확정함.
+#     Adam t=1 은 모든 가중치를 정확히 lr 만큼 움직이므로 유닛 합의 변화량은 |Δz| = lr·‖x‖₁ (정확).
+#     초기화 직후 conv3 출력(2880, 전부 ≥0)의 ‖x‖₁≈70 → |Δz|≈0.021 인데 |z| 중앙값은 0.015 →
+#     S/|z| = 1.37 (시드57) / 1.59 (시드44). conv1~3 은 0.01~0.06. fc 만 한 걸음에 부호가 뒤집힘.
+#     학습이 진행돼 conv3 가 희소해지면 S/|z|=0.02 로 안전 → "첫 몇 걸음에만 죽는다"와 일치.
+#   해법 — 더하는 수 자체를 줄인다. conv3 뒤 1×1 conv 로 채널 64→8 (방위 45칸 보존) → fc 360→30.
+#     S/|z| 0.05 (conv 와 같은 수준). 파라미터 86,430→11,350. 출력 30 은 그대로라 fc2·MoE·통신 불변.
+#     기각: 중간층 2880→256→30 (앞층 fan-in 그대로 1.37), fc 앞 LayerNorm (‖x‖₁ 2,300 으로 악화),
+#           초기값 축소 (|z|↓ 라 비율 악화), global pool (방위 소실).
+#   활성함수 스위치(VESSEL_RADAR_ACT) 와 독립. 체크포인트 shape 이 바뀌므로 from-scratch.
+_RADAR_HEAD = os.environ.get('VESSEL_RADAR_HEAD', 'flat').lower()
+_RADAR_BOTTLENECK_CH = int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8))
+
+# ★2026-09-07 attention 토큰 안 메시지 게인: VESSEL_MSG_TOKEN_GAIN (기본 1.0 = 비트동일)
+#   왜 — 토큰 = [relpos(3) ‖ msg(6)] 인데 relpos 는 O(1), msg 는 실측 std 0.118 로 8배 작다.
+#     k_proj·v_proj 의 기울기는 입력 크기에 비례하므로 relpos 열이 msg 열보다 빠르게 자란다
+#     (유용성과 무관한 스케일 경주). 실측 결과:
+#       · v 토큰 분산 relpos 몫 0.28 vs msg 몫 0.002 (약 100배) → others_msg 가 사실상 '주소 채널'
+#       · α 가 메시지 내용에 무관 — msg 를 난수로 바꿔도 α 가 소수점 3자리까지 동일
+#       · 송신자 속도 복원 R²: raw 0.99 → v 토큰 0.59 → others_msg 0.39 (34% 만 도착)
+#   해법 — 토큰을 만들 때만 msg 를 상수배해 relpos 와 크기를 맞춘다. k_proj 도 같은 스케일을 보므로
+#     "누구 말을 들을지"까지 내용 기반이 된다(v 만 고치는 VESSEL_MSG_GAIN 과 다른 지점).
+#   ⚠️상수배여야 한다. 배치 통계 정규화는 rollout(E*N)과 update(미니배치)의 통계가 달라
+#     others_msg 가 갈리고 PPO ratio 가 조용히 깨진다.
+#   미러 안전: rollout(vessel_gym_train.comm_gather)·update(evaluate_actions) 둘 다
+#     같은 aggregate_batch 를 호출하므로 여기 한 곳만 고치면 양쪽에 동일 적용된다.
+_MSG_TOKEN_GAIN = float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0))
+
+# ★2026-09-07 MoE 라우팅 배치화: VESSEL_MOE_FAST=1 (기본 0 = 기존 루프, 비트동일)
+#   왜 — 지금 라우팅은 전문가마다 `if mask.any(): core(x[mask])` 를 돈다. 문제는 연산량이 아니라
+#     (a) mask.any() 가 GPU→CPU 동기화, (b) x[mask]/z[mask]= 가 데이터 의존 크기라 또 동기화,
+#     (c) 부분배치가 작아 커널 런치가 계산보다 비쌈 — 미니배치 1개당 3망×5전문가 = 15회 sync.
+#     실측(조타망 forward, batch 2048, 유휴 GPU): 루프 11.78ms vs 배치화 1.62ms vs MoE off 1.54ms.
+#     상황 분포가 98.7% 가 상황0 이라 "5등분"이 아니라 "큰 덩어리 1 + 부스러기 4" 였고,
+#     그래서 인코더만 루프 밖으로 빼는 것으로는 7.36ms(1.6배) 밖에 안 준다 — 루프 자체를 없애야 한다.
+#   방법 — 각 샘플은 어차피 전문가 1개만 통과하므로, 전문가 가중치를 stack 해서 샘플별로 gather 한 뒤
+#     baddbmm 한 방에 돌린다. 수학적으로 동일(Linear 는 샘플 독립 연산).
+#   ⚠️비트동일은 아니다 — 배치 크기가 달라지면 cuBLAS 가 다른 리덕션 순서를 쓴다. 실측 오차 ~1e-7.
+#     rollout·update 가 같은 전역 스위치를 보므로 두 경로는 항상 같은 함수형이다(PPO ratio 안전).
+#   ⚠️MOE_SHARED=1 (전문가들이 radar_encoder 를 한 객체로 공유) 일 때만 켜진다. 안 그러면 인코더를
+#     배치 전체에 한 번 돌릴 수 없다.
+_MOE_FAST = os.environ.get('VESSEL_MOE_FAST', '0') == '1'
+
+
+def _bmm_linear(cores, sit, h, attr):
+    """전문가별 nn.Linear 을 샘플 단위로 적용. cores[k].<attr> 가 Linear. h [M,in] → [M,out].
+    루프·동기화 없음. stack 은 매 forward 새로 만들어 state_dict 키를 안 바꾼다(체크포인트 호환)."""
+    W = torch.stack([getattr(c, attr).weight for c in cores])        # [K,out,in]
+    b = torch.stack([getattr(c, attr).bias for c in cores])          # [K,out]
+    return torch.baddbmm(b[sit].unsqueeze(1), h.unsqueeze(1), W[sit].transpose(1, 2)).squeeze(1)
+
+
+def _bmm_seq2(cores, sit, h, attr):
+    """전문가별 nn.Sequential(Linear, ReLU, Linear) 을 샘플 단위로 적용 (Critic.glob_enc 용).
+    h [M,S,in] → [M,S,out]. per-ship 축 S 는 그대로 둔 채 전문가만 gather."""
+    m0 = [getattr(c, attr)[0] for c in cores]
+    m2 = [getattr(c, attr)[2] for c in cores]
+    W0 = torch.stack([m.weight for m in m0])[sit]                    # [M,h,in]
+    b0 = torch.stack([m.bias for m in m0])[sit].unsqueeze(1)         # [M,1,h]
+    W2 = torch.stack([m.weight for m in m2])[sit]                    # [M,out,h]
+    b2 = torch.stack([m.bias for m in m2])[sit].unsqueeze(1)         # [M,1,out]
+    a = F.relu(torch.baddbmm(b0, h, W0.transpose(1, 2)))
+    return torch.baddbmm(b2, a, W2.transpose(1, 2))
+
+
+def _bmm_layernorm(cores, sit, h, attr):
+    """전문가별 nn.LayerNorm 을 샘플 단위로 적용. 정규화는 파라미터 없는 연산이라 한 번에,
+    affine(weight·bias)만 전문가별로 gather."""
+    ln0 = getattr(cores[0], attr)
+    y = F.layer_norm(h, ln0.normalized_shape, None, None, ln0.eps)
+    w = torch.stack([getattr(c, attr).weight for c in cores])[sit]
+    b = torch.stack([getattr(c, attr).bias for c in cores])[sit]
+    return y * w + b
+
+
+def _moe_fast_on(wrapper):
+    """이 wrapper 에서 배치화 경로를 쓸 수 있나 — MoE 켜짐 + 인코더가 한 객체(MOE_SHARED)."""
+    if not (_MOE_FAST and getattr(wrapper, 'use_moe', False)):
+        return False
+    cs = wrapper.cores()
+    return len({id(c.radar_encoder) for c in cs}) == 1
+
 
 def _share_radar_encoder(experts):
     """★공유지각 MoE(MOE_SHARED=1): 전문가들의 radar_encoder를 experts[0] 것으로 통일(모듈 공유).
@@ -89,6 +172,12 @@ class RadarEncoder(nn.Module):
         self.conv1 = nn.Conv1d(frames, c1, kernel_size=5, stride=2, padding=2, padding_mode='circular')
         self.conv2 = nn.Conv1d(c1, c2, kernel_size=5, stride=2, padding=2, padding_mode='circular')
         self.conv3 = nn.Conv1d(c2, c3, kernel_size=3, stride=2, padding=1, padding_mode='circular')
+        # ★병목 head(VESSEL_RADAR_HEAD=bottleneck): 1×1 conv 로 채널만 64→8 줄여 fc fan-in 2880→360.
+        #   방위 45칸은 그대로. flat(기본)이면 None → 기존과 비트동일(state_dict 키도 동일).
+        if _RADAR_HEAD == 'bottleneck':
+            self.reduce = nn.Conv1d(c3, _w(_RADAR_BOTTLENECK_CH, width, floor=2), kernel_size=1)
+        else:
+            self.reduce = None
         # conv flatten 크기는 n_rays에 의존 → 더미 forward로 산출(차원 하드코딩 방지).
         with torch.no_grad():
             _flat = self._conv(torch.zeros(1, frames, n_rays)).shape[1]
@@ -110,6 +199,8 @@ class RadarEncoder(nn.Module):
         a = self._act(self.conv1(x))
         a = self._act(self.conv2(a))
         a = self._act(self.conv3(a))
+        if self.reduce is not None:
+            a = self._act(self.reduce(a))       # [M, 8, 45] — 채널 병목, 방위 보존
         return a.reshape(a.shape[0], -1)
 
     def forward(self, x):
@@ -208,7 +299,9 @@ class StateReconDecoder(nn.Module):
                 #          그 성분이 다시 유효해지는 첫 배치에서 z=(tf-0)/1e-3 폭발.
                 #   future(intent) 라벨이 에피소드 경계에서 통째로 마스크되므로 실제로 발생하는 경로다.
                 #   붕괴(2026-09-04 off_s45)의 원인인지 가르기 위한 대조군. 기본 0 = 수정본.
-                if _os_ln.environ.get('VESSEL_RECON_LEGACY_STAT', '0') == '1':
+                # (2026-09-07 fix) _os_ln 은 MessageActor.__init__ 의 지역 import 라 여기선 NameError.
+                #   통신 ON + STATE_RECON_COEF>0 경로에서만 실행돼 OFF 스모크·OFF 진단배치는 안 걸렸음.
+                if os.environ.get('VESSEL_RECON_LEGACY_STAT', '0') == '1':
                     valid = torch.ones_like(valid)
                 if float(self.stat_inited) == 0.0:
                     self.run_mean.copy_(torch.where(valid, bm, self.run_mean))
@@ -335,7 +428,7 @@ class GroundedAttention(nn.Module):
         """rollout 1-receiver 집계. q_in [Q], relpos [K,R], msg_p [K,M] → context [M].
         실제 파트너만 들어옴(padding 없음) → 마스킹 불필요."""
         query = self.q_proj(q_in)                              # [d]
-        token = torch.cat([relpos, msg_p], dim=-1)             # [K, R+M]
+        token = torch.cat([relpos, msg_p * _MSG_TOKEN_GAIN], dim=-1)   # [K, R+M]
         keys = self.k_proj(token)                              # [K, d]
         vals = self.v_proj(token)                              # [K, M]
         scores = (keys @ query) / self.scale                   # [K]
@@ -346,7 +439,7 @@ class GroundedAttention(nn.Module):
         """update 배치 집계. q_in [N,1,Q], relpos [N,K,R], msg_part [N,K,M], mask [N,K,1]
         → context [N,1,M]. padding(mask=0)은 -inf 마스킹으로 softmax 제외, 전무파트너는 0."""
         query = self.q_proj(q_in)                              # [N,1,d]
-        token = torch.cat([relpos, msg_part], dim=-1)          # [N,K,R+M]
+        token = torch.cat([relpos, msg_part * _MSG_TOKEN_GAIN], dim=-1)   # [N,K,R+M]
         keys = self.k_proj(token)                              # [N,K,d]
         vals = self.v_proj(token)                              # [N,K,M]
         scores = (keys * query).sum(dim=-1) / self.scale       # [N,K]  (query [N,1,d] broadcast)
@@ -457,6 +550,17 @@ class MessageActor(nn.Module):
                 sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
             else:
                 sit = torch.zeros(M, dtype=torch.long, device=x.device)   # 상황 없으면 None(0) 코어
+            if _moe_fast_on(self):
+                # ★배치화 경로: 루프·동기화 0. 코어 forward 와 같은 순서
+                #   (radar → concat → fc2 → relu → msg_ln → msg_out → tanh)
+                cs = self.cores()
+                a = cs[0].radar_encoder(x_f)                       # 공유 인코더 1회
+                a = (torch.cat((a, goal_f, self_f, sit_oh), dim=-1) if SITUATION_INPUT
+                     else torch.cat((a, goal_f, self_f), dim=-1))
+                a = F.relu(_bmm_linear(cs, sit, a, 'fc2'))
+                if cs[0].msg_ln is not None:
+                    a = _bmm_layernorm(cs, sit, a, 'msg_ln')
+                return torch.tanh(_bmm_linear(cs, sit, a, 'msg_out')).reshape(batch_size, n_agent, -1)
             msg = x_f.new_zeros(M, self.msg_dim)
             for k in range(self.num_experts):
                 mask = (sit == k)
@@ -595,6 +699,26 @@ class ControlActor(nn.Module):
             sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
         else:
             sit = torch.zeros(M, dtype=torch.long, device=x.device)
+        if _moe_fast_on(self):
+            # ★배치화 경로: backbone(gate→radar→concat→fc2→tanh) + head(fc3→tanh→action_mean, logstd)
+            cs = self.cores()
+            gate = torch.sigmoid(torch.stack([c.msg_gate for c in cs]))[sit].unsqueeze(-1)
+            radar_feat = cs[0].radar_encoder(x_f)                  # 공유 인코더 1회
+            h = (torch.cat((radar_feat, goal_f, self_f, sit_oh, om_f * gate), dim=-1) if SITUATION_INPUT
+                 else torch.cat((radar_feat, goal_f, self_f, om_f * gate), dim=-1))
+            z = torch.tanh(_bmm_linear(cs, sit, h, 'fc2'))
+            dec = None
+            if cs[0].consumer_coupling:
+                d0 = F.relu(_bmm_linear([c.consumer_decoder for c in cs], sit, z, '0'))
+                dec = _bmm_linear([c.consumer_decoder for c in cs], sit, d0, '2')
+                zc = torch.cat([z, dec], dim=-1)
+            else:
+                zc = z
+            a = torch.tanh(_bmm_linear(cs, sit, zc, 'fc3'))
+            mean = _bmm_linear(cs, sit, a, 'action_mean')
+            logstd = torch.stack([c.action_logstd for c in cs]).squeeze(1)[sit].expand(M, self.action_size)
+            self._cache_dec(z, dec)
+            return z, mean, logstd, batch_size, n_agent
         z = x_f.new_zeros(M, self.core_hidden)
         mean = x_f.new_zeros(M, self.action_size)
         logstd = x_f.new_zeros(M, self.action_size)
@@ -797,6 +921,20 @@ class Critic(nn.Module):
                 sit = situation.reshape(M).long().clamp(0, self.num_experts - 1)
             else:
                 sit = torch.zeros(M, dtype=torch.long, device=x.device)
+            if _moe_fast_on(self):
+                # ★배치화 경로: 코어 forward 와 같은 순서
+                #   (gate → radar → [goal,self,sit,(glob),msg] concat → fc2 → relu → value_out)
+                cs = self.cores()
+                gate = torch.sigmoid(torch.stack([c.msg_gate for c in cs]))[sit].unsqueeze(-1)
+                parts = [cs[0].radar_encoder(x_f), goal_f, self_f]      # 공유 인코더 1회
+                if SITUATION_INPUT:
+                    parts.append(sit_oh)
+                if cs[0].glob_enc is not None:
+                    _gf = gf_f if gf_f is not None else x_f.new_zeros(M, 1, 6)   # 코어와 같은 방어
+                    parts.append(_bmm_seq2(cs, sit, _gf, 'glob_enc').mean(dim=1))
+                parts.append(om_f * gate)                                # 메시지 슬라이스는 항상 마지막
+                h = F.relu(_bmm_linear(cs, sit, torch.cat(parts, dim=-1), 'fc2'))
+                return _bmm_linear(cs, sit, h, 'value_out').reshape(batch_size, n_agent, 1)
             v = x_f.new_zeros(M, 1)
             for k in range(self.num_experts):
                 mask = (sit == k)
