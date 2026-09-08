@@ -6,8 +6,9 @@
    main.py 빌드함정은 obs 크기(369)만 검사하므로 fix 前 빌드도 조용히 통과함. exe 날짜를 직접 확인할 것.
 
 설계 논리 (정보 격차 → 수요 → 공급 → 소비):
-  - 정보 격차: dense antipodal regime(CROSSING=2, ring 0.5, n16) + radar 56m 불변. 위협이 56~420m 대역에서
+  - 정보 격차: dense antipodal regime(CROSSING=2, ring 0.7, n16) + radar 56m 불변. 위협이 56~420m 대역에서
     발달하고, 밀집 씬에서는 레이더 가림도 실재 → 발신자만 아는 정보가 구조적으로 존재.
+    (ring 0.5는 스폰이 장애물 그리드와 겹쳐 무효 — RingScale param 주석 참조)
   - 수요(demand, 전 arm 동일 = anti-rigging):
       per-pair(음수 페널티): 모든 동시접근쌍을 가격 → 다물체 협응이 보상이 됨.
       far-field(양수 carrot, 대칭 PBRS): 56m~RISK_RANGE 띠의 risk 합 감소를 보상 → 먼 위협 조기회피가 보상이 됨.
@@ -36,7 +37,10 @@ param(
   [string]$Exe = "",                # 비우면 프로젝트 루트 Build\Vessel_MLAgent.exe. ★2026-07-03 이후 소스 빌드 필수
   [int]$RunStep = 1000000,          # 1M 잠정, 확정 판정은 2M
   [int[]]$Seeds = @(42,43,44),
-  [string]$RingScale = "0.5",       # dense antipodal
+  [string]$RingScale = "0.7",       # dense antipodal. ★0.5 금지: 스폰링(원본 250m 사각형)×0.5=125m 모서리 4점이 장애물 3×3 그리드
+                                    #   (간격 120m, 캡슐반경 20m — 충돌위치 원피팅 실측)의 모서리 장애물 중심 7m 옆 = 캡슐 안 → 스폰 즉사
+                                    #   (2026-07-03 preflight: obstacle 충돌 77%, 그중 65% stepCount≤1). 0.4도 표면 근접이라 위험.
+                                    #   밀도 강화는 RingScale↓ 대신 VesselCount↑ 사용.
   [int]$VesselCount = 16,
   # ── 수요측 보상 (전 arm 동일) ──
   [string]$PerPairCoef = "-0.3",    # VESSEL_PERPAIR_COEF: 음수 = 다물체 동시접근 페널티 (0=off)

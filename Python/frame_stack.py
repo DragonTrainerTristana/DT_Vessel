@@ -21,10 +21,13 @@ class FrameStackBuffer:
         self.reset()
 
     def reset(self):
-        """버퍼 초기화 (0으로 채움)"""
+        """버퍼 초기화 — 첫 실제 프레임이 들어올 때 prime(전체 스택을 그 프레임으로 채움).
+        ★0-fill 제거(2026-08-03): radar는 C#에서 [-0.5,+0.5]로 정규화돼 '미감지'=+0.5, 0.0=반경절반 장애물.
+          기존 0-fill은 매 에피소드/respawn 첫 FRAMES-1 스텝에 '반경절반 360° 장애물 링'이라는 유령 프레임을
+          만들어 Conv1D bearing-rate 필터에 잘못된 closing 신호를 주입했음(GPU FrameStack.reset_all은 이미
+          현재 프레임으로 채워 올바름 — 그 동작에 정렬). prime 전엔 빈 버퍼 → 반드시 update 후 get_stacked."""
         self.buffer.clear()
-        for _ in range(self.n_frames):
-            self.buffer.append(np.zeros(self.state_size, dtype=np.float32))
+        self._primed = False
 
     def update(self, state):
         """
@@ -33,7 +36,13 @@ class FrameStackBuffer:
         Args:
             state: 새로운 state [state_size] (parse_observation이 매번 새 array 반환하므로 copy 불필요)
         """
-        self.buffer.append(state)
+        if not self._primed:
+            # 첫 프레임: 전체 스택을 실제 프레임으로 채움(유령장애물 대신 '정지=bearing-rate 0'으로 시작).
+            for _ in range(self.n_frames):
+                self.buffer.append(state)
+            self._primed = True
+        else:
+            self.buffer.append(state)
 
     def get_stacked(self):
         """
