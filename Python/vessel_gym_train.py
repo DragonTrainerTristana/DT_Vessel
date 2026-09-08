@@ -21,6 +21,7 @@ import torch.nn as nn
 
 import config as cfg
 import vessel_gym as vg
+import networks as net_mod          # 텔레메트리가 모듈 전역(_MSG_TOKEN_GAIN)을 읽는다
 from networks import CNNPolicy
 
 GOAL_SIZE = cfg.GOAL_SIZE
@@ -255,7 +256,8 @@ def compute_own_threat(x, threat_k, device):
     return thr.reshape(M, threat_k * 4), mask.reshape(M, threat_k * 4)
 
 
-def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None):
+def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None,
+                msg_override=None, return_dist=False):
     """★배치 학습형 comm (2026-08): 각 배의 COMM_RANGE 내 nearest-K 파트너 메시지를 pos_ground 집계.
     evaluate_actions(update)의 pos_ground 분기와 *동일 함수형* → PPO ratio 유효 (mirror 검증 대상).
     Returns:
@@ -265,7 +267,10 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     send_mask/recv_mask [N] 또는 [E,N] bool — 혼합 함대 평가 전용
       (기본 None=전원 통신, 학습 동작 불변). [E,N]을 쓰면 환경마다 다른 비율을 동시에 평가할 수 있다.
       send_mask=False인 배는 파트너 후보에서 빠져 아무도 그 배의 메시지를 못 받는다.
-      recv_mask=False인 배는 받은 메시지가 0이 된다(통신 OFF 팔과 동일 입력)."""
+      recv_mask=False인 배는 받은 메시지가 0이 된다(통신 OFF 팔과 동일 입력).
+    msg_override [E,N,MSG_DIM] — 텔레메트리 전용. 주면 msg_actor 를 부르지 않고 이 메시지로 집계한다
+      (메시지를 0/섞기 로 바꿔 수신자 민감도를 재는 데 씀). 기본 None = 학습 동작 불변.
+    return_dist — True 면 (others_msg, partners, topd) 3-튜플. 기본 False = 반환 형태 불변."""
     E, N = x.shape[0], x.shape[1]
     dev = x.device
     pos = env.pos                                              # [E,N,2]
@@ -307,7 +312,7 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     #   메시지를 배당 1회(E*N)만 만들고 gather 한다. networks._get_others_msg(Unity 경로)와 동일한 방식이며
     #   msg_actor 가 sample 단위 함수(MoE 라우팅도 자기 situation)라 결과는 수학적으로 동일하다.
     #   ⚠️px/pg/ps/psit 는 update(evaluate_actions)가 sender→receiver gradient 용으로 쓰므로 그대로 반환한다.
-    msg_all = policy.msg_actor(x, goal, self_s, sit)                          # [E,N,MSG_DIM] 배당 1회
+    msg_all = policy.msg_actor(x, goal, self_s, sit) if msg_override is None else msg_override
     msg_part = msg_all[b, topi].reshape(E * N, Kc, -1)                        # [E*N,Kc,MSG_DIM] gather
     # ★집계 3분기 — networks.evaluate_actions 의 분기와 *같은 순서·같은 함수형*이어야 PPO ratio 가 유효하다.
     #   우선순위: attention > pos_ground > sum/mean/scale. 마지막에 msg_gain 까지 동일하게 건다.
@@ -339,7 +344,130 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
         others_msg = s.reshape(E, N, -1)
     if msg_gain != 1.0:
         others_msg = others_msg * msg_gain
+    if return_dist:
+        return others_msg, (px, pg, ps, pmask, prelpos, psit), topd
     return others_msg, (px, pg, ps, pmask, prelpos, psit)
+
+
+# ★통신 텔레메트리 (2026-09-08): 지금까지 매번 체크포인트를 다시 굴려서 재던 값들을 학습 로그에 남긴다.
+#   학습 로그에 있던 것은 성능지표·보상·상태복원 5그룹뿐이라, 아래는 전부 사후에 재실행해야 했다.
+#   VESSEL_COMM_TELEMETRY=1 일 때만 동작(기본 0 = 호출 자체가 없음 = 비트동일).
+#   ⚠️학습 RNG 를 절대 건드리지 않는다: 전용 CPU Generator 로만 섞고, 표본이 아니라 평균행동(_route)을 쓴다.
+COMM_TELE_COLS = ('msg_sd', 'msg_eff_dim', 'msg_axes90', 'msg_sat', 'msg_corr',
+                  'gate_ctr', 'gate_cri',
+                  'alpha_unif', 'alpha_dmsg', 'alpha_dpos', 'alpha_near',
+                  'act_zero', 'act_shuf', 'read_ratio',
+                  'part_n', 'part_med', 'part_out', 'enc_alive')
+
+
+def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
+    """통신 경로를 한 번에 진단한다. 모두 no_grad·평균행동 → 학습에 영향 없음.
+
+    msg_*      메시지 자체: 산포 / 유효차원(참여비) / 분산 90% 축수 / tanh 포화 / 축간 상관
+    gate_*     ControlActor·Critic 의 sigmoid(msg_gate) 평균. 0=차단 1=그대로 통과
+    alpha_*    어텐션이 파트너를 무엇으로 고르나
+                 unif  1=완전균일(구분 안 함)
+                 dmsg  메시지만 섞었을 때 α 총변동  (내용 민감도)
+                 dpos  relpos 만 섞었을 때 α 총변동 (위치 민감도)
+                 near  α 최대가 최근접 파트너인 비율. 무작위면 1/K
+               dmsg << dpos 이면 "위치로만 고르고 내용은 안 봄"
+    act_*      수신자가 실제로 쓰나. 조타명령 변화 / 자기 표준편차
+                 zero  메시지를 0 으로   shuf  남의 메시지로 바꿔치기
+                 read_ratio = shuf/zero. 0 에 가까우면 '있냐 없냐'만 보고 내용은 안 읽음
+    part_*     통신 상대 기하: 유효 파트너 수 / 거리 중앙값 / 레이더 밖 비율
+    enc_alive  메시지망 레이더 인코더 출력 중 살아있는 유닛 비율 (dying ReLU 감시)
+    """
+    E, N = x.shape[0], x.shape[1]
+    M = E * N
+    out = {}
+    with torch.no_grad():
+        om0, parts0, topd = comm_gather(policy, env, x, goal, self_s, sit, K, return_dist=True)
+        pmask = parts0[3]                                             # [E,N,Kc,1]
+        prel = parts0[4]
+        Kc = pmask.shape[2]
+        msg = policy.msg_actor(x, goal, self_s, sit)                  # [E,N,MSG_DIM]
+        mf = msg.reshape(M, -1)
+
+        # ── 메시지 자체 ──
+        out['msg_sd'] = float(mf.std(0).mean())
+        out['msg_sat'] = float((mf.abs() > 0.99).float().mean())
+        mc = (mf - mf.mean(0, keepdim=True)).double()
+        C = (mc.T @ mc) / max(1, mc.shape[0] - 1)
+        ev = torch.linalg.eigvalsh(C).clamp(min=0).flip(0)
+        out['msg_eff_dim'] = float(ev.sum() ** 2 / (ev.pow(2).sum() + 1e-30))
+        cum = torch.cumsum(ev, 0) / ev.sum().clamp(min=1e-30)
+        out['msg_axes90'] = float((cum < 0.90).sum() + 1)
+        sdv = torch.sqrt(torch.diag(C)).clamp(min=1e-12)
+        R = C / (sdv[:, None] * sdv[None, :])
+        d_ = R.shape[0]
+        out['msg_corr'] = float(R[~torch.eye(d_, dtype=torch.bool, device=R.device)].abs().mean())
+
+        # ── 게이트 ──
+        for tag, mod in (('gate_ctr', policy.ctr_actor), ('gate_cri', policy.critic)):
+            gs = [torch.sigmoid(p).mean() for n_, p in mod.named_parameters() if 'msg_gate' in n_]
+            out[tag] = float(torch.stack(gs).mean()) if gs else float('nan')
+
+        # ── 파트너 기하 ──
+        pm_b = pmask.reshape(-1).bool()
+        dv = topd.reshape(-1)[pm_b]
+        out['part_n'] = float(pmask.sum(dim=2).mean())
+        out['part_med'] = float(dv.median()) if dv.numel() else float('nan')
+        out['part_out'] = float((dv > radar_range).float().mean()) if dv.numel() else float('nan')
+
+        # ── 어텐션: 위치로 고르나 내용으로 고르나 ──
+        if getattr(policy, 'use_attention', False) and Kc >= 2:
+            at = policy.attn
+            q_in = torch.cat([self_s, goal], dim=-1).reshape(M, 1, -1)
+            prel_f = prel.reshape(M, Kc, -1)
+            pm_f = pmask.reshape(M, Kc, 1)
+            b_ = torch.arange(E, device=x.device)[:, None, None]
+            # comm_gather 와 동일하게 파트너 인덱스를 다시 만든다(거리로 topk)
+            dmat = torch.cdist(env.pos, env.pos) + torch.eye(N, device=x.device).unsqueeze(0) * 1e9
+            dmat = torch.where(dmat <= cfg.COMM_RANGE, dmat, torch.full_like(dmat, 1e9))
+            _, topi = torch.topk(dmat, Kc, dim=-1, largest=False)
+            msg_f = (msg[b_, topi] * pmask).reshape(M, Kc, -1)
+
+            def _alpha(rel, mp):
+                tok = torch.cat([rel, mp * net_mod._MSG_TOKEN_GAIN], dim=-1)
+                sc = (at.k_proj(tok) * at.q_proj(q_in)).sum(-1) / at.scale
+                sc = sc.masked_fill(pm_f.squeeze(-1) <= 0, -1e9)
+                return torch.softmax(sc, dim=1)
+
+            perm = torch.randperm(Kc, generator=gen).to(x.device)      # ★전용 CPU generator
+            a0 = _alpha(prel_f, msg_f)
+            nval = pm_f.squeeze(-1).sum(1)
+            ok = nval >= 2
+            if ok.any():
+                p = a0.clamp(min=1e-12)
+                out['alpha_unif'] = float((-(p * p.log()).sum(1) / nval.clamp(min=2).log())[ok].mean())
+                out['alpha_dmsg'] = float(((_alpha(prel_f, msg_f[:, perm]) - a0).abs().sum(1) / 2)[ok].mean())
+                out['alpha_dpos'] = float(((_alpha(prel_f[:, perm], msg_f) - a0).abs().sum(1) / 2)[ok].mean())
+                out['alpha_near'] = float((a0.argmax(1) == topd.reshape(M, Kc).argmin(1))[ok].float().mean())
+        for kk in ('alpha_unif', 'alpha_dmsg', 'alpha_dpos', 'alpha_near'):
+            out.setdefault(kk, float('nan'))
+
+        # ── 수신자가 내용을 읽나 (평균행동 기준 → RNG 소비 없음) ──
+        perm_n = torch.randperm(N, generator=gen).to(x.device)
+        _, a_base, _, _, _ = policy.ctr_actor._route(x, goal, self_s, om0, sit)
+        om_z, _ = comm_gather(policy, env, x, goal, self_s, sit, K,
+                              msg_override=torch.zeros_like(msg))
+        om_s, _ = comm_gather(policy, env, x, goal, self_s, sit, K,
+                              msg_override=msg[:, perm_n])
+        _, a_z, _, _, _ = policy.ctr_actor._route(x, goal, self_s, om_z, sit)
+        _, a_s, _, _, _ = policy.ctr_actor._route(x, goal, self_s, om_s, sit)
+        asd = a_base.reshape(M, -1).std(0).clamp(min=1e-8)
+        out['act_zero'] = float(((a_z - a_base).reshape(M, -1).abs().mean(0) / asd)[0])
+        out['act_shuf'] = float(((a_s - a_base).reshape(M, -1).abs().mean(0) / asd)[0])
+        out['read_ratio'] = out['act_shuf'] / out['act_zero'] if out['act_zero'] > 1e-8 else float('nan')
+
+        # ── 인코더 건강 (dying ReLU): 배치 산포가 죽은 유닛 비율의 여집합 ──
+        core = policy.msg_actor.cores()[0] if hasattr(policy.msg_actor, 'cores') else None
+        if core is not None and hasattr(core, 'radar_encoder'):
+            feat = core.radar_encoder(x.reshape(M, -1))
+            out['enc_alive'] = float((feat.std(0) > 1e-6).float().mean())
+        else:
+            out['enc_alive'] = float('nan')
+    return out
 
 
 def main():
@@ -528,6 +656,8 @@ def main():
             'msg_token_gain': float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0)),
             'clip_per_module': os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1',
             'msg_l2_coef': float(cfg.MSG_L2_COEF),
+            'recon_ema_floor': float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0)),
+            'comm_telemetry': os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1',
             'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum').lower(),
             'msg_gain': float(os.environ.get('VESSEL_MSG_GAIN', 1.0)),
             'timeout_bootstrap': _trunc_boot,
@@ -583,6 +713,21 @@ def main():
         aux_f = open(_aux_path, _aux_mode, encoding='utf-8')
         if _aux_mode == 'w':
             aux_f.write('step,goal,self,sit,threat,future\n')
+
+    # ★통신 텔레메트리 CSV (2026-09-08): VESSEL_COMM_TELEMETRY=1 일 때만. 기본 0 = 비트동일.
+    #   ON 팔에서만 의미 있음(OFF 는 others_msg≡0). 전용 CPU generator 로 학습 RNG 와 분리한다.
+    _tele_f = None
+    _tele_gen = None
+    _tele_every = int(os.environ.get('VESSEL_COMM_TELEMETRY_EVERY', '5'))   # update 단위
+    if os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1' and csv_path and args.arm == 'ON':
+        _tele_path = os.path.splitext(csv_path)[0] + '_comm.csv'
+        _tele_mode = 'a' if (args.resume and os.path.exists(_tele_path)) else 'w'
+        _tele_f = open(_tele_path, _tele_mode, encoding='utf-8')
+        if _tele_mode == 'w':
+            _tele_f.write('step,' + ','.join(COMM_TELE_COLS) + '\n')
+        _tele_gen = torch.Generator().manual_seed(args.seed + 100003)       # 학습 RNG 와 완전 분리
+        print(f"[telemetry] 통신 텔레메트리 켬 → {os.path.basename(_tele_path)} "
+              f"({_tele_every} update 마다, {len(COMM_TELE_COLS)}개 열)", flush=True)
 
     # ★2026-09-05 fix: 예외(KeyboardInterrupt·CUDA OOM·env 오류)로 죽으면 csv_f·aux_f 가 닫히지
     #   않아 마지막 flush 이후 최대 19 update 분 기록이 통째로 날아갔다(둘 다 20 update 마다만 flush).
@@ -864,6 +1009,18 @@ def main():
                 _sr_log = {}
                 if update_i % 20 == 0:
                     aux_f.flush()
+            # ★통신 텔레메트리: comm 이 실제로 켜져 있을 때만. 실패해도 학습은 계속한다.
+            if _tele_f is not None and comm_active and update_i % _tele_every == 0:
+                try:
+                    _tv = comm_telemetry(policy, env, fs.get(), goal, self_s, sit,
+                                         args.max_partners, _tele_gen, float(vg.RADAR_RANGE))
+                    _tele_f.write(f"{total_decisions}," +
+                                  ",".join(f"{_tv.get(c, float('nan')):.6g}" for c in COMM_TELE_COLS) + "\n")
+                    if update_i % 20 == 0:
+                        _tele_f.flush()
+                except Exception as _e:
+                    print(f"[telemetry] 실패(무시하고 계속): {type(_e).__name__}: {_e}", flush=True)
+                    _tele_f.close(); _tele_f = None
             if update_i % 5 == 0:
                 # ★종료 에피소드 기준 % (이전의 전-agent-step 분모는 running이 지배해 커브가 안 읽혔음)
                 term = outcome_counts[1:].sum().clamp(min=1)
@@ -883,6 +1040,8 @@ def main():
             csv_f.flush(); csv_f.close()
         if aux_f:
             aux_f.flush(); aux_f.close()
+        if _tele_f:
+            _tele_f.flush(); _tele_f.close()
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,

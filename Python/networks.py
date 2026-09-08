@@ -62,6 +62,16 @@ _RADAR_BOTTLENECK_CH = int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8))
 #     같은 aggregate_batch 를 호출하므로 여기 한 곳만 고치면 양쪽에 동일 적용된다.
 _MSG_TOKEN_GAIN = float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0))
 
+# ★2026-09-07 StateRecon 그룹 정규화 바닥값: VESSEL_RECON_EMA_FLOOR (기본 0 = 안 걸림, 비트동일)
+#   왜 — StateReconDecoder.loss 는 `total += gl / ema_g` 로 그룹을 합친다. 의도는 "그룹별 기여 균등화"
+#     였는데 gradient 는 반대로 간다: 다 배운 그룹일수록 ema→0 이라 1/ema 배율이 무한히 커진다.
+#     실측(cf_ON_s43, 16M): sit ema 8.6e-5 → 정규화 후 당김 2.72 / threat ema 0.911 → 0.019.
+#     이미 만점(R²=0.9999)인 sit 이 아무것도 못 배운 threat(R²≈0)보다 143배 세게 메시지를 잡아당긴다.
+#     결과: 3시드 모두 5개 그룹 중 self·sit 만 담기고 threat·future 는 R²≈0, 메시지 6칸 중 2~3칸만 쓴다.
+#   고침 — 분모에 바닥을 깔아 다 배운 그룹의 배율을 1/floor 로 제한한다(floor=0.05 → 최대 20배).
+#     못 배운 그룹(ema 0.8~1.1)은 바닥 위라 영향 없음 → 굶던 쪽만 상대적으로 살아난다.
+_RECON_EMA_FLOOR = float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0))
+
 # ★2026-09-07 MoE 라우팅 배치화: VESSEL_MOE_FAST=1 (기본 0 = 기존 루프, 비트동일)
 #   왜 — 지금 라우팅은 전문가마다 `if mask.any(): core(x[mask])` 를 돈다. 문제는 연산량이 아니라
 #     (a) mask.any() 가 GPU→CPU 동기화, (b) x[mask]/z[mask]= 가 데이터 의존 크기라 또 동기화,
@@ -326,6 +336,10 @@ class StateReconDecoder(nn.Module):
                     self.loss_ema[gi] = (1 - self.momentum) * self.loss_ema[gi] + self.momentum * gl.detach()
             # ★2026-09-05 fix: ema_pre=1이면 갱신 전 값으로 정규화(자기억제 제거). 기본(0)은 옛 동작.
             w = w_pre if self.ema_pre else self.loss_ema[gi].detach()
+            # ★2026-09-07: 다 배운 그룹(ema→0)이 1/ema 로 폭주해 못 배운 그룹을 굶기는 것을 막는다.
+            #   기본 0.0 = clamp 안 걸림 = 기존과 비트동일.
+            if _RECON_EMA_FLOOR > 0.0:
+                w = w.clamp(min=_RECON_EMA_FLOOR)
             total = total + gl / (w + 1e-4)
         return total / len(self.GROUPS), raw
 

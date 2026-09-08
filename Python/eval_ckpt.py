@@ -156,7 +156,8 @@ def main():
                   flush=True)
         print(f"[eval] 통신 설정: msg_token_gain={getattr(net, '_MSG_TOKEN_GAIN', 1.0)} "
               f"max_partners={args.max_partners} comm_range={vg.COMM_RANGE} "
-              f"msg_l2={_snap.get('msg_l2_coef')} clip_per_module={_snap.get('clip_per_module')}", flush=True)
+              f"msg_l2={_snap.get('msg_l2_coef')} clip_per_module={_snap.get('clip_per_module')} "
+              f"recon_ema_floor={_snap.get('recon_ema_floor')}", flush=True)
         print(f"[eval] ckpt 설정 적용: attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} "
               f"central_critic={net.CENTRAL_CRITIC} state_recon={net.STATE_RECON_COEF} "
               f"msg_dim={_msg_dim}", flush=True)
