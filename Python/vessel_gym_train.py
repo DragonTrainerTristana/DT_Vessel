@@ -73,7 +73,7 @@ def make_others_msg(env, arm, E, N, device):
         (별도 미러 검증이 필요 없다). 수신측 fc2 메시지 슬라이스 파라미터와 그 gradient 경로는
         진짜 메시지 팔과 동일하게 살아 있다 = 파라미터 효과만 남긴 통제.
       ⚠️분포 정합: 난수의 스케일은 비교 대상 팔의 실측 others_msg 표준편차에 맞춰야 공정하다.
-        `_diag_msg_channel.py` 가 찍는 `om_sd` 를 읽어 `VESSEL_MSG_RANDOM_SD` 로 주입할 것.
+        `_diag_msg_channel.py(→_archive, 현행 diag_ckpt.py)` 가 찍는 `om_sd` 를 읽어 `VESSEL_MSG_RANDOM_SD` 로 주입할 것.
         기본 0.20 은 m2 C1~C6 실측 om_sd 0.14~0.23 의 중앙 근처값이다(runs/m2_ablation/diag/channel.jsonl).
     """
     om = torch.zeros(E, N, MSG_DIM, device=device)
@@ -87,7 +87,7 @@ def make_others_msg(env, arm, E, N, device):
         om = (torch.rand(E, N, MSG_DIM, device=device) * 2.0 - 1.0) * a
     elif arm not in ('OFF', 'ON'):
         # ★2026-09-07: 예전엔 else 가 없어 모르는 arm 이 *에러 없이* zeros(=OFF)로 학습됐다.
-        #   argparse choices 가 유일한 방어선이었는데 diag_timeout.py 는 choices 조차 없다.
+        #   argparse choices 가 유일한 방어선이었는데 diag_timeout.py(→_archive) 는 choices 조차 없다.
         raise ValueError(f"make_others_msg: 모르는 arm '{arm}' — OFF/ON/ORACLE/RANDOM 중 하나여야 함")
     return om
 
@@ -358,7 +358,7 @@ COMM_TELE_COLS = ('msg_sd', 'msg_eff_dim', 'msg_axes90', 'msg_sat', 'msg_corr',
                   'alpha_unif', 'alpha_dmsg', 'alpha_dpos', 'alpha_near',
                   'act_zero', 'act_shuf', 'read_ratio',
                   'part_n', 'part_med', 'part_out', 'enc_alive',
-                  # ★2026-09-10 추가 (뒤에만 붙임): 구 _diag_msg_channel.py 의 지표 흡수 + 진단 게이트용
+                  # ★2026-09-10 추가 (뒤에만 붙임): 구 _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py) 의 지표 흡수 + 진단 게이트용
                   'msg_dc', 'threat_r2', 'om_erank', 'label_erank', 'sit_rate')
 
 
@@ -423,7 +423,7 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
         _ms = msg_stats(mf)
         out['msg_sd'] = _ms['sd']; out['msg_sat'] = _ms['sat']; out['msg_eff_dim'] = _ms['eff_dim']
         out['msg_axes90'] = _ms['axes90']; out['msg_corr'] = _ms['corr']; out['msg_dc'] = _ms['dc']
-        # ── 메시지에 실린 위협 정보 (구 _diag_msg_channel.py 흡수, 2026-09-10) ──
+        # ── 메시지에 실린 위협 정보 (구 _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py) 흡수, 2026-09-10) ──
         #   threat_r2  : threat_decoder 가 메시지에서 송신자의 top-K 위협 기하를 얼마나 복원하나 (1=완벽, ≤0=평균만 못함)
         #   om_erank   : 수신측 집계 메시지(others_msg)의 유효차원
         #   label_erank: 위협 라벨 자체의 유효차원 — 복원 천장 참고용
@@ -597,7 +597,7 @@ def main():
     if args.arm == 'RANDOM':
         print(f"[arm RANDOM] 난수 메시지 대조군 - others_msg ~ U(-a,a), sd="
               f"{float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)):.3f} "
-              f"(비교 팔의 실측 om_sd 에 맞출 것: _diag_msg_channel.py)", flush=True)
+              f"(비교 팔의 실측 om_sd 에 맞출 것: _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py))", flush=True)
 
     # ★2026-09-05 fix(opt-in): timeout 절단을 GAE 에서 '절단'으로 취급할지.
     #   기본 0 = 기존 동작(상수 trunc=0, timeout 을 진짜 종료로 취급) — 비트동일.

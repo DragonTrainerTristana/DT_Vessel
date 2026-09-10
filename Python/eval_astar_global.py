@@ -1,6 +1,6 @@
 """전역경로(A*) + 국소 회피 평가 — Fig9(Global) 실측용.
 
-구 Fig9_Global 은 mock_longhaul_estimate.py 가 만든 합성 그림이었음. 이 스크립트는
+구 Fig9_Global 은 mock_longhaul_estimate.py(→_archive) 가 만든 합성 그림이었음. 이 스크립트는
 그 실험을 **실제로** 돌리는 하네스임. Unity NavMesh A*(WaypointPathFinder.cs) 가 하던 일을
 vessel_gym 배치 심 위에서 재현함 — 그래야 Fig1~Fig8 과 같은 정책·같은 지표로 비교됨.
 

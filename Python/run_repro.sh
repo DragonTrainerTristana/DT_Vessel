@@ -203,7 +203,7 @@ case "$MODE" in
     #   통신 ON 이 OFF 를 이겼을 때 그 이득이 메시지 *내용* 때문인지, 메시지 경로가 붙으며
     #   늘어난 파라미터·gradient 경로 때문인지 가른다.
     #   ⚠️난수 스케일을 비교 대상 팔의 실측 others_msg 표준편차에 맞춰야 공정하다.
-    #     _diag_msg_channel.py 가 찍는 om_sd 를 읽어 VESSEL_MSG_RANDOM_SD 로 줄 것.
+    #     diag_ckpt.py 가 찍는 msg_sd(텔레메트리 정의)를 읽어 VESSEL_MSG_RANDOM_SD 로 줄 것. (구 _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py) 는 _archive)
     preflight
     : > "$OUT/_status_train.txt"
     for s in $SEEDS; do
