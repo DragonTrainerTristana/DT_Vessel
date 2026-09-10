@@ -95,6 +95,7 @@ MSG_LN = _cfg.MSG_LN
 AGG_MODE = _cfg.AGG_MODE
 NEAREST_SCALE = _cfg.NEAREST_SCALE
 MSG_GAIN = _cfg.MSG_GAIN
+SHARED_ENCODER = _cfg.SHARED_ENCODER   # '0'|'actor'|'all' — CNNPolicy.__init__ 이 읽음. ckpt_io 가 스냅샷으로 덮어씀
 
 
 def _bmm_linear(cores, sit, h, attr):
@@ -142,6 +143,21 @@ def _share_radar_encoder(experts):
     parameters()/optimizer는 공유 텐서를 자동 dedup, state_dict는 5벌 동일 사본 저장(load 호환)."""
     for _k in range(1, len(experts)):
         experts[_k].radar_encoder = experts[0].radar_encoder
+
+
+def _share_encoder_across(policy, mode):
+    """★레이더 인코더 망 간 공유 (2026-09-10, VESSEL_SHARED_ENCODER). ControlActor 것이 정본.
+    'actor': MessageActor ← ControlActor / 'all': MessageActor·Critic ← ControlActor.
+    코어 k 끼리 짝지음(MoE 5벌; MOE_SHARED=1 이면 어차피 망 안에서 한 객체). _share_radar_encoder 와 같은
+    모듈 aliasing → parameters() 자동 dedup, state_dict 는 접두어별 동일 사본(키 불변). 기본 '0' = 아무것도 안 함."""
+    if mode == '0':
+        return
+    src = policy.ctr_actor.cores()
+    targets = [policy.msg_actor.cores()] + ([policy.critic.cores()] if mode == 'all' else [])
+    for cs in targets:
+        assert len(cs) == len(src), f'코어 수 불일치 {len(cs)} vs {len(src)}'
+        for k, core in enumerate(cs):
+            core.radar_encoder = src[k].radar_encoder
 
 
 def _w(n, width, floor=4):
@@ -981,6 +997,9 @@ class CNNPolicy(nn.Module):
         self.msg_actor = MessageActor(frames, msg_dim)
         self.ctr_actor = ControlActor(frames, msg_dim, action_size)
         self.critic = Critic(frames, msg_dim)
+        # ★2026-09-10 레이더 인코더 망 간 공유 (config SHARED_ENCODER). 세 망 생성 *직후*, 다른 참조가 생기기 전에.
+        self.shared_encoder = SHARED_ENCODER
+        _share_encoder_across(self, self.shared_encoder)
 
         # ★ 위치 grounding (AIS-style, 2026-07-03 기본 ON): 파트너의 [상대방위(sin,cos)+거리] 3D를 메시지에 결합 →
         #   receiver가 "어느 방위에서 온 메시지"인지 알게 됨. VESSEL_POS_GROUND=0으로 sum 대조군.

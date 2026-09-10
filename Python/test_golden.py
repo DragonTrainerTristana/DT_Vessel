@@ -53,6 +53,9 @@ CASES = {
     'default_ON':          dict(env={}, arm='ON'),
     'default_OFF':         dict(env={}, arm='OFF'),
     'batch_2026_09_04_ON': dict(env=BATCH_ENV, arm='ON'),
+    # ★2026-09-10 공유 인코더 — 새 구조. 골든은 도입 시점 코드로 생성.
+    'batch_shared_all_ON':   dict(env={**BATCH_ENV, 'VESSEL_SHARED_ENCODER': 'all'}, arm='ON'),
+    'batch_shared_actor_ON': dict(env={**BATCH_ENV, 'VESSEL_SHARED_ENCODER': 'actor'}, arm='ON'),
 }
 
 # 작게: E=8 N=16 rollout=64 → update 당 8,192 결정(전 에이전트 합). --steps 는 그 합 기준(vessel_gym_train.py:736

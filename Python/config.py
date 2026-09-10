@@ -478,3 +478,16 @@ COLREGS_SIM_COEF = _env_float('VESSEL_SIM_COLREGS_COEF', 0.45)   # COLREGs 준�
 FARPAIR_COEF = _env_float('VESSEL_FARPAIR_COEF', 0.0)   # far-field 직접 비용 (기본 0)
 FARPAIR_EXP = _env_float('VESSEL_FARPAIR_EXP', 2.0)
 REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → VesselBatchEnv 가 DETECTION_RANGE(56) 사용
+
+# ── 레이더 인코더 망 간 공유 — 2026-09-10 (VESSEL_SHARED_ENCODER) ──
+#   '0'     : 세 망(Message/Control/Critic)이 각자 인코더 (기존 구조, 기본 = 비트동일)
+#   'actor' : MessageActor 가 ControlActor 인코더를 같이 씀 (Critic 은 별도) — 절제용
+#   'all'   : 세 망이 ControlActor 인코더 하나를 같이 씀
+#   왜 — 12런 실측: 메시지망 인코더 출력 산포가 조타망의 1/50~1/1000. 메시지망에 오는 학습 신호가
+#     남의 조타 손실 → fc2 메시지칸(×0.1) → 게이트(0.5) → v_proj(×0.1) → msg_out(×0.1) 을 거쳐 1/2000 로 도착해
+#     레이더를 읽는 부분이 학습되지 않음(메시지에 레이더 내용 없음). 공유하면 조타 손실이 인코더를 직접 학습시킴.
+#   구현 — 모듈 aliasing(MOE_SHARED 와 같은 방식). state_dict 키 불변(공유 텐서가 접두어별 동일 사본으로 저장).
+#     parameters()/optimizer 는 자동 dedup. 스냅샷 'shared_encoder' 에 기록되고 ckpt_io.restore_policy 가 복원.
+#   ⚠️구 체크포인트(인코더 3벌 다름)를 공유 모델에 strict 로드하면 마지막 접두어(critic) 것만 남음 → ckpt_io 가 스냅샷으로 막음.
+SHARED_ENCODER = _env_str('VESSEL_SHARED_ENCODER', '0').lower()
+assert SHARED_ENCODER in ('0', 'actor', 'all'), f"VESSEL_SHARED_ENCODER={SHARED_ENCODER!r} - '0' | 'actor' | 'all'"

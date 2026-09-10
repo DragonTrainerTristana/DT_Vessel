@@ -972,6 +972,13 @@ def main():
                     if _clip_per_module:
                         _seen = set()
                         _groups = []
+                        if getattr(policy, 'shared_encoder', '0') != '0':
+                            # ★2026-09-10 공유 인코더는 세 망에 걸쳐 있으므로 자기 그룹으로 먼저 뗀다
+                            #   (안 그러면 순서상 msg_actor 그룹이 가져가 그 그룹 norm 을 인코더가 지배함)
+                            _enc = [p for _c in policy.ctr_actor.cores() for p in _c.radar_encoder.parameters()
+                                    if id(p) not in _seen]
+                            _seen.update(id(p) for p in _enc)
+                            _groups.append(_enc)
                         for _m in (policy.msg_actor, policy.ctr_actor, policy.critic):
                             _ps = [p for p in _m.parameters() if id(p) not in _seen]
                             _seen.update(id(p) for p in _ps)

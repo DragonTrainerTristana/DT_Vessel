@@ -481,6 +481,10 @@ def setup_training(policy):
     # Phase 2: MessageActor에 높은 학습률
     if USE_COMMUNICATION:
         msg_params = list(policy.msg_actor.parameters())
+        if getattr(policy, 'shared_encoder', '0') != '0':
+            # ★2026-09-10 공유 인코더는 조타망 소유 → 기본 LR 그룹에 (MSG_LR_SCALE 미적용)
+            _enc = {id(p) for _c in policy.ctr_actor.cores() for p in _c.radar_encoder.parameters()}
+            msg_params = [p for p in msg_params if id(p) not in _enc]
         msg_ids = set(id(p) for p in msg_params)
         other_params = [p for p in policy.parameters() if id(p) not in msg_ids]
         optimizer = torch.optim.Adam([

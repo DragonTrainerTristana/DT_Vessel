@@ -112,6 +112,12 @@ CASES = [
                                 'VESSEL_MSG_TOKEN_GAIN': '8.0'}, 4, False),
     ('token_gain 8 + dim12',   {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1',
                                 'VESSEL_MSG_TOKEN_GAIN': '8.0', 'VESSEL_MSG_DIM': '12'}, 4, False),
+    # ★공유 인코더 (2026-09-10): MessageActor(·Critic)가 ControlActor 인코더 객체를 씀.
+    #   rollout(comm_gather 가 파트너 메시지 생성)·update(evaluate_actions 재생성) 둘 다 같은 객체를 타야 ratio 유효.
+    ('shared enc actor',        {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_SHARED_ENCODER': 'actor'}, 4, False),
+    ('shared enc all',          {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_SHARED_ENCODER': 'all'}, 4, False),
+    ('shared all + attention',  {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_USE_ATTENTION': '1'}, 4, False),
+    ('shared all, MoE 비공유',   {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '0', 'VESSEL_SHARED_ENCODER': 'all'}, 4, False),
 ]
 
 if __name__ == '__main__':

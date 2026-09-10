@@ -84,6 +84,7 @@
 | 구성요소 | 코드 | 내용 |
 |---|---|---|
 | **RadarEncoder** | :163-218 | Conv1D circular ×3: 3→32 k5 s2 (:183), 32→64 k5 s2 (:184), 64→64 k3 s2 (:185) → 360→180→90→45. 옵션 1×1 bottleneck `reduce` 64→8 (`VESSEL_RADAR_HEAD=bottleneck`, :187-190) → flatten(2880, bottleneck이면 360) → Linear→`RADAR_FEAT_DIM`=30 (:194). 활성 ReLU, `VESSEL_RADAR_ACT=leaky`로 LeakyReLU(0.01) (:34, :204) |
+| **인코더 공유** `SHARED_ENCODER` (config, 2026-09-10) | `'0'` 기본=세 망 각자 / `'actor'` msg←ctr / `'all'` msg·cri←ctr. `networks._share_encoder_across`, CNNPolicy.__init__ 세 망 생성 직후 | 12런 실측 메시지망 인코더 출력 산포 = 조타망의 1/50~1/1000(학습 신호 1/2000) → 조타 손실이 인코더를 직접 학습시키게. 파라미터: 0→356,607 / actor 322,089 / all 287,571(배치+bottleneck). 골든 `batch_shared_{all,actor}_ON`, 미러 4케이스 |
 | **MoE** | `USE_MOE` 기본 **ON** (config :235), 전문가 5 (:236), `MOE_WIDTH` 1.0 (:244), `MOE_SHARED` 0 (:249) | 코어 통째 hard-routing(obs[368]). ModuleList :529/:671/:896. `_share_radar_encoder` (:130-135) = **MOE_SHARED=1일 때 전문가 5벌끼리만** 인코더 공유(세 망 간 공유 아님) |
 | **situation one-hot** | `SITUATION_INPUT` 기본 ON (config :264) → `SIT_INPUT_DIM`=5 (:149), `_situation_onehot` :152 | 세 망 fc2에 concat. MoE에서도 입력(코어 내 상수, 무해) |
 | **MessageActor 코어** | :467-511 | radar30 + goal2 + self4 + sit5 = **fc2 41**→128 ReLU → `msg_ln` LayerNorm(**기본 ON**, `VESSEL_MSG_LN`, :490, 2026-08-31 tanh 포화 방지) → `msg_out` 128→MSG_DIM tanh. `msg_out` **×0.1 소진폭**(:495-497) |
@@ -122,6 +123,7 @@
 | 결정자 | 코드 | 키 영향 |
 |---|---|---|
 | `VESSEL_MSG_LN` (기본 1) | networks :490 | `msg_actor.*.msg_ln.{weight,bias}` 생성/부재. ckpt_io가 키로 스니핑 |
+| `SHARED_ENCODER` (config) | `_share_encoder_across` | **키·shape 불변** — 공유 텐서가 msg_actor/ctr_actor/critic 접두어로 동일 사본 저장(MOE_SHARED 와 같음). 구 ckpt(3벌 다름)를 공유 모델에 strict 로드하면 마지막 접두어만 남는 조용한 사고 → `ckpt_io` 가 스냅샷 `shared_encoder` 로 복원(스냅샷 없으면 '0') |
 | `USE_MOE` (config :235) | :529/:534, :671/:676, :896/:901 | 접두 `experts.{0..4}.` ↔ `core.` |
 | `CENTRAL_CRITIC` (config :172) | :858-861 | `critic.*.glob_enc.{0,2}.*` 생성 + critic fc2 (128,47)→(128,111) |
 | `STATE_RECON_COEF>0` (config :165) | :1027 | `state_recon.net.{0,2}.*` + 버퍼 `run_mean/run_var/stat_inited/loss_ema` (조건부 생성) |

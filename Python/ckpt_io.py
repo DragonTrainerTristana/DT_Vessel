@@ -70,6 +70,14 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'perpair_coef': float(cfg.PERPAIR_COEF),
         'perpair_exp': 3.0,
         'radar_range': float(vg.RADAR_RANGE),
+        # ★2026-09-10 추가: 인코더 공유 + 스냅샷에 빠져 있던 구조·보조손실 토글 (재현용. 키 추가만)
+        'shared_encoder': net.SHARED_ENCODER,
+        'use_comm': bool(cfg.USE_COMMUNICATION), 'situation_input': bool(cfg.SITUATION_INPUT),
+        'radar_feat_dim': int(cfg.RADAR_FEAT_DIM), 'attn_dim': int(cfg.ATTN_DIM),
+        'intent_coef': float(cfg.INTENT_COEF), 'threat_coef': float(cfg.THREAT_COEF),
+        'goal_comm_coef': float(cfg.GOAL_COMM_COEF), 'role_comm_coef': float(cfg.ROLE_COMM_COEF),
+        'comm_consumer_coef': float(cfg.COMM_CONSUMER_COEF), 'msg_gate_coef': float(cfg.MSG_GATE_COEF),
+        'msg_gate_apply': bool(cfg.MSG_GATE_APPLY),
     }
 
 
@@ -92,7 +100,8 @@ class Restored:
                 f"attention={e['use_attention']} pos_ground={e['pos_ground']} central_critic={e['central_critic']} "
                 f"state_recon={e['state_recon_coef']} radar={e['radar_head']}/{e['radar_act']} "
                 f"msg_ln={e['msg_ln']} token_gain={e['msg_token_gain']} agg={e['agg_mode']} msg_gain={e['msg_gain']} "
-                f"comm_range={e['comm_range']} max_partners={self.max_partners} snapshot={'yes' if self.snap else 'NO'}")
+                f"shared_enc={e.get('shared_encoder')} comm_range={e['comm_range']} max_partners={self.max_partners} "
+                f"snapshot={'yes' if self.snap else 'NO'}")
 
 
 def _say(tag, msg):
@@ -202,6 +211,12 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     if max_partners is None:
         max_partners = int(cfg.MAX_COMM_PARTNERS)
 
+    # 4b) 인코더 공유 방식 — 키로는 구분 불가(공유해도 접두어별 사본이 저장됨). 스냅샷이 유일한 근거.
+    #     구 체크포인트(스냅샷에 키 없음)는 인코더 3벌 = '0'.
+    net.SHARED_ENCODER = str((snap or {}).get('shared_encoder', '0')).lower()
+    if net.SHARED_ENCODER != cfg.SHARED_ENCODER:
+        notes.append(f"shared_encoder: ckpt {net.SHARED_ENCODER!r} 로 복원 (현재 config {cfg.SHARED_ENCODER!r} 와 다름 — ckpt 가 진실)")
+
     # 5) 이제 만든다 — 위 전역이 __init__ 에서 읽힌다
     policy = CNNPolicy(msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(device)
     policy.load_state_dict(_sd)
@@ -215,6 +230,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'msg_ln': bool(net.MSG_LN), 'msg_token_gain': float(net._MSG_TOKEN_GAIN),
         'agg_mode': net.AGG_MODE, 'msg_gain': float(net.MSG_GAIN),
         'msg_random_sd': (snap or {}).get('msg_random_sd'),
+        'shared_encoder': net.SHARED_ENCODER,
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,
@@ -288,10 +304,57 @@ def describe(snap):
     return ' '.join(f"{k}={snap[k]}" for k in keys if k in snap)
 
 
+# 스냅샷 키 → env 이름 (재현용 --env 출력)
+_SNAP_TO_ENV = [
+    ('use_comm', 'VESSEL_USE_COMM', lambda v: '1' if v else '0'), ('msg_dim', 'VESSEL_MSG_DIM', str),
+    ('use_attention', 'VESSEL_USE_ATTENTION', lambda v: '1' if v else '0'), ('pos_ground', 'VESSEL_POS_GROUND', lambda v: '1' if v else '0'),
+    ('central_critic', 'VESSEL_CENTRAL_CRITIC', lambda v: '1' if v else '0'), ('state_recon_coef', 'VESSEL_STATE_RECON_COEF', str),
+    ('use_moe', 'VESSEL_USE_MOE', lambda v: '1' if v else '0'), ('moe_shared', 'VESSEL_MOE_SHARED', lambda v: '1' if v else '0'),
+    ('moe_width', 'VESSEL_MOE_WIDTH', str), ('msg_ln', 'VESSEL_MSG_LN', lambda v: '1' if v else '0'),
+    ('situation_input', 'VESSEL_SITUATION_INPUT', lambda v: '1' if v else '0'), ('radar_feat_dim', 'VESSEL_RADAR_FEAT_DIM', str),
+    ('attn_dim', 'VESSEL_ATTN_DIM', str), ('shared_encoder', 'VESSEL_SHARED_ENCODER', str),
+    ('comm_range', 'VESSEL_COMM_RANGE', lambda v: f'{v:g}'), ('radar_range', 'VESSEL_RADAR_RANGE', lambda v: f'{v:g}'),
+    ('radar_act', 'VESSEL_RADAR_ACT', str), ('radar_head', 'VESSEL_RADAR_HEAD', str), ('radar_bottleneck_ch', 'VESSEL_RADAR_BOTTLENECK_CH', str),
+    ('msg_token_gain', 'VESSEL_MSG_TOKEN_GAIN', str), ('msg_gain', 'VESSEL_MSG_GAIN', str), ('agg_mode', 'VESSEL_AGG_MODE', str),
+    ('msg_l2_coef', 'VESSEL_MSG_L2', str), ('msg_gate_coef', 'VESSEL_MSG_GATE_L2', str), ('msg_gate_apply', 'VESSEL_MSG_GATE_APPLY', lambda v: '1' if v else '0'),
+    ('clip_per_module', 'VESSEL_CLIP_PER_MODULE', lambda v: '1' if v else '0'), ('recon_ema_floor', 'VESSEL_RECON_EMA_FLOOR', str),
+    ('timeout_bootstrap', 'VESSEL_TIMEOUT_BOOTSTRAP', lambda v: '1' if v else '0'),
+    ('intent_coef', 'VESSEL_INTENT_COEF', str), ('threat_coef', 'VESSEL_THREAT_COEF', str), ('goal_comm_coef', 'VESSEL_GOAL_COMM_COEF', str),
+    ('role_comm_coef', 'VESSEL_ROLE_COMM_COEF', str), ('comm_consumer_coef', 'VESSEL_COMM_CONSUMER_COEF', str),
+    ('farfield_coef', 'VESSEL_FARFIELD_COEF', str), ('perpair_coef', 'VESSEL_PERPAIR_COEF', str),
+    ('msg_random_sd', 'VESSEL_MSG_RANDOM_SD', str),
+]
+
+
+def env_lines(snap):
+    """스냅샷 → `export VESSEL_X=...` 줄 목록 + 스냅샷에 없어 모르는 키 목록. 새 배치를 옛 배치와 같은 설정으로 돌릴 때."""
+    lines, unknown = [], []
+    for key, env, fmt in _SNAP_TO_ENV:
+        if key in snap and snap[key] is not None:
+            lines.append(f"export {env}={fmt(snap[key])}")
+        else:
+            unknown.append(env)
+    args = ' '.join(f"--{a} {snap[a]}" for a in ('arm', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'rollout', 'seed', 'comm_on_at') if snap.get(a) is not None)
+    return lines, unknown, args
+
+
 if __name__ == '__main__':
-    # 간단 점검: 체크포인트 하나 열어서 헤더만 찍는다
-    if len(sys.argv) < 2:
-        print("사용: python ckpt_io.py <ckpt.pt> [device]")
-        sys.exit(2)
-    r = restore_policy(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else 'cpu')
-    print(describe(r.snap))
+    import argparse
+    ap = argparse.ArgumentParser(description='체크포인트 스냅샷 점검 / 재현용 env 출력')
+    ap.add_argument('ckpt')
+    ap.add_argument('--device', default='cpu')
+    ap.add_argument('--env', action='store_true', help='스냅샷을 export 줄로 출력 (eval $(python ckpt_io.py X.pt --env))')
+    a = ap.parse_args()
+    if a.env:
+        sd = torch.load(a.ckpt if os.path.isabs(a.ckpt) else os.path.join(os.environ.get('VESSEL_CKPT_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'checkpoints')), a.ckpt), map_location='cpu')
+        snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
+        if not snap:
+            print('# cfg_snapshot 없음 (2026-09-05 이전 체크포인트)'); sys.exit(1)
+        lines, unknown, args = env_lines(snap)
+        print('\n'.join(lines))
+        print(f"# 학습기 인자: {args}")
+        if unknown:
+            print(f"# 스냅샷에 없어 모르는 것(구 체크포인트): {' '.join(unknown)}  → 그 배치의 런처 로그로 확인")
+    else:
+        r = restore_policy(a.ckpt, a.device)
+        print(describe(r.snap))
