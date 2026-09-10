@@ -166,13 +166,14 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 ## 7. 설정
 
-**원칙: `config.py`가 정본.** 차원·경로·하이퍼파라미터·토글 전부 거기서 읽음. 그런데 현재 아래 세 파일이 `os.environ`을 직접 읽음 → **Tier 4에서 config로 통합 예정.** 그 전까지 새 env 키를 여기 추가하지 말 것.
+**원칙: `config.py`가 정본 — 2026-09-10 통합 완료** (커밋 348018b·f6998a2). `networks.py`·`vessel_gym.py`·`vessel_gym_train.py`의 비주석 `os.environ` 읽기 **0개**. 새 env 키는 `config.py`에만 추가하고 각 모듈은 import 만 한다.
 
-| 파일 | 직접 읽는 VESSEL_* 키 (unique, grep 2026-09-10) |
-|---|---|
-| `networks.py` (12) | `RADAR_ACT` :34 · `RADAR_HEAD` :47 · `RADAR_BOTTLENECK_CH` :48 · `MSG_TOKEN_GAIN` :63 · `RECON_EMA_FLOOR` :73 · `MOE_FAST` :88 · `RECON_EMA_PRE` :276 · `RECON_LEGACY_STAT` :314 · `MSG_LN` :490 · `AGG_MODE`/`NEAREST_SCALE`/`MSG_GAIN` :1046-1048, :1294-1296 |
-| `vessel_gym.py` (27) | 시뮬: `RADAR_RANGE` `ALLOW_SMALL_RADAR` `RADAR_DROPOUT_P/LEN` `COMM_RANGE` `MIN_GOAL_DIST` `RESPAWN_RNG_CONST` `MAX_EP_STEPS`/`MAX_STEP` `COLREGS_MODE` · 보상: `EARLY_AVOID_COEF` `EARLY_RISK_GATE` `EARLY_RELAX_TCPA` `COLREGS_GATE` `CMD_MISMATCH_COEF` `PROXRAMP_COEF/DIST` `LOS_GATE` `SPEED_AVOID_UNLOCK` `SPEED_UNLOCK_GATE` `COLLISION_PENALTY` `FUEL_COEF` `PROGRESS_COEF` `SIM_COLREGS_COEF` `FARPAIR_COEF/EXP` `REWARD_RANGE` |
-| `vessel_gym_train.py` (23) | `AGG_MODE` `NEAREST_SCALE` `MSG_GAIN` `MSG_LN` `MSG_RANDOM_SD` `MSG_TOKEN_GAIN` `MSG_GATE_APPLY` `RADAR_ACT/HEAD/BOTTLENECK_CH` `RECON_EMA_FLOOR` `FARFIELD_COEF` `PERPAIR_COEF` `ORACLE` `TIMEOUT_BOOTSTRAP` `GRAD_TELEMETRY` `CLIP_PER_MODULE` `COMM_TELEMETRY`/`_EVERY` `NOCOMM_SWEEP/MODE` `VALNORM_BETA` `BLIND_WARN_AFTER` |
+| 어디 | 무엇 | 비고 |
+|---|---|---|
+| `config.py` 끝 "config 통합" 절 | 레이더 `RADAR_ACT/HEAD/BOTTLENECK_CH` · 집계 `MSG_LN MSG_TOKEN_GAIN AGG_MODE NEAREST_SCALE MSG_GAIN MSG_RANDOM_SD` · `RECON_EMA_FLOOR RECON_LEGACY_STAT MOE_FAST` · 학습기 전용 12(`VALNORM_BETA FARFIELD/PERPAIR_COEF TIMEOUT_BOOTSTRAP GRAD_TELEMETRY CLIP_PER_MODULE MSG_GATE_APPLY NOCOMM_* BLIND_WARN_AFTER COMM_TELEMETRY*`) · vessel_gym 시뮬·보상 27 | 이름·기본값은 통합 전과 동일 — `test_golden` 비트동일로 확인 |
+| `networks.py` 모듈 전역 `MSG_LN AGG_MODE NEAREST_SCALE MSG_GAIN _RADAR_LEAKY/_HEAD/_BOTTLENECK_CH _MSG_TOKEN_GAIN _RECON_EMA_FLOOR` | config 값으로 초기화. **rollout(`_get_others_msg`, `vessel_gym_train.comm_gather`)과 update(`evaluate_actions`)가 같은 객체를 읽음** = 미러의 근거 | `ckpt_io.restore_policy`가 체크포인트 스냅샷으로 **이 전역을** 덮어씀. import 후 `os.environ` 변경은 무효 |
+| `vessel_gym_train.MSG_RANDOM_SD` | RANDOM 팔 난수 sd | 위와 같은 규약 |
+| 남은 env 직접 읽기 | `VESSEL_CKPT_DIR`(경로, ckpt_io) · Unity `main.py` 6개(SEED·PROFILE·GRAPHICS·ALLOW_PARTIAL_LOAD·RECV_ONLY_COUNT·METRIC_LOG) · C# 34개 | 경로·실행 인자·C# 은 통합 범위 밖 |
 
 **주요 토글 (`config.py`, 기본값은 코드 확인):**
 
@@ -222,6 +223,8 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
 ---
+
+- ⚠️ `_smoke_fullmoe.py` C절(PPO 미러 sum)은 2026-09-05 action_raw 변경 이전 작성 — 리팩토링 **전부터** FAIL(|lp diff| 1.9e-1, 리팩토링 전 코드로 재현). 낡은 검사이니 판정에 쓰지 말 것. 권위는 `_verify_ppo_mirror.py`(Windows 전용, Mac 은 torch↔numpy 비호환)·`_verify_comm_mirror.py`. D절도 Mac 에서 numpy 크래시.
 
 ## 9. 권위 문서 (주제별 정본 1개)
 

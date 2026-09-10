@@ -432,7 +432,7 @@ class GroundedAttention(nn.Module):
       새들*을 만들어 채널 양단 grad가 항등 0 → 1M step 비트동결(체크포인트 포렌식 실측). 소진폭(×0.1)은
       grad를 step1부터 살리면서 초기 영향은 작게 유지. comm 공정성은 구조 강제가 아니라
       comm-OFF arm과의 ground-truth 비교로 검증한다.
-    ★aggregate_single(rollout)·aggregate_batch(update)는 *같은 함수형* → 같은 partner 입력에
+    ★rollout·update 모두 aggregate_batch(벡터화) 하나를 탄다(2026-09-10 aggregate_single 제거) → 같은 partner 입력에
       같은 결과 → PPO ratio(old_logprob) 유효. batch만 padding을 -inf 마스킹으로 제외.
     """
     def __init__(self, msg_dim, relpos_dim, query_in_dim, d_attn=32):
@@ -447,16 +447,8 @@ class GroundedAttention(nn.Module):
             self.v_proj.weight.mul_(0.1)
             self.v_proj.bias.zero_()
 
-    def aggregate_single(self, q_in, relpos, msg_p):
-        """rollout 1-receiver 집계. q_in [Q], relpos [K,R], msg_p [K,M] → context [M].
-        실제 파트너만 들어옴(padding 없음) → 마스킹 불필요."""
-        query = self.q_proj(q_in)                              # [d]
-        token = torch.cat([relpos, msg_p * _MSG_TOKEN_GAIN], dim=-1)   # [K, R+M]
-        keys = self.k_proj(token)                              # [K, d]
-        vals = self.v_proj(token)                              # [K, M]
-        scores = (keys @ query) / self.scale                   # [K]
-        alpha = torch.softmax(scores, dim=0)                   # [K]
-        return (alpha.unsqueeze(-1) * vals).sum(dim=0)         # [M]
+    # (2026-09-10) aggregate_single 제거 — rollout 도 aggregate_batch(벡터화)를 쓰며 유일 호출부가 도달 불가였음.
+    #   rollout·update 가 **같은 aggregate_batch** 를 타는 것이 미러의 구조적 근거.
 
     def aggregate_batch(self, q_in, relpos, msg_part, mask):
         """update 배치 집계. q_in [N,1,Q], relpos [N,K,R], msg_part [N,K,M], mask [N,K,1]
@@ -1085,7 +1077,7 @@ class CNNPolicy(nn.Module):
             # ★ attention 벡터화 경로 (per-agent 파이썬 루프 제거 → GPU 커널 런치 급감, 6-way 병렬 회복).
             #   update의 evaluate_actions와 *동일한 aggregate_batch* 사용 → PPO mirror 구조적 보장.
             #   파트너 인덱스 행렬을 CPU에서 1회 구성(가벼움) → gather + aggregate_batch 1회(GPU 벡터연산).
-            #   per-agent aggregate_single 루프와 수치 동일(softmax가 padding을 -inf 마스킹).
+            #   (구 per-agent aggregate_single 루프와 수치 동일했음 — 2026-09-10 제거. softmax가 padding을 -inf 마스킹.)
             if self.use_attention and comm_relpos is not None and self_state is not None:
                 Kmax = MAX_COMM_PARTNERS
                 idx_mat = np.zeros((n_agent, Kmax), dtype=np.int64)
@@ -1164,27 +1156,14 @@ class CNNPolicy(nn.Module):
                 K = len(partner_indices)
                 if K == 0:
                     continue
-                if (self.use_attention and comm_relpos is not None and agent_id in comm_relpos
-                        and self_state is not None):
-                    # ★ 위치 grounding + attention: query=receiver[self,goal], kv=[relpos⊕msg]
-                    rp = torch.as_tensor(comm_relpos[agent_id][kept_pos], dtype=torch.float32, device=msg.device)  # [K,3]
-                    msg_p = msg[0, partner_indices, :]                                                       # [K,6]
-                    q_in = torch.cat([self_state[0, i], goal[0, i]], dim=-1)                                 # [6]
-                    s = self.attn.aggregate_single(q_in, rp, msg_p)                                          # [6]
-                # ⚠️도달 불가(죽은 분기): 동일 조건은 위 벡터화 pos_ground 분기가 항상 먼저 return.
-                #   내부의 numpy fancy-indexing→torch.as_tensor 경로는 torch/numpy 버전 비호환 환경에서
-                #   실행 불가하므로, 벡터화 분기 조건을 바꿀 경우 이 폴백을 살리지 말고 벡터화 쪽을 수정할 것.
-                elif self.pos_ground and comm_relpos is not None and agent_id in comm_relpos:
-                    # 위치 grounding: [상대방위·거리 + 메시지] → encoder → mean
-                    rp = torch.as_tensor(comm_relpos[agent_id][kept_pos], dtype=torch.float32, device=msg.device)  # [K,3]
-                    msg_p = msg[0, partner_indices, :]                                                       # [K,6]
-                    s = self.msg_encoder(torch.cat([rp, msg_p], dim=-1)).mean(dim=0)                          # [6]
-                else:
-                    s = msg[0, partner_indices, :].sum(dim=0)
-                    if agg_mode == 'mean':
-                        s = s / K
-                    elif agg_mode == 'scale':
-                        s = s * (nearest_scale / K)
+                # ★2026-09-10: attention·pos_ground 의 per-agent 폴백 제거 — 둘 다 위 벡터화 분기가 항상 먼저
+                #   return 해 도달 불가였음(조건이 벡터화 조건의 부분집합). 이 루프는 POS_GROUND=0·USE_ATTENTION=0
+                #   대조군(sum/mean/scale)에서만 돈다 — _verify_comm_mirror 'pos_ground off (sum/mean)' 케이스가 그 경로.
+                s = msg[0, partner_indices, :].sum(dim=0)
+                if agg_mode == 'mean':
+                    s = s / K
+                elif agg_mode == 'scale':
+                    s = s * (nearest_scale / K)
                 if msg_gain != 1.0:
                     s = s * msg_gain
                 others_msg[0, i, :] = s
@@ -1304,7 +1283,7 @@ class CNNPolicy(nn.Module):
             msg_part = self.msg_actor(partner_x, partner_goal, partner_self, partner_situations)  # [N,K,msg_dim]
             Kc = partner_mask.sum(dim=1, keepdim=True).clamp(min=1.0)                       # [N,1,1] 실제 파트너 수
             if self.use_attention and partner_relpos is not None:
-                # ★ 위치 grounding + attention (rollout aggregate_single과 동일 함수형 → PPO ratio 유효)
+                # ★ 위치 grounding + attention (rollout 도 같은 aggregate_batch → PPO ratio 유효)
                 q_in = torch.cat([self_state, goal], dim=-1)                                  # [N,1,6]
                 others_msg = self.attn.aggregate_batch(q_in, partner_relpos, msg_part, partner_mask)  # [N,1,6]
             elif self.pos_ground and partner_relpos is not None:
