@@ -436,3 +436,45 @@ MSG_RANDOM_SD = _env_float('VESSEL_MSG_RANDOM_SD', 0.20)           # RANDOM 팔 
 RECON_EMA_FLOOR = _env_float('VESSEL_RECON_EMA_FLOOR', 0.0)        # 그룹 정규화 바닥 (2026-09-07)
 RECON_LEGACY_STAT = _env_str('VESSEL_RECON_LEGACY_STAT', '0') == '1'
 MOE_FAST = _env_str('VESSEL_MOE_FAST', '0') == '1'
+
+# ── 학습기(vessel_gym_train) 전용 — 2026-09-10 Tier 4.1b. 기본값·의미 불변 ──
+VALNORM_BETA = _env_float('VESSEL_VALNORM_BETA', 0.98)             # 리턴 정규화 EMA
+FARFIELD_COEF = _env_float('VESSEL_FARFIELD_COEF', 0.0)            # far-field PBRS (기본 off: reward_range=COMM_RANGE 와 중복)
+PERPAIR_COEF = _env_float('VESSEL_PERPAIR_COEF', -0.15)            # ⚠️C# VesselAgent 기본은 0(off) — 경로별 불일치, 저자 결정 대기
+TIMEOUT_BOOTSTRAP = _env_str('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
+GRAD_TELEMETRY = _env_str('VESSEL_GRAD_TELEMETRY', '0') == '1'     # 모듈별 grad norm·clip 계수 기록 (진단)
+CLIP_PER_MODULE = _env_str('VESSEL_CLIP_PER_MODULE', '0') == '1'   # msg_actor/ctr_actor/critic/나머지 각각 clip
+MSG_GATE_APPLY = _env_str('VESSEL_MSG_GATE_APPLY', '0') == '1'     # 게이트 개방 페널티를 loss 에 실제로 가산 (기본 0 = 안 함)
+NOCOMM_SWEEP = _env_str('VESSEL_NOCOMM_SWEEP', '').strip()         # 혼합 함대: 통신 불가 선박 지정
+NOCOMM_MODE = _env_str('VESSEL_NOCOMM_MODE', 'mix').lower()
+BLIND_WARN_AFTER = _env_int('VESSEL_BLIND_WARN_AFTER', 200)        # ControlActor 레이더 인코더 grad 0 연속 경고 임계
+COMM_TELEMETRY = _env_str('VESSEL_COMM_TELEMETRY', '0') == '1'     # 학습 중 *_comm.csv 기록 (ON 팔만)
+COMM_TELEMETRY_EVERY = _env_int('VESSEL_COMM_TELEMETRY_EVERY', 5)  # update 단위
+
+# ── GPU 배치 시뮬(vessel_gym) 상수 — 2026-09-10 Tier 4.1c. 기본값·의미 불변. vessel_gym 은 여기서 import 만 한다. ──
+#   ⚠️보상 계수는 Unity C#(VesselAgent.cs) 과 일부 다름(저자 명시: smoothness ×SUBSTEPS 등). 정본 결정은 저자 몫.
+RADAR_RANGE = _env_float('VESSEL_RADAR_RANGE', 56.0)   # 제한시계 regime: *지각(obs)만* 축소. 보상 기준은 RADAR_RANGE_BASE 56 고정
+ALLOW_SMALL_RADAR = _env_str('VESSEL_ALLOW_SMALL_RADAR', '0') == '1'   # RADAR_RANGE < 19.6m 가드 우회
+RADAR_DROPOUT_P = _env_float('VESSEL_RADAR_DROPOUT_P', 0.0)   # 결정당 블랙아웃 진입확률
+RADAR_DROPOUT_LEN = _env_int('VESSEL_RADAR_DROPOUT_LEN', 50)   # 블랙아웃 지속(결정)
+MIN_GOAL_DIST = _env_float('VESSEL_MIN_GOAL_DIST', 400.0)   # 스폰-목표 최소거리
+RESPAWN_RNG_CONST = _env_str('VESSEL_RESPAWN_RNG_CONST', '0') == '1'   # 리스폰 난수 스트림 고정(opt-in, 과거 run 재현 보호)
+EARLY_AVOID_COEF = _env_float('VESSEL_EARLY_AVOID_COEF', 2.0)   # DCPA 벌리면 +보상
+EARLY_RISK_GATE = _env_float('VESSEL_EARLY_RISK_GATE', 0.1)   # earlyAvoid 발화 게이트
+EARLY_RELAX_TCPA = _env_str('VESSEL_EARLY_RELAX_TCPA', '1') == '1'   # tcpa 게이트 제거
+COLREGS_RISK_GATE = _env_float('VESSEL_COLREGS_GATE', 0.3)   # 준수보상 발화 게이트
+CMD_MISMATCH_COEF = _env_float('VESSEL_CMD_MISMATCH_COEF', -0.03)   # 타속 포화 패널티
+PROXRAMP_COEF = _env_float('VESSEL_PROXRAMP_COEF', 0.0)   # C# 기본 0=off
+PROXRAMP_DIST = _env_float('VESSEL_PROXRAMP_DIST', 24.0)   # = DCPA_RISK
+LOS_GATE = _env_str('VESSEL_LOS_GATE', '0') == '1'   # 가려진 위협 보상 제외
+SPEED_AVOID_UNLOCK = _env_str('VESSEL_SPEED_AVOID_UNLOCK', '0') == '1'
+SPEED_UNLOCK_GATE = _env_float('VESSEL_SPEED_UNLOCK_GATE', 0.3)
+COLREGS_MODE = _env_str('VESSEL_COLREGS_MODE', 'unity').lower()   # 'unity'(기본) | 'unity_cs'(C# 원본 크기) | 'simple'(구 축약본)
+MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS', os.environ.get('VESSEL_MAX_STEP', '45000')))   # 물리스텝. C# VESSEL_MAX_STEP 이름 호환 폴백
+COLLISION_PENALTY = _env_float('VESSEL_COLLISION_PENALTY', -300.0)
+FUEL_COEF = _env_float('VESSEL_FUEL_COEF', 0.02)
+PROGRESS_COEF = _env_float('VESSEL_PROGRESS_COEF', 3.0)   # 진행 shaping (C# goalDistanceCoef 1.0 과 다름)
+COLREGS_SIM_COEF = _env_float('VESSEL_SIM_COLREGS_COEF', 0.45)   # COLREGs 준수 페널티 계수
+FARPAIR_COEF = _env_float('VESSEL_FARPAIR_COEF', 0.0)   # far-field 직접 비용 (기본 0)
+FARPAIR_EXP = _env_float('VESSEL_FARPAIR_EXP', 2.0)
+REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → VesselBatchEnv 가 DETECTION_RANGE(56) 사용

@@ -23,6 +23,8 @@ import warnings
 
 import torch
 
+import config as _cfg   # ★2026-09-10: 아래 상수의 정본은 config.py. 이름은 이 모듈 속성으로 유지(vg.COMM_RANGE 등 참조처 불변)
+
 # ─────────────────────────── 상수 (GlobalScale × VESSEL_SCALE=0.2 반영) ───────────────────────────
 DT = 0.04                    # fixedDeltaTime
 SUBSTEPS = 10                # DecisionPeriod — 결정(0.4s)당 물리 서브스텝
@@ -37,7 +39,7 @@ DRAG_COEF = 0.1
 DRAG_THRUST_MULT = 0.3       # targetSpeed>=0.1이면 drag ×0.3
 DRAG_THRUST_THRESH = 0.1     # 절대속도 단위
 
-RADAR_RANGE = float(os.environ.get('VESSEL_RADAR_RANGE', '56.0'))  # ★제한시계(안개) regime: *지각(obs)만* 축소
+RADAR_RANGE = _cfg.RADAR_RANGE  # ★제한시계(안개) regime: *지각(obs)만* 축소
 RADAR_RANGE_BASE = 56.0      # 보상 기준 원값 — VESSEL_RADAR_RANGE와 무관하게 보상 불변(CTDE privileged). <20m 금지(THR 19.6 클립)
 # ★2026-09-05 fix: 위 '<20m 금지'가 주석에만 있고 코드 가드가 없었음.
 #   RADAR_RANGE < THR(=19.6) 이면 미감지 ray 가 RADAR_RANGE 로 복원되어(_reward #5)
@@ -45,20 +47,20 @@ RADAR_RANGE_BASE = 56.0      # 보상 기준 원값 — VESSEL_RADAR_RANGE와 �
 #   time penalty 급) → '보상은 레이더 축소와 무관(CTDE privileged)' 설계 전제가 깨짐.
 #   실사용 스크립트는 전부 56m 이라 동작 변화 없음. 의도적 실험은 env 로 바이패스.
 if (RADAR_RANGE < RADAR_RANGE_BASE * 0.35
-        and os.environ.get('VESSEL_ALLOW_SMALL_RADAR', '0') != '1'):
+        and not _cfg.ALLOW_SMALL_RADAR):
     raise ValueError(
         f'VESSEL_RADAR_RANGE={RADAR_RANGE} < {RADAR_RANGE_BASE * 0.35} — 미감지 ray 복원값이 '
         'proximity 보상 문턱(THR 19.6) 보다 작아 공해에서도 벌점이 상시 발화함 '
         '(보상 불변 전제 파괴). 의도한 것이면 VESSEL_ALLOW_SMALL_RADAR=1 로 해제할 것.')
 # ★센서고장(radar dropout) regime: 배별 간헐 블랙아웃 — obs만 마스킹(전방위 미감지 +0.5), 보상 불변.
 #   블랙아웃 중 유일한 정보원 = 통신(파트너 threat-relay/위치) → 통신 가치가 필수가 되는 공정 시나리오.
-RADAR_DROPOUT_P = float(os.environ.get('VESSEL_RADAR_DROPOUT_P', '0'))     # 결정당 블랙아웃 진입확률
-RADAR_DROPOUT_LEN = int(os.environ.get('VESSEL_RADAR_DROPOUT_LEN', '50'))  # 블랙아웃 지속(결정 수) ≈ 20s
+RADAR_DROPOUT_P = _cfg.RADAR_DROPOUT_P     # 결정당 블랙아웃 진입확률
+RADAR_DROPOUT_LEN = _cfg.RADAR_DROPOUT_LEN  # 블랙아웃 지속(결정 수) ≈ 20s
 RADAR_RAYS = 360
 RAY_HEIGHT = 0.2             # obs 평면 판정엔 무영향(수평 ray) — 기록용
 GOAL_NORM_K = 150.0
 GOAL_REACHED = 3.0
-COMM_RANGE = float(os.environ.get('VESSEL_COMM_RANGE', '200.0'))  # (정책 통신 파트너용, sim은 위치만 제공)
+COMM_RANGE = _cfg.COMM_RANGE  # (정책 통신 파트너용, sim은 위치만 제공)
 # ★2026-08-30 420 → 200 (사용자 결정): 통신 반경과 *보상이 반응하는 반경*을 하나로 맞춘다.
 #   기존 구조는 보상 risk 가 56m 에서 하드컷(dist>56 → risk=0)이고 56~420m 는 telescoping PBRS 뿐이라
 #   '통신으로만 아는 구간'에 걸린 보상이 전체의 0.31% 였다(실측) = 통신을 쓸 이유가 사실상 0.
@@ -67,14 +69,14 @@ COMM_RANGE = float(os.environ.get('VESSEL_COMM_RANGE', '200.0'))  # (정책 통�
 # ★goal 배정 최소거리 (C# VesselManager.minGoalDistance 대응, 원좌표 기준). crossing!=2 모드에서만 사용.
 #   C# 기본 2.5m 는 선체 길이보다 작아 사실상 무제약 → 70m 짜리 '옆동네' 여정이 섞였다.
 #   400m: 스폰당 후보 6~9개 유지(랜덤성 확보) + 최단 여정 430m + 목표 16개 전부 사용 (2026-08-27 측정).
-MIN_GOAL_DIST = float(os.environ.get('VESSEL_MIN_GOAL_DIST', '400.0'))
+MIN_GOAL_DIST = _cfg.MIN_GOAL_DIST
 # ★2026-09-05 fix(opt-in): _respawn 의 스폰 추첨이 '리셋된 배가 있는 인덱스'에서만
 #   난수를 소비해 호출당 소비량이 데이터 의존이었음(0 ~ N×E×n_spawn).
 #   → 같은 seed 라도 정책이 조금 달라 리셋 패턴이 바뀌는 순간 그 뒤 모든 스폰·목표·
 #   초기속도가 어긋나 seed-paired 비교가 '같은 시나리오 비교'가 아니게 됨.
 #   1로 켜면 호출당 E×N×n_spawn 으로 고정(분포 동일, 비트만 다름).
 #   ⚠기본 0 = 기존 난수 스트림 유지 — 과거 run 재현 숫자를 조용히 바꾸지 않기 위함.
-RESPAWN_RNG_CONST = os.environ.get('VESSEL_RESPAWN_RNG_CONST', '0') == '1'
+RESPAWN_RNG_CONST = _cfg.RESPAWN_RNG_CONST
 
 # ── C# COLREGsHandler/GlobalScale 상수 (BASE × VESSEL_SCALE 0.2). 시간항은 스케일 불변 ──
 EARLY_ACTION_TIME       = 21.5   # Rule 16 조기행동 시점(s)
@@ -95,20 +97,20 @@ LOW_SPEED_THRESHOLD     = 0.2    # VesselAgent.lowSpeedThreshold
 #   구조적 한계가 아니라 포팅 미완이었으므로 C# 기본값 그대로 옮긴다.
 # ★2026-08-31 0.3→2.0 (사용자 승인): 정직 이식 시 조우당 +0.4 = 충돌코스 벌점의 0.2% 로 무의미했음.
 #   2.0 이면 회피 완수(ΔDCPA~24m) 한 번이 조우당 +2.5 급 = 직진선이 같은 시간 받는 수동 보상과 동급.
-EARLY_AVOID_COEF   = float(os.environ.get('VESSEL_EARLY_AVOID_COEF', '2.0'))   # DCPA 벌리면 +보상
-EARLY_RISK_GATE    = float(os.environ.get('VESSEL_EARLY_RISK_GATE', '0.1'))    # earlyAvoid 발화 게이트
-EARLY_RELAX_TCPA   = os.environ.get('VESSEL_EARLY_RELAX_TCPA', '1') == '1'     # tcpa 게이트 제거(any tcpa)
-COLREGS_RISK_GATE  = float(os.environ.get('VESSEL_COLREGS_GATE', '0.3'))       # 준수보상 발화 게이트
-CMD_MISMATCH_COEF  = float(os.environ.get('VESSEL_CMD_MISMATCH_COEF', '-0.03'))# 타속 포화 패널티
-PROXRAMP_COEF      = float(os.environ.get('VESSEL_PROXRAMP_COEF', '0'))        # C# 기본 0=off
-PROXRAMP_DIST      = float(os.environ.get('VESSEL_PROXRAMP_DIST', '24.0'))     # = DCPA_RISK
-LOS_GATE           = os.environ.get('VESSEL_LOS_GATE', '0') == '1'             # 가려진 위협 보상 제외
-SPEED_AVOID_UNLOCK = os.environ.get('VESSEL_SPEED_AVOID_UNLOCK', '0') == '1'
-SPEED_UNLOCK_GATE  = float(os.environ.get('VESSEL_SPEED_UNLOCK_GATE', '0.3'))
+EARLY_AVOID_COEF   = _cfg.EARLY_AVOID_COEF   # DCPA 벌리면 +보상
+EARLY_RISK_GATE    = _cfg.EARLY_RISK_GATE    # earlyAvoid 발화 게이트
+EARLY_RELAX_TCPA   = _cfg.EARLY_RELAX_TCPA     # tcpa 게이트 제거(any tcpa)
+COLREGS_RISK_GATE  = _cfg.COLREGS_RISK_GATE       # 준수보상 발화 게이트
+CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
+PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
+PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
+LOS_GATE           = _cfg.LOS_GATE             # 가려진 위협 보상 제외
+SPEED_AVOID_UNLOCK = _cfg.SPEED_AVOID_UNLOCK
+SPEED_UNLOCK_GATE  = _cfg.SPEED_UNLOCK_GATE
 # 'unity'    = C# 이식 + 2026-08-31 균형 수술(기본): 안전통과 보너스 제거, 직진선 크기 ±0.5 통일.
 # 'unity_cs' = C# EvaluateCompliance 원본 크기 그대로(수술 전) — ablation/재현용.
 # 'simple'   = 2026-08-30 이전 파이썬 축약본(좌현 벌점만) — 옛 run 재현용.
-COLREGS_MODE       = os.environ.get('VESSEL_COLREGS_MODE', 'unity').lower()
+COLREGS_MODE       = _cfg.COLREGS_MODE
 
 DETECTION_RANGE = 56.0       # COLREGS_DETECTION (상황판정·COLREGs 게이트·situation obs 전용 — 불변)
 # ★보상이 반응하는 반경 (2026-08-30). DETECTION_RANGE 는 '규정 판정 거리', REWARD_RANGE 는 '비용 부과 거리'로 분리.
@@ -153,17 +155,16 @@ GOAL_PTS_SCENE = (
 #   ★2026-08-27 재산정(ring 1.0): 여정 430~636m. 실측 시간계수 k=우회/스로틀 (열린목표 도착 216건,
 #   시간초과 검열 0건) 중앙 1.35 · 최대 2.64. 몬테카를로 2M → 구조적 시간초과 3000결정 0.651% /
 #   4000 0.025% / 4500 0.004%. 4500 채택(절대하한 1989결정의 2.26배). 평균 에피소드는 예산과 무관하게 1424결정.
-MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS',
-                        os.environ.get('VESSEL_MAX_STEP', '45000')))   # → 4500 결정 (C# VESSEL_MAX_STEP 과 이름 호환)
-COLLISION_PENALTY = float(os.environ.get('VESSEL_COLLISION_PENALTY', '-300.0'))
+MAX_EPISODE_STEPS = _cfg.MAX_EPISODE_STEPS   # → 4500 결정 (C# VESSEL_MAX_STEP 과 이름 호환)
+COLLISION_PENALTY = _cfg.COLLISION_PENALTY
 # ★가치정렬 reward 실험용(2026-08-09): 안전·효율 가중을 학습목표에 반영 — 양 arm 동일 적용이라 공정
-FUEL_COEF = float(os.environ.get('VESSEL_FUEL_COEF', '0.02'))
+FUEL_COEF = _cfg.FUEL_COEF
 # ★진행(shaping) 보상 계수 — 기본 3.0(2026-08 reward#1 iter2 에서 1.0->3.0). 위 주석 참조.
-PROGRESS_COEF = float(os.environ.get('VESSEL_PROGRESS_COEF', '3.0'))
+PROGRESS_COEF = _cfg.PROGRESS_COEF
 ARRIVAL_REWARD = 150.0        # ★reward#1 iter2 2026-08: 100→150 (도달 가치↑, 영구회피보다 도달 유리하게)
 TIMEOUT_PENALTY = -50.0       # ★2026-08: timeout=실패 → 완만 페널티(충돌 -300보다 훨씬 약해 충돌 유발 안 함, 배회 억제)
 # ★ablation 토글: COLREGs 준수 페널티 계수 (기본 0.45=1.5×강화). VESSEL_SIM_COLREGS_COEF=0 → COLREGs 강화 OFF arm.
-COLREGS_SIM_COEF = float(os.environ.get('VESSEL_SIM_COLREGS_COEF', '0.45'))
+COLREGS_SIM_COEF = _cfg.COLREGS_SIM_COEF
 
 # 종료 코드
 OUT_RUNNING = 0
@@ -225,7 +226,7 @@ class VesselBatchEnv:
         _omitted = []
         if crossing is _UNSET:
             _omitted.append('crossing(기본 2=대척 편중배정, 학습·평가는 0)')
-        if reward_range is None and 'VESSEL_REWARD_RANGE' not in os.environ:
+        if reward_range is None and _cfg.REWARD_RANGE is None:
             _omitted.append('reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=%g)' % COMM_RANGE)
         if _omitted:
             warnings.warn('VesselBatchEnv: ' + ' / '.join(_omitted) + ' 를 명시하지 않음 - '
@@ -236,14 +237,14 @@ class VesselBatchEnv:
         # 보상 env 계수 (commgate: farfield=0.5, perpair=-0.3)
         self.farfield_coef = farfield_coef
         # ★far-field 직접 비용 (env override 가능, 기본 0 = 기존 동작 유지)
-        self.farpair_coef = (float(os.environ.get('VESSEL_FARPAIR_COEF', '0'))
+        self.farpair_coef = (_cfg.FARPAIR_COEF
                              if farpair_coef is None else farpair_coef)
-        self.farpair_exp = (float(os.environ.get('VESSEL_FARPAIR_EXP', '2.0'))
+        self.farpair_exp = (_cfg.FARPAIR_EXP
                             if farpair_exp is None else farpair_exp)
         self.perpair_coef = perpair_coef
         self.perpair_exp = perpair_exp
         # ★보상 반경: None 이면 env(VESSEL_REWARD_RANGE) → 없으면 DETECTION_RANGE(=이전 동작 비트동일)
-        self.reward_range = (float(os.environ.get('VESSEL_REWARD_RANGE', DETECTION_RANGE))
+        self.reward_range = ((_cfg.REWARD_RANGE if _cfg.REWARD_RANGE is not None else float(DETECTION_RANGE))
                              if reward_range is None else float(reward_range))
         self.gen = torch.Generator(device=self.device).manual_seed(seed)
 

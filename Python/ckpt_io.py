@@ -58,16 +58,16 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'radar_bottleneck_ch': int(net._RADAR_BOTTLENECK_CH),
         # 가중치에 흔적이 안 남는 값들 — 스냅샷이 유일한 근거
         'msg_token_gain': float(net._MSG_TOKEN_GAIN),
-        'clip_per_module': os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1',
+        'clip_per_module': bool(cfg.CLIP_PER_MODULE),
         'msg_l2_coef': float(cfg.MSG_L2_COEF),
         'recon_ema_floor': float(net._RECON_EMA_FLOOR),
-        'comm_telemetry': os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1',
+        'comm_telemetry': bool(cfg.COMM_TELEMETRY),
         'agg_mode': net.AGG_MODE,
         'msg_gain': float(net.MSG_GAIN),
         'timeout_bootstrap': trunc_boot,
         # ★2026-09-10 추가: env 보상 계수. 학습기는 env 로 읽는데 스냅샷에 없어서 평가·진단이 각자 리터럴을 박았다.
-        'farfield_coef': float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),
-        'perpair_coef': float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15')),
+        'farfield_coef': float(cfg.FARFIELD_COEF),
+        'perpair_coef': float(cfg.PERPAIR_COEF),
         'perpair_exp': 3.0,
         'radar_range': float(vg.RADAR_RANGE),
     }
@@ -147,14 +147,10 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     snap_act = (snap or {}).get('radar_act')
     if snap_act is not None:
         net._RADAR_LEAKY = (str(snap_act).lower() == 'leaky')
-    elif os.environ.get('VESSEL_RADAR_ACT'):
-        net._RADAR_LEAKY = os.environ['VESSEL_RADAR_ACT'].lower() == 'leaky'
-        notes.append(f"스냅샷에 radar_act 없음 → env VESSEL_RADAR_ACT={os.environ['VESSEL_RADAR_ACT']} 사용. "
-                     f"학습 때 값과 다르면 조용히 틀린 숫자")
     else:
-        net._RADAR_LEAKY = False
-        if snap is None:
-            notes.append("스냅샷·env 둘 다 없어 radar_act=relu 가정")
+        # 스냅샷 없음(2026-09-05 이전) → config(=import 시점 env) 값. 학습 때와 다르면 조용히 틀리므로 기록
+        net._RADAR_LEAKY = (cfg.RADAR_ACT == 'leaky')
+        notes.append(f"스냅샷에 radar_act 없음 → config RADAR_ACT={cfg.RADAR_ACT} 사용. 학습 때 값과 다르면 조용히 틀린 숫자")
 
     ck_arm = None
     if snap:
@@ -260,8 +256,8 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
     n_vessels = int(pick('vessels', n_vessels, 'vessels', 16))
     ring = float(pick('ring', ring, 'ring', 1.0))
     crossing = int(pick('crossing', crossing, 'crossing', 0))
-    ff = float(pick('farfield_coef', farfield_coef, 'farfield_coef', float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0'))))
-    pp = float(pick('perpair_coef', perpair_coef, 'perpair_coef', float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15'))))
+    ff = float(pick('farfield_coef', farfield_coef, 'farfield_coef', float(cfg.FARFIELD_COEF)))
+    pp = float(pick('perpair_coef', perpair_coef, 'perpair_coef', float(cfg.PERPAIR_COEF)))
     pe = float(pick('perpair_exp', perpair_exp, 'perpair_exp', 3.0))
 
     env = vg.VesselBatchEnv(num_envs=num_envs, n_vessels=n_vessels, device=device, seed=seed,

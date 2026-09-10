@@ -136,7 +136,7 @@ class ValueNorm:
       value_loss 만 정규화 공간에서 계산한다. 체크포인트에 통계를 함께 저장(이어학습·분석용).
     """
     def __init__(self, device, beta=None, eps=1e-6):
-        self.beta = float(os.environ.get('VESSEL_VALNORM_BETA', '0.98')) if beta is None else beta
+        self.beta = cfg.VALNORM_BETA if beta is None else beta
         self.eps = eps
         self.m1 = torch.zeros((), device=device)     # EMA of E[x]   (편향 있음)
         self.m2 = torch.zeros((), device=device)     # EMA of E[x^2] (편향 있음)
@@ -556,8 +556,8 @@ def main():
                             risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
                             # ★reward#1 fix 2026-08: per-pair 벌점을 risk³로 집중(exp 1.6→3.0)+계수↓(-0.3→-0.15)
                             #   → 중간위험 다중선박 통과 허용, 고위험만 강함. (colcourse/proximity 집중과 짝)
-                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),
-                            perpair_coef=float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15')),
+                            farfield_coef=cfg.FARFIELD_COEF,
+                            perpair_coef=cfg.PERPAIR_COEF,
                             perpair_exp=3.0)
     policy = CNNPolicy(MSG_DIM, cfg.CONTINUOUS_ACTION_SIZE, FRAMES).to(device)
     opt = torch.optim.Adam(policy.parameters(), lr=cfg.LEARNING_RATE)
@@ -591,7 +591,7 @@ def main():
     # ★2026-09-05 fix: ORACLE 은 rollout 을 make_others_msg(참 goal 주입)로 만드는데, --arm ON 이면
     #   rollout 은 학습채널(comm_gather)을 쓰고 update(networks.evaluate_actions)는 USE_ORACLE 분기를 타
     #   *참 goal* 을 주입한다 → rollout != update 로 ratio 가 조용히 깨진다. 조합 자체를 막는다.
-    assert not (args.arm == 'ON' and os.environ.get('VESSEL_ORACLE', '0') == '1'), \
+    assert not (args.arm == 'ON' and cfg.USE_ORACLE), \
         "--arm ON 과 VESSEL_ORACLE=1 은 같이 못 씀. update 가 oracle 분기를 타서 rollout 과 어긋남 " \
         "(oracle 통제군은 --arm ORACLE 로 돌릴 것)"
     # ★난수 대조군은 상수 입력 경로(OFF/ORACLE와 동일)로 흐르므로 통신 채널 학습이 없어야 정상이다.
@@ -602,10 +602,10 @@ def main():
 
     # ★2026-09-05 fix(opt-in): timeout 절단을 GAE 에서 '절단'으로 취급할지.
     #   기본 0 = 기존 동작(상수 trunc=0, timeout 을 진짜 종료로 취급) — 비트동일.
-    _trunc_boot = os.environ.get('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
-    _grad_tele = os.environ.get('VESSEL_GRAD_TELEMETRY', '0') == '1'   # 모듈별 grad norm·clip 계수 (진단 전용)
+    _trunc_boot = cfg.TIMEOUT_BOOTSTRAP
+    _grad_tele = cfg.GRAD_TELEMETRY   # 모듈별 grad norm·clip 계수 (진단 전용)
     _gacc = {}
-    _clip_per_module = os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1'
+    _clip_per_module = cfg.CLIP_PER_MODULE
     if _clip_per_module:
         print('[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 '
               f'{cfg.MAX_GRAD_NORM} 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.', flush=True)
@@ -616,7 +616,7 @@ def main():
     #   안 더해졌다(gate_open_sum 참조처는 main.py 뿐). 값을 주고 돌려도 cfg 스냅샷에만
     #   남아 문서와 실행이 어긋난다. 계수를 살리는 건 설계 변경이므로 기본은 그대로 두고
     #   ① 조용한 무효화를 경고로 드러내고 ② VESSEL_MSG_GATE_APPLY=1 로만 실제 적용한다.
-    _gate_apply = os.environ.get('VESSEL_MSG_GATE_APPLY', '0') == '1'
+    _gate_apply = cfg.MSG_GATE_APPLY
     if args.arm == 'ON' and cfg.MSG_GATE_COEF > 0.0 and not _gate_apply:
         print(f'[msg-gate] 경고: MSG_GATE_COEF={cfg.MSG_GATE_COEF} 이지만 이 학습기에선 loss 에 미적용 '
               f'(죽은 knob). 적용하려면 VESSEL_MSG_GATE_APPLY=1', flush=True)
@@ -649,10 +649,10 @@ def main():
     #   VESSEL_NOCOMM_SWEEP="2,4,6,8,10,12,14"  환경마다 다른 비율을 심는다(한 번의 학습으로 전 비율 커버)
     #   VESSEL_NOCOMM_MODE=radar|rx|mix         못 보내고 못 받음 / 듣기만 함 / 환경마다 번갈아
     send_mask = recv_mask = None
-    _sweep = os.environ.get('VESSEL_NOCOMM_SWEEP', '').strip()
+    _sweep = cfg.NOCOMM_SWEEP
     if _sweep:
         _ks = [int(s) for s in _sweep.split(',') if s.strip()]
-        _mode = os.environ.get('VESSEL_NOCOMM_MODE', 'mix').lower()
+        _mode = cfg.NOCOMM_MODE
         _nocomm = torch.zeros(E, N, dtype=torch.bool, device=device)
         _rxonly = torch.zeros(E, dtype=torch.bool, device=device)
         for e in range(E):
@@ -714,7 +714,7 @@ def main():
     ema_r = None
     # 붕괴 검출기 상태 (위 [blind] 참조)
     _blind_run = 0
-    _BLIND_WARN = int(os.environ.get('VESSEL_BLIND_WARN_AFTER', '200'))
+    _BLIND_WARN = cfg.BLIND_WARN_AFTER
     # ★상태복원 그룹별 손실 감시 CSV (2026-09-04): gradient 쏠림을 학습 '도중에' 본다
     _sr_log = {}
     aux_f = None
@@ -732,8 +732,8 @@ def main():
     #   ON 팔에서만 의미 있음(OFF 는 others_msg≡0). 전용 CPU generator 로 학습 RNG 와 분리한다.
     _tele_f = None
     _tele_gen = None
-    _tele_every = int(os.environ.get('VESSEL_COMM_TELEMETRY_EVERY', '5'))   # update 단위
-    if os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1' and csv_path and args.arm == 'ON':
+    _tele_every = cfg.COMM_TELEMETRY_EVERY   # update 단위
+    if cfg.COMM_TELEMETRY and csv_path and args.arm == 'ON':
         _tele_path = os.path.splitext(csv_path)[0] + '_comm.csv'
         _tele_mode = 'a' if (args.resume and os.path.exists(_tele_path)) else 'w'
         _tele_f = open(_tele_path, _tele_mode, encoding='utf-8')
