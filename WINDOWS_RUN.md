@@ -67,8 +67,10 @@ python Python\convergence_gate.py results\...gate1_OFF_s42\metric.csv results\..
 - `oracle > OFF` (충돌률·near-miss에서 뚜렷) → Stage 2 진행
 - `oracle ≈ OFF` → 이 regime엔 통신 가치 없음 → regime 강화 후 재측정:
   ```powershell
-  powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 1 -VesselCount 24 -RingScale 0.4
+  powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 1 -VesselCount 20
   ```
+  ⚠️ RingScale 0.4/0.5는 스폰이 장애물 그리드와 겹쳐 금지(트러블슈팅 표 참조). 밀도 강화는 VesselCount↑로.
+  단 씬 스폰 포인트가 20개라 VesselCount 상한 = 20 (초과분은 클램프됨).
 
 ## 5. Stage 2 (천장 확인 후에만 — ONsevered vs ONc5c)
 
@@ -86,6 +88,7 @@ powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 2
 
 | 증상 | 원인 / 조치 |
 |---|---|
+| collision_obstacle ~77%, stepCount 중앙값 1 (즉사) | **RingScale 0.5 사용** — 스폰링(원본 250m)×0.5=125m 모서리 4점이 장애물 3×3 그리드(간격 120m, 캡슐반경 20m) 모서리 장애물 캡슐 안(중심 7m 옆)에 스폰됨. 0.4도 표면 근접이라 위험. **0.7 사용(기본값 수정됨)**, 밀도 강화는 VesselCount↑로 (2026-07-03/04 충돌위치 원피팅 실측) |
 | RuntimeError: obs 크기 ≠ 369 | 옛 빌드가 연결됨 → 1번 재빌드 |
 | "Not enough spawn points — clamping" 경고 | 씬 스폰 포인트 부족 → 씬에 추가 후 재빌드 |
 | Unity 연결 실패 / 포트 에러 | 잔여 프로세스 확인: `Get-Process Vessel_MLAgent,python` 종료 후 재시도 (commgate는 5600~5615 사용) |

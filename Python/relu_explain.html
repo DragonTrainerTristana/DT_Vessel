@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>레이더 인코더 부검</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Noto+Serif+KR:wght@500;700&display=swap">
+<style>
+  :root{
+    --paper:#FBFCFD; --surface:#EDF1F4; --sink:#E2E8ED;
+    --ink:#16202B; --body:#33424F; --muted:#657585; --rule:#CBD5DD;
+    --port:#B3232C;        /* 좌현 적색 — 죽은 경로 */
+    --starboard:#0F7B4F;   /* 우현 녹색 — 살아있는 경로 */
+    --amber:#9A6512;
+    --port-wash:#F6E6E7; --stb-wash:#E2F0E9; --amber-wash:#F7EEDD;
+    --sans:"IBM Plex Sans KR",-apple-system,"Malgun Gothic",sans-serif;
+    --serif:"Noto Serif KR","IBM Plex Sans KR",serif;
+    --mono:"IBM Plex Mono","IBM Plex Sans KR",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0E151C; --surface:#18222C; --sink:#202C38;
+      --ink:#E8EEF3; --body:#BCC9D4; --muted:#8496A5; --rule:#2E3D4B;
+      --port:#F0868C; --starboard:#5FC496; --amber:#DFAE5E;
+      --port-wash:#2A1A1D; --stb-wash:#12261E; --amber-wash:#261E10;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E151C; --surface:#18222C; --sink:#202C38;
+    --ink:#E8EEF3; --body:#BCC9D4; --muted:#8496A5; --rule:#2E3D4B;
+    --port:#F0868C; --starboard:#5FC496; --amber:#DFAE5E;
+    --port-wash:#2A1A1D; --stb-wash:#12261E; --amber-wash:#261E10;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--body);font-family:var(--sans);
+       font-weight:300;line-height:1.75;font-size:16px;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:0 24px 96px}
+
+  header{padding:72px 0 40px;border-bottom:2px solid var(--ink);margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted);margin:0 0 18px}
+  h1{font-family:var(--serif);font-weight:700;color:var(--ink);
+     font-size:clamp(30px,5.2vw,46px);line-height:1.18;margin:0 0 18px;
+     text-wrap:balance;letter-spacing:-.01em}
+  .standfirst{font-size:17.5px;color:var(--body);max-width:62ch;margin:0}
+  .standfirst b{font-weight:500;color:var(--ink)}
+
+  section{padding:52px 0;border-bottom:1px solid var(--rule)}
+  section:last-of-type{border-bottom:0}
+  h2{font-family:var(--serif);font-weight:700;color:var(--ink);
+     font-size:24px;line-height:1.35;margin:0 0 6px;text-wrap:balance}
+  .sub{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;
+       text-transform:uppercase;color:var(--muted);margin:0 0 26px}
+  h3{font-family:var(--sans);font-weight:600;color:var(--ink);
+     font-size:16.5px;margin:34px 0 10px}
+  p{margin:0 0 16px;max-width:66ch}
+  strong{font-weight:500;color:var(--ink)}
+  code{font-family:var(--mono);font-size:.88em;background:var(--surface);
+       padding:.1em .38em;border-radius:3px;color:var(--ink)}
+
+  figure{margin:30px 0;padding:0}
+  figure svg{display:block;width:100%;height:auto;
+             background:var(--surface);border:1px solid var(--rule);border-radius:2px}
+  figcaption{font-size:13.5px;color:var(--muted);margin-top:11px;
+             padding-left:13px;border-left:2px solid var(--rule);max-width:64ch}
+
+  .keybox{background:var(--surface);border-left:3px solid var(--ink);
+          padding:20px 22px;margin:26px 0}
+  .keybox p{margin:0;max-width:60ch}
+  .keybox .lead{font-family:var(--serif);font-weight:500;color:var(--ink);
+                font-size:17px;line-height:1.55}
+
+  table{width:100%;border-collapse:collapse;margin:22px 0;font-size:14.5px;
+        font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto;margin:22px 0}
+  .scroll table{margin:0;min-width:440px}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+     text-transform:uppercase;color:var(--muted);font-weight:500;
+     text-align:left;padding:0 12px 8px 0;border-bottom:1px solid var(--ink)}
+  td{padding:11px 12px 11px 0;border-bottom:1px solid var(--rule);vertical-align:baseline}
+  td.n{font-family:var(--mono);text-align:right;padding-right:20px;color:var(--ink)}
+  th.n{text-align:right;padding-right:20px}
+  tr.dead td{color:var(--port)}
+  tr.dead td.n{color:var(--port);font-weight:600}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+       padding:2px 7px;border-radius:2px;white-space:nowrap}
+  .tag.dead{background:var(--port-wash);color:var(--port)}
+  .tag.live{background:var(--stb-wash);color:var(--starboard)}
+
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:22px 0}
+  ol.steps li{counter-increment:s;position:relative;padding-left:42px;
+              margin-bottom:16px;max-width:64ch}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:1px;
+    font-family:var(--mono);font-size:11px;color:var(--port);
+    background:var(--port-wash);width:26px;height:22px;border-radius:2px;
+    display:flex;align-items:center;justify-content:center;font-weight:600}
+
+  .note{font-size:14px;color:var(--muted);max-width:64ch}
+  .foot{padding-top:36px;font-size:13.5px;color:var(--muted)}
+  .foot p{max-width:64ch}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Vessel MARL · 2026-09-05 · 160런 실측</p>
+  <h1>레이더 인코더 부검</h1>
+  <p class="standfirst">학습이 가끔 무너진 원인은 <b>ControlActor 안의 레이더 인코더가 죽는 것</b>이었음.
+  여기서 "죽는다"가 정확히 무슨 뜻인지, 그 ReLU가 신경망 어디에 있는지, 왜 한 번 죽으면 안 살아나는지를 그림으로 정리함.</p>
+</header>
+
+<section>
+  <h2>관측 369차원의 정체</h2>
+  <p class="sub">한 척이 매 결정마다 받는 것</p>
+
+  <p>배 한 척이 매 결정(0.4초)마다 받는 숫자가 369개임. 뭉뚱그리면 이해가 안 되니 인덱스 단위로 펼침.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th class="n">인덱스</th><th class="n">개수</th><th>이름</th><th>실제 내용</th><th>정규화</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="n">0 &ndash; 359</td><td class="n">360</td>
+        <td><strong>레이더</strong></td>
+        <td>1도 간격 360방향으로 광선을 쏴서 <strong>가장 먼저 맞은 것까지의 거리</strong>.
+            장애물 원 9개 &middot; 다른 배의 선체 상자 &middot; 아레나 벽을 전부 맞춤</td>
+        <td><code>거리 &divide; 56 &minus; 0.5</code><br>아무것도 없으면 <code>+0.5</code></td>
+      </tr>
+      <tr>
+        <td class="n">360</td><td class="n">1</td>
+        <td>목표 거리</td>
+        <td>내 위치에서 목표까지 직선거리</td>
+        <td><code>d &divide; (d + 150)</code><br>가까울수록 0, 멀수록 1에 수렴</td>
+      </tr>
+      <tr>
+        <td class="n">361</td><td class="n">1</td>
+        <td>목표 방위</td>
+        <td>뱃머리 기준으로 목표가 몇 도 옆에 있나. 우현이 양수</td>
+        <td><code>각도 &divide; 180</code> &rarr; &minus;1 ~ +1</td>
+      </tr>
+      <tr>
+        <td class="n">362</td><td class="n">1</td>
+        <td>속력</td>
+        <td>현재 속력. 배마다 최대속력이 달라서 비율로 줌</td>
+        <td><code>속력 &divide; 그 배의 최대속력</code> &rarr; 0 ~ 1</td>
+      </tr>
+      <tr>
+        <td class="n">363</td><td class="n">1</td>
+        <td>선회율</td>
+        <td>지금 초당 몇 도씩 돌고 있나.
+            <code>실제타각 &times; 속력비 &times; 1.5</code> 로 계산됨 &mdash; 느리면 타를 꺾어도 안 돎</td>
+        <td><code>&divide; 45</code> (최대 선회율)</td>
+      </tr>
+      <tr>
+        <td class="n">364</td><td class="n">1</td>
+        <td>침로</td>
+        <td>뱃머리가 향한 절대 방위</td>
+        <td><code>&divide; 180</code> &rarr; &minus;1 ~ +1</td>
+      </tr>
+      <tr>
+        <td class="n">365</td><td class="n">1</td>
+        <td>타각</td>
+        <td><strong>실제</strong> 타각. 명령한 값이 아님 &mdash;
+            타는 초당 12도로 천천히 움직이므로 명령과 실제가 다름</td>
+        <td><code>&divide; 30</code> (최대 타각)</td>
+      </tr>
+      <tr>
+        <td class="n">366 &ndash; 367</td><td class="n">2</td>
+        <td>절대 위치</td>
+        <td>아레나 안에서의 x, z 좌표.
+            <strong>통신 상대를 고르는 데만 씀</strong></td>
+        <td>정규화 없음 (원 좌표)</td>
+      </tr>
+      <tr>
+        <td class="n">368</td><td class="n">1</td>
+        <td>COLREGs 상황</td>
+        <td>지금 제일 위험한 상대와의 관계를 기하로 판정한 라벨.
+            0=없음 1=정면 2=교차&middot;유지 3=교차&middot;양보 4=추월</td>
+        <td>정수 0~4</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>이 중 신경망에 실제로 들어가는 것</h3>
+
+  <p>369개가 그대로 들어가지 않음. 세 가지 가공이 있음.</p>
+
+  <ol class="steps">
+    <li><strong>레이더만 3프레임 쌓음.</strong> 지금 &middot; 직전 &middot; 그 전 프레임을 겹쳐 <code>3 &times; 360</code>으로 만듦.
+        한 장만 보면 접촉물이 다가오는지 멀어지는지 알 수 없기 때문임.
+        Conv 입력 채널로 넣어서 프레임 간 차이(방위 변화율)를 신경망이 직접 뽑게 함.</li>
+    <li><strong>위치 두 개는 뺌.</strong> 인덱스 366~367은 통신 상대를 고르는 계산에만 쓰고 신경망에는 안 넣음.
+        절대 좌표를 정책이 외우면 지도를 통째로 암기해버림.</li>
+    <li><strong>상황 라벨은 one-hot 5개로 폄.</strong> 0~4라는 숫자를 그대로 넣으면
+        &ldquo;추월(4)이 정면(1)보다 4배 크다&rdquo;는 없는 순서 관계가 생김.</li>
+  </ol>
+
+  <figure>
+    <svg viewBox="0 0 800 320" role="img" aria-label="관측 369차원 중 레이더 360은 3프레임으로 쌓여 인코더에서 30차원으로 압축되고 목표 2와 자기상태 4와 상황 one-hot 5가 더해지며 이웃 메시지 6이 붙어 fc2에 47차원이 들어감">
+      <defs>
+        <marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text x="24" y="28" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".65">obs 369 &rarr; 정책이 실제로 먹는 47</text>
+
+      <rect x="24" y="52" width="150" height="52" rx="2" fill="none" stroke="#B3232C" stroke-width="1.6"/>
+      <text x="99" y="72" text-anchor="middle" font-size="11.5" font-weight="600" fill="#B3232C">레이더 360</text>
+      <text x="99" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#B3232C">idx 0&ndash;359</text>
+
+      <line x1="174" y1="78" x2="212" y2="78" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah5)"/>
+      <rect x="216" y="52" width="118" height="52" rx="2" fill="var(--sink)" stroke="currentColor" stroke-width="1"/>
+      <text x="275" y="72" text-anchor="middle" font-size="11" fill="currentColor">3프레임 스택</text>
+      <text x="275" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".7">3 &times; 360</text>
+
+      <line x1="334" y1="78" x2="372" y2="78" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah5)"/>
+      <rect x="376" y="52" width="130" height="52" rx="2" fill="#F6E6E7" stroke="#B3232C" stroke-width="1.6"/>
+      <text x="441" y="72" text-anchor="middle" font-size="11" font-weight="600" fill="#B3232C">레이더 인코더</text>
+      <text x="441" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="#B3232C">2880 &rarr; 30</text>
+
+      <rect x="24" y="126" width="150" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+      <text x="99" y="141" text-anchor="middle" font-size="10.5" fill="currentColor">목표 2</text>
+      <text x="99" y="154" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">idx 360&ndash;361</text>
+
+      <rect x="24" y="168" width="150" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+      <text x="99" y="183" text-anchor="middle" font-size="10.5" fill="currentColor">자기 상태 4</text>
+      <text x="99" y="196" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">idx 362&ndash;365</text>
+
+      <rect x="24" y="210" width="150" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+      <text x="99" y="225" text-anchor="middle" font-size="10.5" fill="currentColor">상황 one-hot 5</text>
+      <text x="99" y="238" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".65">idx 368 을 폄</text>
+
+      <rect x="24" y="252" width="150" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".5"/>
+      <text x="99" y="267" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".6">위치 2 &mdash; 제외</text>
+      <text x="99" y="280" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" opacity=".5">idx 366&ndash;367</text>
+
+      <rect x="548" y="52" width="106" height="192" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <text x="601" y="140" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">이어붙임</text>
+      <text x="601" y="162" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="14" font-weight="600" fill="currentColor">47</text>
+
+      <line x1="506" y1="78" x2="544" y2="100" stroke="#B3232C" stroke-width="1.6" marker-end="url(#ah5)"/>
+      <text x="516" y="74" font-family="IBM Plex Mono, monospace" font-size="9" fill="#B3232C">30</text>
+      <line x1="174" y1="143" x2="544" y2="130" stroke="currentColor" stroke-width="1" marker-end="url(#ah5)" opacity=".55"/>
+      <line x1="174" y1="185" x2="544" y2="160" stroke="currentColor" stroke-width="1" marker-end="url(#ah5)" opacity=".55"/>
+      <line x1="174" y1="227" x2="544" y2="190" stroke="currentColor" stroke-width="1" marker-end="url(#ah5)" opacity=".55"/>
+
+      <rect x="376" y="252" width="130" height="34" rx="2" fill="#E2F0E9" stroke="#0F7B4F" stroke-width="1.2"/>
+      <text x="441" y="273" text-anchor="middle" font-size="10.5" fill="#0F7B4F">이웃 메시지 6</text>
+      <line x1="506" y1="269" x2="544" y2="220" stroke="#0F7B4F" stroke-width="1.2" marker-end="url(#ah5)"/>
+
+      <line x1="654" y1="148" x2="694" y2="148" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah5)"/>
+      <text x="700" y="143" font-size="11" font-weight="600" fill="currentColor">fc2</text>
+      <text x="700" y="161" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".7">47 &rarr; 128</text>
+    </svg>
+    <figcaption>레이더 360개는 3프레임으로 쌓여 인코더에서 30개로 압축됨. 여기에 목표 2 &middot; 자기상태 4 &middot; 상황 5를 붙이면 41개, 이웃 메시지 6을 더해 47개가 조타 망의 첫 층에 들어감. 위치 2개는 통신 상대 계산에만 쓰고 제외함.</figcaption>
+  </figure>
+
+  <div class="keybox">
+    <p class="lead">369개 중 장애물의 존재를 알려주는 건 레이더 360개뿐임.</p>
+    <p style="margin-top:12px;font-size:14.5px">목표 &middot; 속력 &middot; 침로 &middot; 타각은 전부 자기 상태고,
+    상황 라벨은 <strong>다른 배</strong>와의 기하에서만 나옴.
+    그래서 레이더 인코더가 죽으면 타선은 상황 라벨로 일부 알아채지만 장애물은 정보가 완전히 0이 됨.
+    뒤에 나오는 장애물 충돌 57~74%가 그 결과임.</p>
+  </div>
+</section>
+
+<section>
+  <h2>ReLU가 어디에 있나</h2>
+  <p class="sub">먼저 위치부터</p>
+
+  <p>배 한 척의 정책은 신경망 세 개로 되어 있음. 셋 다 <strong>각자의 레이더 인코더를 따로 가지고 있음.</strong>
+  공유하지 않음. 이게 이번 사건의 핵심임.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 300" role="img" aria-label="관측 369차원이 MessageActor, ControlActor, Critic 세 신경망으로 들어가고, 각 신경망이 자기 레이더 인코더를 따로 가지고 있음">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#B3232C"/>
+        </marker>
+      </defs>
+
+      <!-- obs -->
+      <rect x="18" y="112" width="104" height="76" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="70" y="140" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">obs 369D</text>
+      <text x="70" y="159" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">레이더 360</text>
+      <text x="70" y="174" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">목표·자세·상황 9</text>
+
+      <line x1="122" y1="150" x2="196" y2="60" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)" opacity=".55"/>
+      <line x1="122" y1="150" x2="196" y2="150" stroke="#B3232C" stroke-width="2" marker-end="url(#ahr)"/>
+      <line x1="122" y1="150" x2="196" y2="240" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)" opacity=".55"/>
+
+      <!-- MessageActor -->
+      <rect x="200" y="30" width="250" height="60" rx="2" fill="none" stroke="currentColor" stroke-width="1" opacity=".55"/>
+      <text x="214" y="52" font-size="12" font-weight="500" fill="currentColor" opacity=".75">MessageActor</text>
+      <rect x="330" y="42" width="106" height="34" rx="2" fill="var(--sink)" stroke="currentColor" stroke-width=".8" opacity=".65"/>
+      <text x="383" y="63" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".75">레이더 인코더 ①</text>
+
+      <!-- ControlActor -->
+      <rect x="200" y="118" width="250" height="64" rx="2" fill="none" stroke="#B3232C" stroke-width="2"/>
+      <text x="214" y="141" font-size="12.5" font-weight="600" fill="#B3232C">ControlActor</text>
+      <text x="214" y="158" font-size="10" fill="#B3232C" opacity=".85">조타를 정함</text>
+      <rect x="330" y="130" width="106" height="38" rx="2" fill="#F6E6E7" stroke="#B3232C" stroke-width="1.2"/>
+      <text x="383" y="147" text-anchor="middle" font-size="10.5" font-weight="600" fill="#B3232C">레이더 인코더 ②</text>
+      <text x="383" y="161" text-anchor="middle" font-size="9.5" fill="#B3232C">여기가 죽었음</text>
+
+      <!-- Critic -->
+      <rect x="200" y="210" width="250" height="60" rx="2" fill="none" stroke="#0F7B4F" stroke-width="1.4"/>
+      <text x="214" y="232" font-size="12" font-weight="500" fill="#0F7B4F">Critic</text>
+      <text x="214" y="248" font-size="10" fill="#0F7B4F" opacity=".85">가치를 추정함</text>
+      <rect x="330" y="222" width="106" height="34" rx="2" fill="#E2F0E9" stroke="#0F7B4F" stroke-width="1"/>
+      <text x="383" y="243" text-anchor="middle" font-size="10.5" fill="#0F7B4F">레이더 인코더 ③</text>
+
+      <line x1="450" y1="60" x2="516" y2="60" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)" opacity=".55"/>
+      <line x1="450" y1="150" x2="516" y2="150" stroke="#B3232C" stroke-width="2" marker-end="url(#ahr)"/>
+      <line x1="450" y1="240" x2="516" y2="240" stroke="currentColor" stroke-width="1.2" marker-end="url(#ah)" opacity=".55"/>
+
+      <text x="524" y="64" font-size="11.5" fill="currentColor" opacity=".7">메시지 6D</text>
+      <text x="524" y="147" font-size="12" font-weight="600" fill="#B3232C">행동 2D</text>
+      <text x="524" y="162" font-size="10" fill="#B3232C" opacity=".8">타각 · 추력</text>
+      <text x="524" y="244" font-size="11.5" fill="#0F7B4F">V(s) — 학습 때만</text>
+
+      <line x1="640" y1="24" x2="640" y2="276" stroke="currentColor" stroke-width=".8" opacity=".25"/>
+      <text x="656" y="120" font-size="11" fill="currentColor" opacity=".8">셋이 인코더를</text>
+      <text x="656" y="137" font-size="11" fill="currentColor" opacity=".8">공유하지 않음.</text>
+      <text x="656" y="160" font-size="11" font-weight="600" fill="#B3232C">②만 죽어도</text>
+      <text x="656" y="177" font-size="11" fill="#B3232C">③은 멀쩡함.</text>
+    </svg>
+    <figcaption>세 신경망이 같은 관측을 받지만 레이더 인코더는 따로 가짐. 그래서 조타를 정하는 망만 눈이 멀고, 가치를 추정하는 망은 정상으로 남는 상태가 가능함. 실제로 그렇게 됐음.</figcaption>
+  </figure>
+
+  <p>레이더 인코더 안에는 ReLU가 <strong>네 겹</strong> 있음. 문제가 된 건 마지막 것임.</p>
+
+  <p class="note" style="margin-bottom:22px">입력이 <code>3 &times; 360 = 1,080</code>인데 FC 입력이 2,880인 게 헷갈릴 수 있음.
+  입력은 평평한 1,080개 벡터가 아니라 <strong>3채널 &times; 길이 360</strong>짜리 2차원 배열임.
+  Conv 는 길이를 절반씩 줄이면서 채널을 늘리므로, 마지막에 <code>64 &times; 45 = 2,880</code>이 되고 그걸 한 줄로 편 것임.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 300" role="img" aria-label="레이더 인코더 내부: 3채널 360길이 입력이 Conv 세 겹을 지나며 채널은 늘고 길이는 줄어 64채널 45길이가 되고, 이를 펼친 2880을 FC가 30으로 압축함">
+      <defs>
+        <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text x="24" y="28" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".65">레이더 인코더 내부 &middot; 파라미터 109,598개</text>
+
+      <g font-size="10.5" fill="currentColor">
+        <rect x="24" y="58" width="82" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="65" y="80" text-anchor="middle" font-size="11" font-weight="500">입력</text>
+        <text x="65" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10">3 &times; 360</text>
+
+        <rect x="144" y="58" width="80" height="56" rx="2" fill="var(--sink)" stroke="currentColor" stroke-width="1"/>
+        <text x="184" y="80" text-anchor="middle" font-size="11">Conv 1</text>
+        <text x="184" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10">32 &times; 180</text>
+
+        <rect x="262" y="58" width="80" height="56" rx="2" fill="var(--sink)" stroke="currentColor" stroke-width="1"/>
+        <text x="302" y="80" text-anchor="middle" font-size="11">Conv 2</text>
+        <text x="302" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10">64 &times; 90</text>
+
+        <rect x="380" y="58" width="80" height="56" rx="2" fill="var(--sink)" stroke="currentColor" stroke-width="1"/>
+        <text x="420" y="80" text-anchor="middle" font-size="11">Conv 3</text>
+        <text x="420" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10">64 &times; 45</text>
+
+        <rect x="498" y="58" width="80" height="56" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/>
+        <text x="538" y="80" text-anchor="middle" font-size="11">펼치기</text>
+        <text x="538" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10">2880</text>
+
+        <rect x="616" y="58" width="80" height="56" rx="2" fill="#F6E6E7" stroke="#B3232C" stroke-width="1.6"/>
+        <text x="656" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="#B3232C">FC</text>
+        <text x="656" y="97" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="#B3232C">2880 &rarr; 30</text>
+      </g>
+
+      <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ah2)">
+        <line x1="106" y1="86" x2="138" y2="86"/>
+        <line x1="224" y1="86" x2="256" y2="86"/>
+        <line x1="342" y1="86" x2="374" y2="86"/>
+        <line x1="460" y1="86" x2="492" y2="86"/>
+        <line x1="578" y1="86" x2="610" y2="86"/>
+      </g>
+
+      <g>
+        <circle cx="242" cy="86" r="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.1"/>
+        <text x="242" y="89.5" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="currentColor">R</text>
+        <circle cx="360" cy="86" r="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.1"/>
+        <text x="360" y="89.5" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="currentColor">R</text>
+        <circle cx="478" cy="86" r="9" fill="var(--paper)" stroke="currentColor" stroke-width="1.1"/>
+        <text x="478" y="89.5" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="currentColor">R</text>
+        <circle cx="712" cy="86" r="11" fill="#F6E6E7" stroke="#B3232C" stroke-width="2"/>
+        <text x="712" y="90" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9" font-weight="600" fill="#B3232C">R</text>
+        <line x1="696" y1="86" x2="700" y2="86" stroke="currentColor" stroke-width="1.2"/>
+      </g>
+      <text x="242" y="130" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">R = ReLU</text>
+
+      <line x1="24" y1="152" x2="740" y2="152" stroke="currentColor" stroke-width=".8" opacity=".2"/>
+
+      <text x="24" y="176" font-size="11" font-weight="600" fill="currentColor">원소 수는 줄기만 하지 않음</text>
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor">
+        <text x="65"  y="200" text-anchor="middle" opacity=".8">1,080</text>
+        <text x="184" y="200" text-anchor="middle" opacity=".8">5,760</text>
+        <text x="302" y="200" text-anchor="middle" opacity=".8">5,760</text>
+        <text x="420" y="200" text-anchor="middle" opacity=".8">2,880</text>
+        <text x="538" y="200" text-anchor="middle" opacity=".8">2,880</text>
+        <text x="656" y="200" text-anchor="middle" font-weight="600" fill="#B3232C">30</text>
+      </g>
+
+      <polyline points="65,224 184,212 302,212 420,232 538,232 656,252"
+                fill="none" stroke="#B3232C" stroke-width="1.6" opacity=".55"/>
+      <g fill="#B3232C">
+        <circle cx="65" cy="224" r="2.6"/><circle cx="184" cy="212" r="2.6"/>
+        <circle cx="302" cy="212" r="2.6"/><circle cx="420" cy="232" r="2.6"/>
+        <circle cx="538" cy="232" r="2.6"/><circle cx="656" cy="252" r="3.4"/>
+      </g>
+
+      <text x="184" y="276" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".75">채널을 늘려 한 번 부풀림</text>
+      <text x="600" y="276" text-anchor="middle" font-size="10.5" font-weight="600" fill="#B3232C">진짜 압축은 FC 한 번뿐</text>
+    </svg>
+    <figcaption>길이 축(방향)은 360에서 45로 줄지만 채널 축(특징)은 3에서 64로 늘어남. 그래서 원소 수가 1,080에서 5,760까지 부풀었다가 2,880이 됨. 30으로의 압축은 마지막 FC 한 번에 일어나고, 그 뒤의 ReLU가 죽은 것임.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>ReLU가 하는 일</h2>
+  <p class="sub">함수 하나와 그 기울기</p>
+
+  <p>ReLU는 아주 단순한 함수임. <strong>음수가 들어오면 0을 내보내고, 양수는 그대로 통과시킴.</strong></p>
+
+  <figure>
+    <svg viewBox="0 0 800 260" role="img" aria-label="왼쪽은 ReLU 함수 그래프로 음수 구간이 0이고 양수 구간이 기울기 1인 직선. 오른쪽은 그 기울기 그래프로 음수 구간에서 0, 양수 구간에서 1">
+      <!-- panel 1 -->
+      <text x="60" y="34" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">함수  f(x) = max(0, x)</text>
+      <line x1="60" y1="200" x2="340" y2="200" stroke="currentColor" stroke-width="1" opacity=".45"/>
+      <line x1="200" y1="66" x2="200" y2="222" stroke="currentColor" stroke-width="1" opacity=".45"/>
+      <text x="332" y="216" font-size="10" fill="currentColor" opacity=".55">x</text>
+      <line x1="62" y1="200" x2="200" y2="200" stroke="#B3232C" stroke-width="3"/>
+      <line x1="200" y1="200" x2="330" y2="76" stroke="#0F7B4F" stroke-width="3"/>
+      <text x="118" y="190" text-anchor="middle" font-size="11" font-weight="600" fill="#B3232C">0을 냄</text>
+      <text x="286" y="118" text-anchor="middle" font-size="11" font-weight="600" fill="#0F7B4F">그대로 통과</text>
+      <text x="200" y="238" text-anchor="middle" font-size="10" fill="currentColor" opacity=".55">0</text>
+
+      <!-- panel 2 -->
+      <text x="460" y="34" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">기울기  f′(x)</text>
+      <line x1="460" y1="200" x2="740" y2="200" stroke="currentColor" stroke-width="1" opacity=".45"/>
+      <line x1="600" y1="66" x2="600" y2="222" stroke="currentColor" stroke-width="1" opacity=".45"/>
+      <text x="732" y="216" font-size="10" fill="currentColor" opacity=".55">x</text>
+      <line x1="462" y1="200" x2="600" y2="200" stroke="#B3232C" stroke-width="3"/>
+      <line x1="600" y1="120" x2="730" y2="120" stroke="#0F7B4F" stroke-width="3"/>
+      <line x1="600" y1="120" x2="600" y2="200" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity=".4"/>
+      <text x="530" y="190" text-anchor="middle" font-size="12" font-weight="600" fill="#B3232C">기울기 0</text>
+      <text x="665" y="110" text-anchor="middle" font-size="12" font-weight="600" fill="#0F7B4F">기울기 1</text>
+      <text x="452" y="124" text-anchor="end" font-size="10" fill="currentColor" opacity=".55">1</text>
+      <text x="452" y="204" text-anchor="end" font-size="10" fill="currentColor" opacity=".55">0</text>
+    </svg>
+    <figcaption>오른쪽 그래프가 사건의 전부임. 학습은 기울기를 따라 가중치를 고치는 일인데, 음수 구간에서 기울기가 0임. 고칠 방향이 없다는 뜻임.</figcaption>
+  </figure>
+
+  <div class="keybox">
+    <p class="lead">기울기가 0이면 그 가중치는 안 바뀜. 학습이 가중치를 고치는 유일한 방법이 기울기이기 때문임.</p>
+  </div>
+</section>
+
+<section>
+  <h2>왜 한 번 죽으면 안 살아나나</h2>
+  <p class="sub">되먹임 고리</p>
+
+  <p>보통은 어떤 입력에는 양수, 어떤 입력에는 음수가 들어옴. 그러면 양수인 샘플에서 기울기를 받아 계속 학습함.
+  문제는 <strong>모든 입력에 대해 음수</strong>가 되는 순간임.</p>
+
+  <ol class="steps">
+    <li>학습 중 가중치가 크게 밀려서, 그 유닛이 <strong>어떤 입력을 받아도 음수</strong>를 내는 상태가 됨.</li>
+    <li>출력은 항상 0. 기울기도 항상 0.</li>
+    <li>기울기가 0이니 <strong>가중치가 안 바뀜.</strong></li>
+    <li>가중치가 그대로니 다음에도 여전히 모든 입력에 음수. 1번으로 돌아감.</li>
+  </ol>
+
+  <p>빠져나올 길이 없음. 이걸 <strong>흡수 상태</strong>라고 부름. 한 번 들어가면 못 나옴.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 320" role="img" aria-label="정상 유닛은 입력 분포가 0을 걸쳐 있어 일부 샘플에서 기울기를 받지만, 죽은 유닛은 분포 전체가 0 아래로 밀려 모든 샘플에서 기울기가 0이 되고 그 상태가 되먹임으로 유지됨">
+      <!-- alive -->
+      <text x="40" y="34" font-size="12.5" font-weight="600" fill="#0F7B4F">정상 유닛</text>
+      <text x="40" y="52" font-size="10.5" fill="currentColor" opacity=".7">입력 분포가 0을 걸쳐 있음</text>
+      <line x1="40" y1="150" x2="330" y2="150" stroke="currentColor" stroke-width="1" opacity=".35"/>
+      <line x1="185" y1="86" x2="185" y2="170" stroke="currentColor" stroke-width="1.4"/>
+      <text x="185" y="186" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">0</text>
+      <path d="M70,150 C110,150 120,96 160,96 C200,96 210,150 250,150 Z" fill="#E2F0E9" stroke="#0F7B4F" stroke-width="1.6"/>
+      <text x="120" y="132" text-anchor="middle" font-size="10" fill="#0F7B4F">음수</text>
+      <text x="215" y="132" text-anchor="middle" font-size="10" font-weight="600" fill="#0F7B4F">양수</text>
+      <text x="185" y="214" text-anchor="middle" font-size="11.5" fill="#0F7B4F">양수 쪽 샘플에서 기울기를 받음</text>
+      <text x="185" y="232" text-anchor="middle" font-size="11.5" font-weight="600" fill="#0F7B4F">→ 계속 학습됨</text>
+
+      <line x1="400" y1="24" x2="400" y2="296" stroke="currentColor" stroke-width=".8" opacity=".25"/>
+
+      <!-- dead -->
+      <text x="440" y="34" font-size="12.5" font-weight="600" fill="#B3232C">죽은 유닛</text>
+      <text x="440" y="52" font-size="10.5" fill="currentColor" opacity=".7">분포 전체가 0 아래로 밀림</text>
+      <line x1="440" y1="150" x2="740" y2="150" stroke="currentColor" stroke-width="1" opacity=".35"/>
+      <line x1="660" y1="86" x2="660" y2="170" stroke="currentColor" stroke-width="1.4"/>
+      <text x="660" y="186" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".65">0</text>
+      <path d="M468,150 C508,150 518,96 558,96 C598,96 608,150 648,150 Z" fill="#F6E6E7" stroke="#B3232C" stroke-width="1.6"/>
+      <text x="558" y="132" text-anchor="middle" font-size="10" font-weight="600" fill="#B3232C">전부 음수</text>
+      <text x="590" y="214" text-anchor="middle" font-size="11.5" fill="#B3232C">모든 샘플에서 기울기 0</text>
+
+      <!-- feedback loop -->
+      <path d="M500,238 L500,268 L680,268 L680,244" fill="none" stroke="#B3232C" stroke-width="1.6"
+            marker-end="url(#ah3)" stroke-dasharray="4 3"/>
+      <defs>
+        <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#B3232C"/>
+        </marker>
+      </defs>
+      <text x="590" y="288" text-anchor="middle" font-size="11" font-weight="600" fill="#B3232C">가중치가 안 바뀌니 상태가 그대로 유지됨</text>
+      <text x="466" y="234" font-size="10.5" fill="#B3232C" opacity=".8">되먹임</text>
+    </svg>
+    <figcaption>왼쪽은 정상. 입력 분포가 0을 걸쳐 있어 양수 쪽 샘플이 기울기를 공급함. 오른쪽은 죽은 상태. 분포 전체가 0 아래라 기울기가 전부 0이고, 가중치가 안 바뀌니 분포도 안 움직임.</figcaption>
+  </figure>
+
+  <h3>왜 Conv 세 겹까지 같이 멈췄나</h3>
+  <p>이게 우리 경우의 핵심임. Conv 층들이 학습 신호를 받는 <strong>유일한 통로가 FC를 거치는 길</strong>임.
+  FC 뒤의 ReLU 30개가 전부 죽으면 그 길이 막힘. 그래서 앞쪽 Conv 세 겹도 같이 얼어붙음.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 190" role="img" aria-label="역전파 신호가 FC 뒤 ReLU에서 0이 되어 그 앞의 Conv 세 겹까지 신호가 도달하지 못함">
+      <defs>
+        <marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#B3232C"/>
+        </marker>
+      </defs>
+      <text x="30" y="32" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".7">학습 신호는 오른쪽에서 왼쪽으로 흐름 (역전파)</text>
+
+      <g font-size="10.5">
+        <rect x="30" y="66" width="118" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+        <text x="89" y="94" text-anchor="middle" fill="currentColor" opacity=".6">Conv 1·2·3</text>
+        <rect x="196" y="66" width="104" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1" opacity=".45"/>
+        <text x="248" y="94" text-anchor="middle" fill="currentColor" opacity=".6">FC 2880→30</text>
+        <rect x="348" y="66" width="86" height="46" rx="2" fill="#F6E6E7" stroke="#B3232C" stroke-width="2"/>
+        <text x="391" y="88" text-anchor="middle" font-weight="600" fill="#B3232C">ReLU</text>
+        <text x="391" y="103" text-anchor="middle" font-size="9.5" fill="#B3232C">전부 0</text>
+        <rect x="482" y="66" width="118" height="46" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <text x="541" y="94" text-anchor="middle" fill="currentColor">뒤쪽 층들</text>
+      </g>
+
+      <line x1="482" y1="89" x2="440" y2="89" stroke="#B3232C" stroke-width="2.4" marker-end="url(#ah4)"/>
+      <text x="461" y="76" text-anchor="middle" font-size="9.5" fill="#B3232C">신호 도착</text>
+
+      <line x1="344" y1="89" x2="306" y2="89" stroke="#B3232C" stroke-width="2.4" opacity=".18"/>
+      <line x1="192" y1="89" x2="154" y2="89" stroke="#B3232C" stroke-width="2.4" opacity=".18"/>
+      <text x="325" y="76" text-anchor="middle" font-size="15" font-weight="700" fill="#B3232C">×</text>
+
+      <text x="168" y="142" font-size="11.5" fill="#B3232C">여기부터 신호가 0 — 가중치가 안 바뀜</text>
+      <line x1="30" y1="122" x2="300" y2="122" stroke="#B3232C" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="640" y="94" font-size="11" fill="currentColor" opacity=".7">정상 학습</text>
+    </svg>
+    <figcaption>ReLU가 신호를 0으로 만들면 그 지점보다 앞쪽은 학습 신호를 전혀 못 받음. 인코더의 파라미터 텐서 8개가 전부 얼어붙은 이유임.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>실제로 그랬는지</h2>
+  <p class="sub">체크포인트를 열어 잰 값</p>
+
+  <p>같은 배치, 같은 설정으로 돌린 시드 세 개임. 학습 200만 스텝과 600만 스텝 사이에 가중치가 얼마나 바뀌었는지 재봤음.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>시드</th><th class="n">ControlActor 레이더</th><th class="n">Critic 레이더</th><th>상태</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>off_s43</td><td class="n">1,655.6</td><td class="n">2,174.5</td><td><span class="tag live">정상</span></td></tr>
+      <tr><td>off_s44</td><td class="n">2,154.1</td><td class="n">1,953.0</td><td><span class="tag live">정상</span></td></tr>
+      <tr class="dead"><td>off_s45</td><td class="n">0.000000</td><td class="n">2,105.4</td><td><span class="tag dead">죽음</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>같은 런 안에서 <strong>Critic 쪽 레이더는 정상으로 학습됨.</strong> 정책 쪽만 0임.
+  앞 절의 그림대로 인코더는 각자 따로 가지고 있으니 한쪽만 죽는 게 가능함.</p>
+
+  <h3>정말 못 보는지 직접 확인</h3>
+  <p>레이더 입력을 통째로 "장애물 없음"으로 바꿔치기하고 행동이 얼마나 달라지는지 쟀음.
+  눈이 보인다면 행동이 달라져야 함.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>시드</th><th class="n">행동 변화량</th><th>정면 8m에 장애물을 놓으면</th></tr></thead>
+    <tbody>
+      <tr><td>off_s43</td><td class="n">0.0113</td><td>급감속함</td></tr>
+      <tr><td>off_s44</td><td class="n">0.0057</td><td>반응함</td></tr>
+      <tr class="dead"><td>off_s45</td><td class="n">0.000000</td><td>아무 반응 없음</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="keybox">
+    <p class="lead">장애물을 알려주는 통로는 레이더 하나뿐임. 그래서 이 시드는 장애물 충돌로만 터졌음.</p>
+    <p style="margin-top:12px;font-size:14.5px">타선은 COLREGs 상황 라벨로도 일부 알 수 있어서 선박 충돌은 30% 대에 머물렀지만,
+    장애물은 정보가 0이라 충돌률이 57~74%까지 올라갔음. 도착률은 9%. 그냥 목표 보고 직진하는 정책과 구분이 안 되는 수준이었음.</p>
+  </div>
+</section>
+
+<section>
+  <h2>고치는 방법</h2>
+  <p class="sub">LeakyReLU</p>
+
+  <p>음수 쪽 기울기를 0이 아니라 아주 작은 값으로 두면 됨. 그러면 죽어도 되살아날 길이 남음.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 230" role="img" aria-label="ReLU는 음수 구간 기울기가 0이라 흡수 상태가 되지만, LeakyReLU는 음수 구간에 기울기 0.01을 남겨 되살아날 수 있음">
+      <text x="60" y="32" font-size="12" font-weight="600" fill="#B3232C">ReLU</text>
+      <text x="112" y="32" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".6">지금</text>
+      <line x1="60" y1="170" x2="340" y2="170" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      <line x1="196" y1="62" x2="196" y2="192" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      <line x1="62" y1="170" x2="196" y2="170" stroke="#B3232C" stroke-width="3"/>
+      <line x1="196" y1="170" x2="330" y2="72" stroke="currentColor" stroke-width="2.4" opacity=".55"/>
+      <text x="128" y="192" text-anchor="middle" font-size="11" font-weight="600" fill="#B3232C">완전히 평평함</text>
+      <text x="128" y="209" text-anchor="middle" font-size="10.5" fill="#B3232C" opacity=".85">기울기 0 → 되돌아올 수 없음</text>
+
+      <line x1="400" y1="24" x2="400" y2="206" stroke="currentColor" stroke-width=".8" opacity=".25"/>
+
+      <text x="460" y="32" font-size="12" font-weight="600" fill="#0F7B4F">LeakyReLU</text>
+      <text x="552" y="32" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".6">기울기 0.01</text>
+      <line x1="460" y1="170" x2="740" y2="170" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      <line x1="596" y1="62" x2="596" y2="192" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      <line x1="462" y1="160" x2="596" y2="170" stroke="#0F7B4F" stroke-width="3"/>
+      <line x1="596" y1="170" x2="730" y2="72" stroke="currentColor" stroke-width="2.4" opacity=".55"/>
+      <text x="528" y="192" text-anchor="middle" font-size="11" font-weight="600" fill="#0F7B4F">아주 살짝 기울어 있음</text>
+      <text x="528" y="209" text-anchor="middle" font-size="10.5" fill="#0F7B4F" opacity=".85">기울기가 남아 → 되살아날 수 있음</text>
+    </svg>
+    <figcaption>차이는 음수 구간의 기울기 하나임. 0이면 흡수 상태가 되고, 0.01이면 느리더라도 빠져나올 수 있음.</figcaption>
+  </figure>
+
+  <p>시드 160개로 재봤음.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>활성함수</th><th class="n">붕괴</th><th class="n">비율</th><th class="n">최소 에피소드 길이</th></tr></thead>
+    <tbody>
+      <tr><td>ReLU</td><td class="n">3 / 80</td><td class="n">3.75%</td><td class="n">569</td></tr>
+      <tr><td>LeakyReLU (0.01)</td><td class="n">0 / 80</td><td class="n">0.00%</td><td class="n">1,067</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>이항검정 <code>p = 0.047</code>. 붕괴 건수만이 아니라 분포 전체가 밀렸음.
+  붕괴 판정 문턱인 700에 LeakyReLU 쪽은 아무도 근접조차 안 함.</p>
+
+  <p class="note">다만 활성함수 교체는 신경망 설계 변경이라 <strong>기본값은 바꾸지 않았음.</strong>
+  <code>VESSEL_RADAR_ACT=leaky</code> 로 켜지고, 채택 여부는 저자 결정임.
+  그리고 이 값은 통신 없는 팔, 200~250만 스텝, 지금 기하에서만 잰 것임. 통신 팔과 1600만 스텝 수렴은 아직 안 쟀음.</p>
+</section>
+
+<section>
+  <h2>이번에 배운 것</h2>
+  <p class="sub">시드를 버리기 전에</p>
+
+  <p>이 시드는 처음에 "학습 실패"로 결과에서 빠졌음. 그런데 실패가 아니라 <strong>재현되는 코드 문제</strong>였음.
+  같은 지문을 세 건 더 찾았고, 발생률이 3.75%임.</p>
+
+  <p>그리고 초반에 잡아낼 방법도 나왔음. <strong>학습 60만에서 200만 스텝 사이의 최소 에피소드 길이</strong>가
+  붕괴와 정상을 완전히 갈랐음. 붕괴는 569~662, 정상은 851~3641로 겹치는 구간이 없었음.</p>
+
+  <div class="keybox">
+    <p class="lead">1600만 스텝을 다 태우고 시드를 버릴 필요가 없음. 200만 스텝에서 이미 갈림.</p>
+  </div>
+
+  <p>학습 중에 이걸 감시하는 검출기도 넣어놨음. 정책 레이더 인코더의 학습 신호가 연속으로 0이면 경고가 뜸.
+  조용히 실패하던 걸 시끄럽게 실패하게 바꾼 것임.</p>
+
+  <div class="foot">
+    <p>근거 문서 <code>Python/COLLAPSE_ROOTCAUSE.md</code> · 코드 <code>Python/networks.py</code> RadarEncoder ·
+    검출기 <code>Python/vessel_gym_train.py</code></p>
+  </div>
+</section>
+
+</div>
+
+</body>
+</html>
