@@ -158,8 +158,8 @@ train_one() {
     #   use_communication=True 로 찍혀 나중에 로그만 보고 어느 런이 OFF 였는지 구분이 안 된다.
     if [ "$arm" = "OFF" ]; then export VESSEL_USE_COMM=0; else export VESSEL_USE_COMM=1; fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
-      --arm "$arm" --comm_on_at 0 --steps "$steps" \
-      --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every 2 \
+      --arm "$arm" --comm_on_at "${VESSEL_COMM_ON_AT:-0}" --steps "$steps" \
+      --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every "${VESSEL_CKPT_EVERY:-2}" \
       --save "$CK/${nm}_s$s.pt" --csv "$OUT/${nm}_s$s.csv" \
       > "$OUT/${nm}_s$s.log" 2>&1
     echo "${nm}_s$s rc=$?" >> "$OUT/_status_train.txt"
@@ -201,6 +201,8 @@ case "$MODE" in
 
   train)
     # ★VESSEL_TRAIN_ARMS 로 팔 선택 (기본 "off on6 on12"). YUGIOH 6런 = VESSEL_TRAIN_ARMS="off on6".
+    #   VESSEL_COMM_ON_AT=9000000 이면 ON 팔이 9M 까지 통신 없이 돌다가 켬(커리큘럼, ABLATION_PLAN §3 B 팔).
+    #   그때 VESSEL_CKPT_EVERY=1 로 줘야 .step9M.pt(= 통신 OFF 모델, §4) 가 남는다. OFF 팔엔 comm_on_at 무의미.
     #   학습 중 통신 텔레메트리를 보려면 VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 를 같이 줄 것(ON 팔만 *_comm.csv).
     preflight
     : > "$OUT/_status_train.txt"
