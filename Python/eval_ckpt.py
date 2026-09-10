@@ -41,10 +41,12 @@ def main():
     # counted 게이트가 보장하므로(아래) 과하게 길 필요 없음.
     ap.add_argument('--burnin', type=int, default=1200)           # 초기 transient flush
     ap.add_argument('--seed', type=int, default=999)             # eval seed(학습과 분리)
-    ap.add_argument('--ring', type=float, default=1.0)           # 스폰 링 스케일(학습과 동일해야 함). ★0.7→1.0
-    ap.add_argument('--crossing', type=int, default=0)           # 2=대척 / 그 외=최소거리 랜덤 (학습과 동일해야 함)
+    ap.add_argument('--ring', type=float, default=None)         # ★2026-09-10: None=체크포인트 스냅샷 값. 명시하면 override(로그에 남음)
+    ap.add_argument('--crossing', type=int, default=None)       # ★2026-09-10: None=스냅샷 값. 구 ckpt(스냅샷 없음)는 명시 필수
     # ★ckpt 의 학습 arm 과 --arm 이 다르면 기본은 중단. 의도한 교차평가(예: ON 정책의 통신을 끊어 재기)만 이 플래그로 허용.
     ap.add_argument('--allow_arm_mismatch', action='store_true')
+    # ★2026-09-10: comm_range 는 import 시점 고정. 스냅샷과 다르면 기본 중단(ckpt_io). 과거 숫자 재현 목적만 허용.
+    ap.add_argument('--allow_comm_range_mismatch', action='store_true')
     # ★2026-09-05 fix: GPU 인덱스를 고를 수단이 없어 항상 cuda:0 에 몰렸음.
     #   무위험 속도개선이 '독립 프로세스 병렬(이 머신 ~6개)'인데, 6개가 전부 물리 GPU0 에
     #   4096 에이전트씩 올라가 메모리 경합·OOM 또는 직렬화된 속도가 됨. 미지정이면 기존 동작 그대로.
@@ -65,119 +67,18 @@ def main():
     ckpt_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ckpt_path = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ckpt_dir, args.ckpt)
 
-    # ★2026-09-05 fix: 보상 계수를 리터럴로 박아두면 학습과 조용히 갈림.
-    #   학습(vessel_gym_train.py:390~392)은 VESSEL_FARFIELD_COEF / VESSEL_PERPAIR_COEF 를 env 로 읽는데
-    #   평가만 리터럴이라, 그 env 로 스윕한 ckpt 를 평가하면 *학습과 다른 보상함수*로 채점됨
-    #   (outcome 은 살아남지만 epReward 비교·리턴 보고가 학습 목표와 다른 함수가 됨). 에러도 안 남.
-    #   → 이름·기본값을 학습과 동일하게 맞추고, 기본값과 다르면 stdout 에 찍어 눈에 보이게 함.
-    #   perpair_exp 는 학습이 리터럴 3.0 이므로 여기서도 리터럴 유지(eval 에만 env 를 열면 반대로 갈림).
-    _ff = float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0'))
-    _pp = float(os.environ.get('VESSEL_PERPAIR_COEF', '-0.15'))
-    if (_ff, _pp) != (0.0, -0.15):
-        print(f"[eval] 보상계수 env override: farfield={_ff} perpair={_pp} "
-              f"(학습 때와 같은 env 인지 확인할 것)", flush=True)
-    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
-                            farfield_coef=_ff, perpair_coef=_pp, perpair_exp=3.0)
-    # ★ckpt 를 먼저 읽어 msg_ln(LayerNorm, 2026-08-31) 유무를 스니핑 → 옛/새 체크포인트 모두 strict 로드
-    sd = torch.load(ckpt_path, map_location=dev)
-    _sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
-    os.environ['VESSEL_MSG_LN'] = '1' if any('msg_ln' in k for k in _sd) else '0'
-    # ★msg_dim 도 ckpt 에서 스니핑 (2026-08-31): Fig4 는 MSG_DIM 2·4·6·8·10·12 를 훑는데
-    #   cfg.MSG_DIM 은 `import config` 시점에 고정된다. VESSEL_MSG_DIM 을 안 주면 6 이외
-    #   차원은 load_state_dict 에서 shape 불일치로 죽는다(6개 팔 중 4개). ckpt 가 진실이므로 거기서 읽는다.
-    #   ⚠️make_others_msg(OFF/ORACLE 팔)는 vessel_gym_train 의 *모듈 전역* MSG_DIM 을 쓰므로 같이 맞춘다.
-    #     안 맞추면 others_msg 폭이 틀린 채 ctr_actor 에 들어가 조용히 잘못된 평가가 된다.
-    _mk = [k for k in _sd if k.endswith('msg_out.weight')]
-    _msg_dim = int(_sd[_mk[0]].shape[0]) if _mk else cfg.MSG_DIM
-    if _msg_dim != cfg.MSG_DIM:
-        import vessel_gym_train as _vgt
-        _vgt.MSG_DIM = _msg_dim
-        print(f"[eval] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) - ckpt 값으로 로드", flush=True)
-
-    # ★2026-09-05 fix (blocker): 집계 방식 불일치가 조용히 통과하던 것을 막는다.
-    #   문제: CNNPolicy.__init__ 은 msg_encoder(pos_ground용)와 attn(attention용)을 *조건 없이* 항상 만든다.
-    #     그래서 USE_ATTENTION=1 로 학습한 체크포인트를 VESSEL_USE_ATTENTION 없이 평가해도
-    #     load_state_dict(strict=True) 가 **경고 없이 통과**한다. 가중치는 다 맞는데 self.use_attention 만
-    #     False 라, 학습 때와 *다른 집계 함수*(attention → pos_ground mean)로 정책이 굴러간다.
-    #     comm-OFF 팔은 others_msg≡0 이라 영향이 없고 comm-ON 팔만 망가지는 비대칭이라 더 위험하다.
-    #     msg_dim·msg_ln 은 키에서 스니핑되지만 집계 방식은 키로 구분이 불가능하다(둘 다 항상 존재).
-    #   해결: 학습기가 체크포인트에 설정 스냅샷('cfg_snapshot')을 저장하고, 평가는 그걸 읽어
-    #     networks 모듈 전역을 덮어쓴 뒤 CNNPolicy 를 만든다(전역은 __init__ 호출 시점에 읽히므로 유효).
-    #     스냅샷이 없는 구 체크포인트는 키로 스니핑 가능한 것만 맞추고 나머지는 크게 경고한다.
-    _snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
-    _sniff_cc = any(k.startswith('critic.') and 'glob_enc' in k for k in _sd)
-    _sniff_sr = any(k.startswith('state_recon') for k in _sd)
-    # ★2026-09-07 레이더 인코더 head·활성함수 복원.
-    #   head 는 키로 확실히 안다('radar_encoder.reduce.weight' 유무 + 그 shape 의 채널 수).
-    #   활성함수는 가중치에 흔적이 없어 스냅샷이 유일한 근거 → 없으면 relu 로 두고 크게 경고.
-    _rk = [k for k in _sd if k.endswith('radar_encoder.reduce.weight')]
-    net._RADAR_HEAD = 'bottleneck' if _rk else 'flat'
-    if _rk:
-        net._RADAR_BOTTLENECK_CH = int(_sd[_rk[0]].shape[0])
-    _snap_act = (_snap or {}).get('radar_act')
-    if _snap_act is not None:
-        net._RADAR_LEAKY = (str(_snap_act).lower() == 'leaky')
-    elif os.environ.get('VESSEL_RADAR_ACT'):
-        net._RADAR_LEAKY = os.environ['VESSEL_RADAR_ACT'].lower() == 'leaky'
-        print(f"[eval] [!] 스냅샷에 radar_act 가 없어 env VESSEL_RADAR_ACT={os.environ['VESSEL_RADAR_ACT']} 로 평가함. "
-              f"학습 때 값과 다르면 조용히 틀린 숫자가 나옴.", flush=True)
-    else:
-        net._RADAR_LEAKY = False
-    print(f"[eval] 레이더 인코더: head={net._RADAR_HEAD}"
-          f"{'(ch=%d)' % net._RADAR_BOTTLENECK_CH if _rk else ''} act={'leaky' if net._RADAR_LEAKY else 'relu'}"
-          f"{'' if _snap_act is not None else '  [활성함수는 스냅샷 없음 — 학습 env 와 같은지 확인할 것]'}", flush=True)
-    if _snap:
-        net.USE_ATTENTION = bool(_snap.get('use_attention', net.USE_ATTENTION))
-        net.POS_GROUND = bool(_snap.get('pos_ground', net.POS_GROUND))
-        net.CENTRAL_CRITIC = bool(_snap.get('central_critic', _sniff_cc))
-        net.STATE_RECON_COEF = float(_snap.get('state_recon_coef', 1.0 if _sniff_sr else 0.0))
-        # ★2026-09-07: 가중치에 흔적이 안 남는 값들을 스냅샷에서 되읽어 주입한다.
-        #   빠뜨리면 학습 분포 != 평가 분포인데 에러가 없다. msg_random_sd 가 그 실증 사례였다
-        #   (0.14 로 학습해도 make_others_msg 가 env 기본 0.20 을 씀).
-        #   ⚠️_MSG_TOKEN_GAIN 은 모듈 로드 시점에 읽히므로 여기서 모듈 전역을 직접 덮어써야 한다.
-        if _snap.get('msg_token_gain') is not None:
-            net._MSG_TOKEN_GAIN = float(_snap['msg_token_gain'])
-        for _k_env, _k_snap in (('VESSEL_MSG_RANDOM_SD', 'msg_random_sd'),
-                                ('VESSEL_AGG_MODE', 'agg_mode'),
-                                ('VESSEL_MSG_GAIN', 'msg_gain')):
-            _v = _snap.get(_k_snap)
-            if _v is not None:
-                os.environ[_k_env] = str(_v)
-        _ck_mp = _snap.get('max_partners')
-        if _ck_mp is not None and int(_ck_mp) != int(args.max_partners):
-            print(f"[eval] [!] ckpt 는 max_partners={_ck_mp} 로 학습됐는데 평가는 {args.max_partners} 임 "
-                  f"- 학습값으로 맞춤 (--max_partners 로 덮어쓰려면 명시할 것)", flush=True)
-            args.max_partners = int(_ck_mp)
-        _ck_cr = _snap.get('comm_range')
-        if _ck_cr is not None and abs(float(_ck_cr) - float(vg.COMM_RANGE)) > 1e-6:
-            print(f"[eval] [!] ckpt 는 comm_range={_ck_cr} 로 학습됐는데 평가 env 는 {vg.COMM_RANGE} 임. "
-                  f"VESSEL_COMM_RANGE={_ck_cr} 로 주고 다시 돌릴 것 (relpos 정규화·보상반경이 달라짐).",
-                  flush=True)
-        print(f"[eval] 통신 설정: msg_token_gain={getattr(net, '_MSG_TOKEN_GAIN', 1.0)} "
-              f"max_partners={args.max_partners} comm_range={vg.COMM_RANGE} "
-              f"msg_l2={_snap.get('msg_l2_coef')} clip_per_module={_snap.get('clip_per_module')} "
-              f"recon_ema_floor={_snap.get('recon_ema_floor')}", flush=True)
-        print(f"[eval] ckpt 설정 적용: attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} "
-              f"central_critic={net.CENTRAL_CRITIC} state_recon={net.STATE_RECON_COEF} "
-              f"msg_dim={_msg_dim}", flush=True)
-        # 학습 arm 과 평가 arm 이 어긋나면 다른 실험을 재는 것이므로 즉시 실패시킨다.
-        _ck_arm = _snap.get('arm') or (sd.get('arm') if isinstance(sd, dict) else None)
-        if _ck_arm and _ck_arm != args.arm and not args.allow_arm_mismatch:
-            raise SystemExit(f"[eval] ckpt 는 --arm {_ck_arm} 로 학습됐는데 평가는 --arm {args.arm} 임. "
-                             f"다른 실험을 재게 되므로 중단함 (의도한 교차평가면 --allow_arm_mismatch).")
-    else:
-        net.CENTRAL_CRITIC = _sniff_cc
-        net.STATE_RECON_COEF = 1.0 if _sniff_sr else 0.0
-        print(f"[eval] [!] 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습). "
-              f"central_critic={_sniff_cc} state_recon={_sniff_sr} 는 키로 스니핑했으나 "
-              f"**집계 방식(attention/pos_ground)은 키로 알 수 없음** — 현재 env 값 "
-              f"attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} 로 평가함. "
-              f"학습 때와 다르면 조용히 틀린 숫자가 나오므로 학습 env 를 그대로 주고 돌릴 것.", flush=True)
-
-    policy = CNNPolicy(_msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
-    policy.load_state_dict(_sd)
-    policy.eval()
+    # ★2026-09-10: 복원·env 생성은 ckpt_io 단일 구현으로. (예전 인라인 블록 ~100줄은 그리로 옮김)
+    #   순서: 스냅샷 스니핑 → networks 전역 덮어쓰기 → CNNPolicy() → strict 로드. comm_range/arm 불일치는 기본 중단.
+    #   env 는 스냅샷의 ring/crossing/perpair 를 쓴다. --ring/--crossing 을 주면 override 로 로그에 남는다.
+    from ckpt_io import restore_policy, make_env_from_snapshot
+    _r = restore_policy(ckpt_path, dev, arm=args.arm, max_partners=args.max_partners,
+                        allow_arm_mismatch=args.allow_arm_mismatch,
+                        allow_comm_range_mismatch=args.allow_comm_range_mismatch, tag='[eval]')
+    policy = _r.policy
+    args.max_partners = _r.max_partners
+    env = make_env_from_snapshot(_r.snap, device=dev, num_envs=E, seed=args.seed, n_vessels=N,
+                                 ring=args.ring, crossing=args.crossing, tag='[eval]')
+    args.ring, args.crossing = env.ring_scale, env.crossing   # 뒤에서 [run] 로그가 찍는 값
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()

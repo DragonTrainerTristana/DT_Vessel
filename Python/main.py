@@ -722,6 +722,15 @@ def training_step(step, envs, behavior_names, frame_stacks, policy, memory,
     return total_agents, last_env_actions
 
 
+def _unity_snapshot(total_agents):
+    """Unity(main.py) 경로용 cfg_snapshot. ring/crossing/rollout 은 씬·C# 소관이라 None."""
+    from ckpt_io import snapshot_config
+    return snapshot_config(arm='ON' if USE_COMM else 'OFF', msg_dim=MSG_DIM,
+                           seed=int(os.environ.get('VESSEL_SEED', 42)),
+                           n_envs=NUM_ENVS, n_vessels=max(1, total_agents // max(1, NUM_ENVS)),
+                           max_partners=MAX_COMM_PARTNERS, trunc_boot=None, trainer='unity')
+
+
 def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
                  memory, writer, reward_rms, reward_buffer, stats, interval_stats,
                  episode_log_file, training_log_file, training_start_time=None):
@@ -853,6 +862,10 @@ def log_and_save(step, total_agents, last_env_actions, policy, optimizer,
         checkpoint = {
             'model_state_dict': policy.state_dict(),
             'msg_anneal_step': getattr(policy, 'msg_anneal_step', 0),
+            # ★2026-09-10: Unity 경로에도 설정 스냅샷. 없으면 평가가 집계 방식(attention/pos_ground)을
+            #   키로 알 수 없어 조용히 다른 실험을 잰다(gym 경로는 09-05부터 있었음). 키 추가라 구 로더 안 깨짐.
+            'arm': 'ON' if USE_COMM else 'OFF',
+            'cfg_snapshot': _unity_snapshot(total_agents),
         }
         torch.save(checkpoint, save_path)
         rms_save = save_path.replace('.pth', '_reward_rms.npz')

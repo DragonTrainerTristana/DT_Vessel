@@ -96,6 +96,18 @@ preflight() {
   grep -q "ALL PASS" "$OUT/_verify_ppo.txt"  || { echo "  PPO 미러가 ALL PASS 가 아님"; exit 1; }
   grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
   echo "  둘 다 ALL PASS"
+  # ★2026-09-10: 기본값 비트동일 골든 + vessel_gym 충실도. VESSEL_SKIP_GOLDEN=1 로 건너뜀(수 분 걸림).
+  if [ "${VESSEL_SKIP_GOLDEN:-0}" != "1" ]; then
+    echo "[preflight] 골든 비트동일 검사"
+    ( cd "$HERE" && env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
+        "$PY" -u test_golden.py --check ) > "$OUT/_golden.txt" 2>&1 \
+      || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
+    grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
+    echo "  골든 ALL PASS"
+    "$PY" -u "$HERE/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
+      || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
+    echo "  충실도 PASS"
+  fi
   echo
 }
 
@@ -174,6 +186,7 @@ case "$MODE" in
     ;;
 
   eval)
+    preflight
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
       eval_one off  OFF 6  "$s"
@@ -201,8 +214,30 @@ case "$MODE" in
     cat "$OUT/_status_train.txt"
     ;;
 
+  diag)
+    # ★2026-09-10: 체크포인트 진단 단일 진입점(diag_ckpt.py). 설정은 스냅샷에서, 조우율 게이트 통과 못 하면 숫자 안 냄.
+    #   사용: VESSEL_DIAG_CKPTS="a.pt b.pt" bash run_repro.sh diag   (CK 아래 상대경로)
+    #   추가 인자: VESSEL_DIAG_ARGS="--burn 1000 --collect 900 --envs 32"
+    preflight
+    : > "$OUT/_status_diag.txt"
+    for c in ${VESSEL_DIAG_CKPTS:?VESSEL_DIAG_CKPTS 를 줄 것}; do
+      throttle
+      n="$(basename "$c" .pt)"
+      (
+        set +e
+        VESSEL_CKPT_DIR="$CK" "$PY" -u "$HERE/diag_ckpt.py" --ckpt "$c" --device "cuda:$(( GPU_I % NGPU ))" \
+          --out "$OUT/diag_${n}.json" ${VESSEL_DIAG_ARGS:-} > "$OUT/diag_${n}.txt" 2>&1
+        echo "$n rc=$?" >> "$OUT/_status_diag.txt"
+      ) &
+      GPU_I=$(( GPU_I + 1 ))
+    done
+    wait
+    echo "진단 완료 — $OUT/diag_*.json (rc≠0 은 게이트 실패=숫자 없음)"
+    cat "$OUT/_status_diag.txt"
+    ;;
+
   *)
-    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random)"
+    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | diag)"
     exit 2
     ;;
 esac

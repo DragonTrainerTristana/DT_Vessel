@@ -357,7 +357,38 @@ COMM_TELE_COLS = ('msg_sd', 'msg_eff_dim', 'msg_axes90', 'msg_sat', 'msg_corr',
                   'gate_ctr', 'gate_cri',
                   'alpha_unif', 'alpha_dmsg', 'alpha_dpos', 'alpha_near',
                   'act_zero', 'act_shuf', 'read_ratio',
-                  'part_n', 'part_med', 'part_out', 'enc_alive')
+                  'part_n', 'part_med', 'part_out', 'enc_alive',
+                  # ★2026-09-10 추가 (뒤에만 붙임): 구 _diag_msg_channel.py 의 지표 흡수 + 진단 게이트용
+                  'msg_dc', 'threat_r2', 'om_erank', 'label_erank', 'sit_rate')
+
+
+def msg_stats(mf):
+    """메시지 [M,D] → 산포·유효차원·90%축수·포화·축간상관·DC비중.
+    comm_telemetry 와 diag_ckpt(조우/비조우 분리)가 **같은 정의**를 쓰기 위한 유일한 구현 (2026-09-10).
+      sd      : 차원별 std 의 평균
+      eff_dim : 참여비 (Σλ)²/Σλ² — 분산이 몇 방향에 실렸나
+      axes90  : 분산 90% 를 설명하는 축 수
+      sat     : |msg|>0.99 비율 (tanh 포화)
+      corr    : 축간 절대상관 평균
+      dc      : |E[msg]|² / E[|msg|²] — 2차 모멘트 중 상수(평균 벡터) 몫. 1 에 가까우면 '거의 상수'
+    """
+    out = {}
+    out['sd'] = float(mf.std(0).mean())
+    out['sat'] = float((mf.abs() > 0.99).float().mean())
+    mc = (mf - mf.mean(0, keepdim=True)).double()
+    C = (mc.T @ mc) / max(1, mc.shape[0] - 1)
+    ev = torch.linalg.eigvalsh(C).clamp(min=0).flip(0)
+    out['eff_dim'] = float(ev.sum() ** 2 / (ev.pow(2).sum() + 1e-30))
+    cum = torch.cumsum(ev, 0) / ev.sum().clamp(min=1e-30)
+    out['axes90'] = float((cum < 0.90).sum() + 1)
+    sdv = torch.sqrt(torch.diag(C)).clamp(min=1e-12)
+    R = C / (sdv[:, None] * sdv[None, :])
+    d_ = R.shape[0]
+    out['corr'] = float(R[~torch.eye(d_, dtype=torch.bool, device=R.device)].abs().mean())
+    md = mf.double()
+    mu2 = float(md.mean(0).pow(2).sum()); e2 = float(md.pow(2).mean(0).sum())
+    out['dc'] = (mu2 / e2) if e2 > 0 else float('nan')
+    return out
 
 
 def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
@@ -388,19 +419,24 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
         msg = policy.msg_actor(x, goal, self_s, sit)                  # [E,N,MSG_DIM]
         mf = msg.reshape(M, -1)
 
-        # ── 메시지 자체 ──
-        out['msg_sd'] = float(mf.std(0).mean())
-        out['msg_sat'] = float((mf.abs() > 0.99).float().mean())
-        mc = (mf - mf.mean(0, keepdim=True)).double()
-        C = (mc.T @ mc) / max(1, mc.shape[0] - 1)
-        ev = torch.linalg.eigvalsh(C).clamp(min=0).flip(0)
-        out['msg_eff_dim'] = float(ev.sum() ** 2 / (ev.pow(2).sum() + 1e-30))
-        cum = torch.cumsum(ev, 0) / ev.sum().clamp(min=1e-30)
-        out['msg_axes90'] = float((cum < 0.90).sum() + 1)
-        sdv = torch.sqrt(torch.diag(C)).clamp(min=1e-12)
-        R = C / (sdv[:, None] * sdv[None, :])
-        d_ = R.shape[0]
-        out['msg_corr'] = float(R[~torch.eye(d_, dtype=torch.bool, device=R.device)].abs().mean())
+        # ── 메시지 자체 (정의는 msg_stats 하나 — diag_ckpt 의 조우/비조우 분리와 공유) ──
+        _ms = msg_stats(mf)
+        out['msg_sd'] = _ms['sd']; out['msg_sat'] = _ms['sat']; out['msg_eff_dim'] = _ms['eff_dim']
+        out['msg_axes90'] = _ms['axes90']; out['msg_corr'] = _ms['corr']; out['msg_dc'] = _ms['dc']
+        # ── 메시지에 실린 위협 정보 (구 _diag_msg_channel.py 흡수, 2026-09-10) ──
+        #   threat_r2  : threat_decoder 가 메시지에서 송신자의 top-K 위협 기하를 얼마나 복원하나 (1=완벽, ≤0=평균만 못함)
+        #   om_erank   : 수신측 집계 메시지(others_msg)의 유효차원
+        #   label_erank: 위협 라벨 자체의 유효차원 — 복원 천장 참고용
+        #   sit_rate   : 이 배치에서 COLREGs 조우 중(sit≠0)인 배 비율 — 진단 창이 조우 없는 구간이면 위 지표가 무의미
+        thr, tmask = compute_own_threat(x.reshape(M, -1), cfg.THREAT_K, x.device)
+        pred = policy.threat_decoder(mf)
+        _mse = float(((pred - thr).pow(2) * tmask).sum() / tmask.sum().clamp(min=1))
+        _base = thr.sum(0) / tmask.sum(0).clamp(min=1)
+        _mse0 = float(((_base.unsqueeze(0) - thr).pow(2) * tmask).sum() / tmask.sum().clamp(min=1))
+        out['threat_r2'] = (1.0 - _mse / _mse0) if _mse0 > 0 else float('nan')
+        out['label_erank'] = msg_stats(thr * tmask)['eff_dim']
+        out['om_erank'] = msg_stats(om0.reshape(M, -1))['eff_dim']
+        out['sit_rate'] = float((sit.reshape(-1) != 0).float().mean())
 
         # ── 게이트 ──
         for tag, mod in (('gate_ctr', policy.ctr_actor), ('gate_cri', policy.critic)):
@@ -631,37 +667,14 @@ def main():
               f"{int(_rxonly.sum())}/{E}", flush=True)
 
     # ★2026-09-05: 체크포인트에 설정 스냅샷을 함께 저장한다.
-    #   eval_ckpt.py 가 이걸 읽어 집계 방식(attention/pos_ground)을 학습 때와 똑같이 복원한다.
-    #   msg_encoder·attn 은 항상 생성되므로 state_dict 키만으로는 어느 집계로 학습했는지 알 수 없다
-    #   → 스냅샷이 없으면 평가가 다른 집계로 조용히 굴러간다(comm-ON 팔만 망가지는 비대칭).
+    #   2026-09-10: 정의를 ckpt_io.snapshot_config 로 승격 — eval_ckpt·eval_mixed·diag_ckpt 가 같은 키를 읽는다.
+    #   (키 추가: farfield_coef·perpair_coef·perpair_exp·radar_range·trainer. 기존 키 값은 불변.)
     def _cfg_snapshot():
-        return {
-            'arm': args.arm, 'msg_dim': MSG_DIM,
-            'use_attention': bool(cfg.USE_ATTENTION), 'pos_ground': bool(cfg.POS_GROUND),
-            'central_critic': bool(cfg.CENTRAL_CRITIC), 'state_recon_coef': float(cfg.STATE_RECON_COEF),
-            'use_moe': bool(cfg.USE_MOE), 'moe_shared': bool(cfg.MOE_SHARED), 'moe_width': float(cfg.MOE_WIDTH),
-            'msg_ln': os.environ.get('VESSEL_MSG_LN', '1') == '1',
-            'comm_range': float(cfg.COMM_RANGE), 'max_partners': int(args.max_partners),
-            'comm_on_at': int(args.comm_on_at), 'ring': float(args.ring), 'crossing': int(args.crossing),
-            'vessels': int(N), 'envs': int(E), 'rollout': int(args.rollout), 'seed': int(args.seed),
-            'msg_random_sd': float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)) if args.arm == 'RANDOM' else None,
-            # ★2026-09-07: 레이더 인코더 활성함수·head 는 가중치에 안 남는다(활성함수) / 키로만 구분된다(head).
-            #   평가가 학습과 다른 활성함수로 돌면 에러 없이 조용히 틀리므로 여기 기록해 eval_ckpt 가 복원한다.
-            'radar_act': os.environ.get('VESSEL_RADAR_ACT', 'relu').lower(),
-            'radar_head': os.environ.get('VESSEL_RADAR_HEAD', 'flat').lower(),
-            'radar_bottleneck_ch': int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8)),
-            # ★2026-09-07: 아래는 가중치에 흔적이 안 남는 값들 — 스냅샷이 유일한 근거다.
-            #   평가가 학습과 다른 값으로 돌면 에러 없이 다른 실험을 재게 된다(msg_random_sd 가 실제 사례:
-            #   0.14 로 학습해도 평가는 env 기본 0.20 을 썼다). eval_ckpt 가 이 키들을 되읽는다.
-            'msg_token_gain': float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0)),
-            'clip_per_module': os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1',
-            'msg_l2_coef': float(cfg.MSG_L2_COEF),
-            'recon_ema_floor': float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0)),
-            'comm_telemetry': os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1',
-            'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum').lower(),
-            'msg_gain': float(os.environ.get('VESSEL_MSG_GAIN', 1.0)),
-            'timeout_bootstrap': _trunc_boot,
-        }
+        from ckpt_io import snapshot_config
+        return snapshot_config(arm=args.arm, msg_dim=MSG_DIM, seed=args.seed, n_envs=E, n_vessels=N,
+                               max_partners=args.max_partners, trunc_boot=_trunc_boot,
+                               comm_on_at=args.comm_on_at, ring=args.ring, crossing=args.crossing,
+                               rollout=args.rollout, trainer='gym')
 
     # ★2026-09-05: intent/state-recon 라벨 정렬 버그를 고쳤다(pos/hdg 를 env.step *앞*에서 기록).
     #   고치기 전에는 라벨이 한 스텝 밀려 있었고 respawn 텔레포트가 마스크를 관통했다.

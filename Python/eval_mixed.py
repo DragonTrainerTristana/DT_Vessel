@@ -120,56 +120,16 @@ def main():
                             ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
                             farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
                             perpair_coef=-0.15, perpair_exp=3.0)
-    # ★ckpt 를 먼저 읽어 msg_ln(LayerNorm, 2026-08-31) 유무를 스니핑 → 옛/새 체크포인트 모두 strict 로드
-    sd = torch.load(ckpt_path, map_location=dev)
-    _sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
-    os.environ['VESSEL_MSG_LN'] = '1' if any('msg_ln' in k for k in _sd) else '0'
-    # ★2026-09-05 fix: msg_dim 도 ckpt 에서 스니핑한다 (eval_ckpt.py 와 같은 처리).
-    #   틀렸던 점: cfg.MSG_DIM 은 `import config` 시점(=VESSEL_MSG_DIM 환경변수)에 고정된다.
-    #   H2 팔(MSG_DIM 2·4·8·10·12)로 학습한 ckpt 를 VESSEL_MSG_DIM 없이 돌리면 load_state_dict 가
-    #   shape 불일치로 죽어 혼합함대 평가를 아예 못 돌렸다(같은 저장소의 eval_ckpt 는 되는데 여기만 안 됨).
-    #   ckpt 가 진실이므로 거기서 읽는다. 키가 없으면 조용한 폴백 대신 명시 실패시킨다
-    #   (폭이 우연히 맞으면 틀린 폭의 others_msg 로 '조용히 잘못된 평가'가 되므로).
-    _mk = [k for k in _sd if k.endswith('msg_out.weight')]
-    if not _mk:
-        raise SystemExit('[eval_mixed] msg_out.weight 키 없음 - msg_dim 스니핑 실패. '
-                         '네트워크 구조가 바뀐 것이므로 확인 후 돌릴 것.')
-    _msg_dim = int(_sd[_mk[0]].shape[0])
-    if _msg_dim != cfg.MSG_DIM:
-        import vessel_gym_train as _vgt
-        _vgt.MSG_DIM = _msg_dim      # 모듈 전역을 쓰는 경로(make_others_msg 등)까지 폭을 맞춘다
-        print(f"[eval_mixed] ckpt msg_dim={_msg_dim} (cfg={cfg.MSG_DIM}) - ckpt 값으로 로드", flush=True)
-    # ★2026-09-05 fix: 집계 방식(attention/pos_ground)은 state_dict 키로 구분이 불가능하다.
-    #   msg_encoder(pos_ground)·attn(attention) 모듈은 CNNPolicy.__init__ 이 *조건 없이* 항상 만들기 때문에
-    #   attention 으로 학습한 ckpt 를 VESSEL_USE_ATTENTION 없이 로드해도 strict 로드가 경고 없이 통과하고,
-    #   학습 때와 다른 집계 함수로 굴러간다(comm-OFF 무리는 others_msg≡0 이라 무영향 → comm 무리만 망가지는 비대칭).
-    #   과거에 보고된 Fig7/Fig8 숫자를 조용히 바꾸지 않기 위해 기본은 '경고만', 적용은 opt-in 으로 둔다.
-    _snap = sd.get('cfg_snapshot') if isinstance(sd, dict) else None
-    _apply_snap = os.environ.get('VESSEL_EVAL_APPLY_SNAPSHOT', '0') == '1'
-    if _snap:
-        # 스냅샷에 없는 키는 '모름' 이므로 현재 값을 기본으로 둔다(없는 키로 헛경고 방지).
-        _mis = [(k, _snap.get(k, getattr(net, n)), getattr(net, n))
-                for k, n in (('use_attention', 'USE_ATTENTION'), ('pos_ground', 'POS_GROUND'),
-                             ('central_critic', 'CENTRAL_CRITIC'))
-                if bool(_snap.get(k, getattr(net, n))) != bool(getattr(net, n))]
-        if _mis and _apply_snap:
-            net.USE_ATTENTION = bool(_snap.get('use_attention', net.USE_ATTENTION))
-            net.POS_GROUND = bool(_snap.get('pos_ground', net.POS_GROUND))
-            net.CENTRAL_CRITIC = bool(_snap.get('central_critic', net.CENTRAL_CRITIC))
-            net.STATE_RECON_COEF = float(_snap.get('state_recon_coef', net.STATE_RECON_COEF))
-            print(f"[eval_mixed] VESSEL_EVAL_APPLY_SNAPSHOT=1 - ckpt 설정으로 덮어씀: {_mis}", flush=True)
-        elif _mis:
-            print(f"[eval_mixed] [!] ckpt 학습 설정과 현재 env 가 다름 {_mis} "
-                  f"(항목=(이름, ckpt, 현재)). 이 상태로 재면 학습 때와 *다른 집계*로 굴러가 "
-                  f"comm 무리만 조용히 틀린다. 학습 때 env 를 그대로 주고 돌리거나 "
-                  f"VESSEL_EVAL_APPLY_SNAPSHOT=1 로 ckpt 설정을 적용할 것.", flush=True)
-    else:
-        print(f"[eval_mixed] [!] 이 체크포인트엔 cfg_snapshot 이 없음(2026-09-05 이전 학습) - "
-              f"집계 방식은 키로 알 수 없다. 현재 env attention={net.USE_ATTENTION} "
-              f"pos_ground={net.POS_GROUND} 로 평가함. 학습 때와 다르면 조용히 틀린 숫자가 나온다.", flush=True)
-    policy = CNNPolicy(_msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
-    policy.load_state_dict(_sd)
-    policy.eval()
+    # ★2026-09-10: 복원은 ckpt_io.restore_policy 단일 구현으로. 예전 인라인 블록은 radar_head/radar_act/token_gain
+    #   복원이 빠져 있었고(eval_ckpt 와 불일치), 스냅샷 적용이 VESSEL_EVAL_APPLY_SNAPSHOT opt-in 이라 기본은
+    #   학습과 다른 집계로 조용히 굴렀다. 이제 항상 스냅샷을 적용하고 적용된 설정을 헤더로 찍는다.
+    #   ⚠️과거 Fig7/Fig8 숫자가 불일치 상태에서 나왔다면 이 변경으로 값이 달라진다 — 그 경우 과거 값이 틀린 것.
+    from ckpt_io import restore_policy
+    _r = restore_policy(ckpt_path, dev, arm=None, max_partners=args.max_partners,
+                        allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                        tag='[eval_mixed]')
+    policy, _msg_dim = _r.policy, _r.msg_dim
+    args.max_partners = _r.max_partners
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()

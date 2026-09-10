@@ -55,8 +55,9 @@ CASES = {
     'batch_2026_09_04_ON': dict(env=BATCH_ENV, arm='ON'),
 }
 
-# 작게: E=8 N=16 rollout=64 → update 당 8,192 결정. --steps 는 환경당 결정 수라 2048 = 2 update. CPU 1~2분.
-TRAIN_ARGS = ['--steps', '2048', '--envs', '8', '--vessels', '16', '--seed', '0', '--rollout', '64']
+# 작게: E=8 N=16 rollout=64 → update 당 8,192 결정(전 에이전트 합). --steps 는 그 합 기준(vessel_gym_train.py:736
+# `while total_decisions < args.steps`) 이라 16384 = 정확히 2 update. CPU 2~3분.
+TRAIN_ARGS = ['--steps', '16384', '--envs', '8', '--vessels', '16', '--seed', '0', '--rollout', '64']
 
 
 _FMT = {'torch.float32': 'f', 'torch.float64': 'd', 'torch.int64': 'q', 'torch.int32': 'i',
