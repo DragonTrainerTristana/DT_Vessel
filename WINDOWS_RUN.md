@@ -99,6 +99,8 @@ powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 2
 
 - 브랜치: 기본 `main`(2026-09-10 승격, 0905 라인 = 리팩토링·공유 인코더 포함). `msgComparision` 은 Fig4 메시지 차원 축 전용 브랜치(RUNS.md). `Thick_MoE`/`Light_MoE`는 MoE 3-arm 비교용 —
   이번 계단(Stage 1/2)에서는 사용하지 않음
+- ★2026-09-10 **YUGIOH** = config 기본값(최종판). 학습은 `bash run_repro.sh train`(env 불필요, preflight 가 드리프트 검사).
+  옛 체크포인트 평가는 `VESSEL_COMM_RANGE=200` 등 학습값을 줘야 함 — 모르면 `python ckpt_io.py <ckpt> --env` 가 찍어줌(없으면 중단).
 - 전 run의 설정 스냅샷은 각 결과 폴더의 `run_meta.txt` + `config_snapshot.txt`
   (`AGG_MODE=mean` 표기는 pos_ground 기본 ON에서는 미사용 폴백 — 무시)
 - 판정 이후의 계획(집계 ablation, H2 msgdim)은 Stage 2 결과를 보고 결정

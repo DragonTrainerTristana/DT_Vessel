@@ -84,7 +84,7 @@
 | 구성요소 | 코드 | 내용 |
 |---|---|---|
 | **RadarEncoder** | :163-218 | Conv1D circular ×3: 3→32 k5 s2 (:183), 32→64 k5 s2 (:184), 64→64 k3 s2 (:185) → 360→180→90→45. 옵션 1×1 bottleneck `reduce` 64→8 (`VESSEL_RADAR_HEAD=bottleneck`, :187-190) → flatten(2880, bottleneck이면 360) → Linear→`RADAR_FEAT_DIM`=30 (:194). 활성 ReLU, `VESSEL_RADAR_ACT=leaky`로 LeakyReLU(0.01) (:34, :204) |
-| **인코더 공유** `SHARED_ENCODER` (config, 2026-09-10) | `'0'` 기본=세 망 각자 / `'actor'` msg←ctr / `'all'` msg·cri←ctr. `networks._share_encoder_across`, CNNPolicy.__init__ 세 망 생성 직후 | 12런 실측 메시지망 인코더 출력 산포 = 조타망의 1/50~1/1000(학습 신호 1/2000) → 조타 손실이 인코더를 직접 학습시키게. 파라미터: 0→356,607 / actor 322,089 / all 287,571(배치+bottleneck). 골든 `batch_shared_{all,actor}_ON`, 미러 4케이스 |
+| **인코더 공유** `SHARED_ENCODER` (config, 2026-09-10) | `'all'` **기본(YUGIOH)**=msg·cri←ctr / `'0'` 세 망 각자(legacy, 12런까지) / `'actor'` msg←ctr. `networks._share_encoder_across`, CNNPolicy.__init__ 세 망 생성 직후 | 12런 실측 메시지망 인코더 출력 산포 = 조타망의 1/50~1/1000(학습 신호 1/2000) → 조타 손실이 인코더를 직접 학습시키게. 파라미터: 0→356,607 / actor 322,089 / all 287,571(배치+bottleneck). 골든 `batch_shared_{all,actor}_ON`, 미러 4케이스 |
 | **MoE** | `USE_MOE` 기본 **ON** (config :235), 전문가 5 (:236), `MOE_WIDTH` 1.0 (:244), `MOE_SHARED` 0 (:249) | 코어 통째 hard-routing(obs[368]). ModuleList :529/:671/:896. `_share_radar_encoder` (:130-135) = **MOE_SHARED=1일 때 전문가 5벌끼리만** 인코더 공유(세 망 간 공유 아님) |
 | **situation one-hot** | `SITUATION_INPUT` 기본 ON (config :264) → `SIT_INPUT_DIM`=5 (:149), `_situation_onehot` :152 | 세 망 fc2에 concat. MoE에서도 입력(코어 내 상수, 무해) |
 | **MessageActor 코어** | :467-511 | radar30 + goal2 + self4 + sit5 = **fc2 41**→128 ReLU → `msg_ln` LayerNorm(**기본 ON**, `VESSEL_MSG_LN`, :490, 2026-08-31 tanh 포화 방지) → `msg_out` 128→MSG_DIM tanh. `msg_out` **×0.1 소진폭**(:495-497) |
@@ -109,7 +109,8 @@
 | USE_MOE=0 (단일) | 369,387 | 116,004 / 132,777 / 115,872 | 4,734 | 73 |
 | MOE_WIDTH=0.44 | 363,564 | 114,195 / 130,740 / 113,895 | 4,734 | 261 |
 | 2026-09-04 배치(shared1 attn1 cc1 sr1) | 581,847 | 141,628 / 225,493 / 204,968 | 9,758 | 289 |
-| **09-04 배치 + `RADAR_HEAD=bottleneck(ch=8)` = 12런 실제 구성** | **356,607** | 인코더당 fc 2880→30(86,430) → 1×1 conv(520)+fc 360→30(10,830), 3벌 −225,240 | 9,758 | 319 |
+| **★YUGIOH(2026-09-10 최종) = 12런 구성 + `SHARED_ENCODER=all`** | **287,571** | 인코더 1벌(34,518). 같은 기준 구조 4종: 단일망 92,935 / 얇게 **폭 0.32** 92,163(−0.8%) / 두껍게(MOE_SHARED=0) 425,643 / 공유 287,571 — `runs/ABLATION_PLAN.md` §3 | 9,758 | 319 |
+| 09-04 배치 + `RADAR_HEAD=bottleneck(ch=8)` = 12런 실제 구성 | **356,607** | 인코더당 fc 2880→30(86,430) → 1×1 conv(520)+fc 360→30(10,830), 3벌 −225,240 | 9,758 | 319 |
 
 - README.md의 364,397 / 1,821,985 / 358,270 = **3망 합(공용 모듈 제외)·msg_ln 없음** 기준 — 위 실측과 정합(LN 제외 단일 3망 합 = 364,397).
 - 0908 문서·`Vessel_신경망_층별명세`의 356,607 = 위 bottleneck 행 (2026-09-10 CPU 실측 재현). 12런 평가 헤더 `head=bottleneck(ch=8) act=leaky` 로 확인.
@@ -170,6 +171,8 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 **원칙: `config.py`가 정본 — 2026-09-10 통합 완료** (커밋 348018b·f6998a2). `networks.py`·`vessel_gym.py`·`vessel_gym_train.py`의 비주석 `os.environ` 읽기 **0개**. 새 env 키는 `config.py`에만 추가하고 각 모듈은 import 만 한다.
 
+**★YUGIOH 최종판 (2026-09-10 저녁) = config 기본값.** env 를 하나도 안 주면 12런 배치(commfix) + 인코더 망 간 공유 설정으로 돈다. 그날 바뀐 기본값 11개는 아래 표에 ★(괄호 = legacy 값). 정의·출처는 `config.py` 끝 `CODE_VERSION / YUGIOH / YUGIOH_ARGS / YUGIOH_LEGACY`. `test_golden default_ON/OFF` = YUGIOH(이날 재생성, 319텐서), `batch_2026_09_04_ON` 은 legacy 11개를 **명시 핀**해 과거 골든 그대로 PASS. `ckpt_io.restore_policy` 는 스냅샷에 키가 없으면 YUGIOH 가 아니라 legacy 로 복원(§8). 옛 기본값으로 돌리려면 `YUGIOH_LEGACY` 를 env 로 주면 됨. 스냅샷 `code_version` 키로 판별.
+
 | 어디 | 무엇 | 비고 |
 |---|---|---|
 | `config.py` 끝 "config 통합" 절 | 레이더 `RADAR_ACT/HEAD/BOTTLENECK_CH` · 집계 `MSG_LN MSG_TOKEN_GAIN AGG_MODE NEAREST_SCALE MSG_GAIN MSG_RANDOM_SD` · `RECON_EMA_FLOOR RECON_LEGACY_STAT MOE_FAST` · 학습기 전용 12(`VALNORM_BETA FARFIELD/PERPAIR_COEF TIMEOUT_BOOTSTRAP GRAD_TELEMETRY CLIP_PER_MODULE MSG_GATE_APPLY NOCOMM_* BLIND_WARN_AFTER COMM_TELEMETRY*`) · vessel_gym 시뮬·보상 27 | 이름·기본값은 통합 전과 동일 — `test_golden` 비트동일로 확인 |
@@ -183,24 +186,27 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 |---|---|---|---|---|
 | `VESSEL_USE_COMM` | `USE_COMMUNICATION` | **1** | :275 | 통신 ON/OFF. OFF = others_msg≡0 |
 | `VESSEL_MSG_DIM` | `MSG_DIM` | 6 | :53 | 메시지 차원(≥GOAL_SIZE 2 assert :976) |
-| `VESSEL_COMM_RANGE` | `COMM_RANGE` | **200** | :83 | 통신 반경 = 보상 반경(2026-08-30 420→200). `vessel_gym.py` :61도 같은 env |
+| `VESSEL_COMM_RANGE` | `COMM_RANGE` | **300 ★**(legacy 200) | :83 | 통신 반경 = 보상 반경(2026-08-30 420→200). `vessel_gym.py` :61도 같은 env |
 | `VESSEL_MAX_PARTNERS` | `MAX_COMM_PARTNERS` | 4 | :88 | nearest-K |
 | `VESSEL_USE_MOE` | `USE_MOE` | **1** | :235 | 상황별 코어 5벌. 단일망 baseline은 0 명시 |
-| `VESSEL_MOE_WIDTH` / `VESSEL_MOE_SHARED` | `MOE_WIDTH` / `MOE_SHARED` | 1.0 / 0 | :244 / :249 | iso-param 폭 / 전문가 간 인코더 공유 |
+| `VESSEL_MOE_WIDTH` / `VESSEL_MOE_SHARED` | `MOE_WIDTH` / `MOE_SHARED` | 1.0 / **1 ★**(legacy 0) | :244 / :249 | iso-param 폭 / 전문가 간 인코더 공유 |
 | `VESSEL_SITUATION_INPUT` | `SITUATION_INPUT` | 1 | :264 | one-hot 5 입력(0 = fc2 36/42 ablation) |
 | `VESSEL_POS_GROUND` | `POS_GROUND` | 1 | :117 | relpos+msg_encoder mean 집계 |
-| `VESSEL_USE_ATTENTION` / `VESSEL_ATTN_DIM` | `USE_ATTENTION` / `ATTN_DIM` | 0 / 32 | :107 / :108 | GroundedAttention |
-| `VESSEL_CENTRAL_CRITIC` | `CENTRAL_CRITIC` | 0 | :172 | CTDE critic |
-| `VESSEL_STATE_RECON_COEF` | `STATE_RECON_COEF` | 0.0 | :165 | 통합 상태복원 aux (>0이면 구 5계수는 0으로) |
+| `VESSEL_USE_ATTENTION` / `VESSEL_ATTN_DIM` | `USE_ATTENTION` / `ATTN_DIM` | **1 ★**(legacy 0) / 32 | :107 / :108 | GroundedAttention |
+| `VESSEL_CENTRAL_CRITIC` | `CENTRAL_CRITIC` | **1 ★**(legacy 0) | :172 | CTDE critic |
+| `VESSEL_STATE_RECON_COEF` | `STATE_RECON_COEF` | **0.05 ★**(legacy 0.0) | :165 | 통합 상태복원 aux (>0이면 구 5계수는 0으로) |
 | `VESSEL_INTENT/THREAT/GOAL_COMM/ROLE_COMM/COMM_CONSUMER_COEF` | 각 `*_COEF` | 0.0 | :128/:144/:157/:186/:199 | 구 aux 디코더 계수 |
 | `VESSEL_ORACLE` | `USE_ORACLE` | 0 | :220 | 참 파트너 goal 주입 통제군(comm 승리 주장에 쓰지 않음) |
-| `VESSEL_MSG_L2` / `VESSEL_MSG_GATE_L2` / `VESSEL_MSG_LR` | `MSG_L2_COEF` / `MSG_GATE_COEF` / `MSG_LR_SCALE` | 0.001 / **0.0** / 1.0 | :92 / :96 / :89 | 게이트 페널티 0 = 06-12 기각 설계의 잔재(ablation 전용) |
+| `VESSEL_MSG_L2` / `VESSEL_MSG_GATE_L2` / `VESSEL_MSG_LR` | `MSG_L2_COEF` / `MSG_GATE_COEF` / `MSG_LR_SCALE` | **0.0002 ★**(legacy 0.001) / **0.0** / 1.0 | :92 / :96 / :89 | 게이트 페널티 0 = 06-12 기각 설계의 잔재(ablation 전용) |
 | `VESSEL_RADAR_FEAT_DIM` | `RADAR_FEAT_DIM` | 30 | :49 | 인코더 출력 |
+| `VESSEL_SHARED_ENCODER` | `SHARED_ENCODER` | **all ★**(legacy 0) | config 끝 | 레이더 인코더 망 간 공유(§4). 키·shape 불변 — 스냅샷이 유일한 근거 |
+| `VESSEL_RADAR_ACT` / `VESSEL_RADAR_HEAD` / `VESSEL_RADAR_BOTTLENECK_CH` | `RADAR_ACT` / `RADAR_HEAD` / `RADAR_BOTTLENECK_CH` | **leaky ★**(relu) / **bottleneck ★**(flat) / 8 | config 끝 | 붕괴 완화(COLLAPSE_ROOTCAUSE §5) / fc fan-in 2880→360(커밋 fe60596). head 는 키 결정자 |
+| `VESSEL_MSG_TOKEN_GAIN` / `VESSEL_CLIP_PER_MODULE` | `MSG_TOKEN_GAIN` / `CLIP_PER_MODULE` | **8.0 ★**(1.0) / **1 ★**(0) | config 끝 | attention 토큰 안 msg 상수배 / 망별 grad clip 0.5 |
 | `VESSEL_LOAD_MODEL` / `VESSEL_TRAIN` / `VESSEL_MODEL_PATH` | `LOAD_MODEL` / `TRAIN_MODE` / `MODEL_PATH` | 0 / 1 / — | :280-284 | Unity 경로 로드·eval |
 | `VESSEL_USE_EDITOR` / `VESSEL_NUM_ENVS` / `VESSEL_BASE_PORT` / `VESSEL_TIME_SCALE` | — | 1 / 2 / 5004 / 100 | :314-317 | Unity 환경 |
 | PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
 
-- `run_repro.sh common_env()`(:68-88) = 2026-09-04 배치 설정 — **config 기본값과 여러 개 다름**(STATE_RECON 1.0, CENTRAL_CRITIC 1, USE_ATTENTION 1, MOE_SHARED 1). 기본값으로 돌리면 다른 실험. `test_golden.py BATCH_ENV`와 동일해야 함.
+- `run_repro.sh common_env()` = **YUGIOH 를 명시 export**(config 기본값과 동일). `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 64 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`). 2026-09-04 배치 설정은 `test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
 - `config.py` import 시 `models/<COMM_FOLDER>/VesselNavigation_<시각>/logs` 디렉토리 생성 부작용(:347-348) — 스크립트에서 import만 해도 빈 폴더 생김.
 
 ---
@@ -221,7 +227,8 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | **스냅샷 키** | `ckpt_io.snapshot_config` — 추가 자유, **삭제·의미 변경 금지** |
 | Unity ground-truth | `VESSEL_OUTCOME_LOG`(goal/collision_vessel/collision_obstacle/timeout) · `VESSEL_METRIC_LOG` **17열**(`VesselAgent.cs` :903-904: agentId,episodeIndex,outcome,steps,fuel,rudderVar,complianceMean,occlRate,commandVar,minVesselDist,nearMissSteps,straightness,headingTravel,minDCPA,dcpaBelowSteps,fuelThrust,fuelTurn). 뒤 8열 = 진단 전용, 보상 비연결 |
 
-- `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → 현재 env 값으로 감. **조용히 틀릴 수 있음** 명시 보고.
+- `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → **legacy 기본**(attention 0·pos_ground 1·token_gain 1·relu·agg sum)으로 감(YUGIOH 기본 아님). comm_range 불명이면 **중단** — `VESSEL_COMM_RANGE=<학습값>` + `allow_comm_range_mismatch` 로만 진행. **조용히 틀릴 수 있음** 명시 보고.
+- **2026-09-10 YUGIOH 에서 발견·수정**: `restore_policy` 가 `use_moe / moe_width / moe_shared` 를 복원 안 했음 → YUGIOH 기본(공유 MoE)으로 만들면 단일망·얇게는 strict 실패, 두껍게(MOE_SHARED=0)는 5벌 인코더가 한 객체에 덮여 **마지막 전문가만 남는 조용한 오염**. 지금은 스냅샷 → 없으면 키(`experts.`)·전문가 0/1 텐서 동일성·conv/fc 채널 수(폭 역산)로 스니핑. 구조 4종 × {정상/구 스냅샷/스냅샷 없음} 12건 시뮬 통과.
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
 ---

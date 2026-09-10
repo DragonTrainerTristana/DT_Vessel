@@ -42,6 +42,7 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
     """
     return {
         'arm': arm, 'msg_dim': int(msg_dim), 'trainer': trainer,
+        'code_version': getattr(cfg, 'CODE_VERSION', None),   # ★2026-09-10 YUGIOH 부터
         'use_attention': bool(cfg.USE_ATTENTION), 'pos_ground': bool(cfg.POS_GROUND),
         'central_critic': bool(cfg.CENTRAL_CRITIC), 'state_recon_coef': float(cfg.STATE_RECON_COEF),
         'use_moe': bool(cfg.USE_MOE), 'moe_shared': bool(cfg.MOE_SHARED), 'moe_width': float(cfg.MOE_WIDTH),
@@ -96,11 +97,12 @@ class Restored:
     def header(self):
         """결과 파일 첫 줄에 박을 한 줄 요약."""
         e = self.effective
-        return (f"ckpt={os.path.basename(self.path)} arm={self.arm} msg_dim={self.msg_dim} "
+        return (f"ckpt={os.path.basename(self.path)} ver={(self.snap or {}).get('code_version', 'pre-YUGIOH')} arm={self.arm} msg_dim={self.msg_dim} "
                 f"attention={e['use_attention']} pos_ground={e['pos_ground']} central_critic={e['central_critic']} "
                 f"state_recon={e['state_recon_coef']} radar={e['radar_head']}/{e['radar_act']} "
                 f"msg_ln={e['msg_ln']} token_gain={e['msg_token_gain']} agg={e['agg_mode']} msg_gain={e['msg_gain']} "
-                f"shared_enc={e.get('shared_encoder')} comm_range={e['comm_range']} max_partners={self.max_partners} "
+                f"shared_enc={e.get('shared_encoder')} moe={int(e.get('use_moe', 1))}/{e.get('moe_width')}/{int(e.get('moe_shared', 0))} "
+                f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
 
 
@@ -157,24 +159,26 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     if snap_act is not None:
         net._RADAR_LEAKY = (str(snap_act).lower() == 'leaky')
     else:
-        # 스냅샷 없음(2026-09-05 이전) → config(=import 시점 env) 값. 학습 때와 다르면 조용히 틀리므로 기록
-        net._RADAR_LEAKY = (cfg.RADAR_ACT == 'leaky')
-        notes.append(f"스냅샷에 radar_act 없음 → config RADAR_ACT={cfg.RADAR_ACT} 사용. 학습 때 값과 다르면 조용히 틀린 숫자")
+        # ★스냅샷에 radar_act 없음(2026-09-07 이전) → **legacy relu** 로 복원. YUGIOH(2026-09-10) 기본이 leaky 라
+        #   config 로 떨어뜨리면 구 체크포인트가 조용히 leaky 로 평가된다. 학습이 leaky 였으면 VESSEL_RADAR_ACT 로 알 수 없으니 기록만.
+        net._RADAR_LEAKY = False
+        notes.append("스냅샷에 radar_act 없음(2026-09-07 이전) → legacy relu 로 복원. 학습이 leaky 였다면 조용히 틀린 숫자")
 
     ck_arm = None
     if snap:
         # 4) 키로 구분 불가능한 구조 선택 + 가중치에 흔적 없는 값 — 모듈 전역 덮어쓰기
-        net.USE_ATTENTION = bool(snap.get('use_attention', net.USE_ATTENTION))
-        net.POS_GROUND = bool(snap.get('pos_ground', net.POS_GROUND))
+        # ★키가 없으면 config(YUGIOH) 가 아니라 **legacy 기본**(2026-09-10 이전 값)으로 — 구 체크포인트 오염 방지
+        net.USE_ATTENTION = bool(snap.get('use_attention', False))
+        net.POS_GROUND = bool(snap.get('pos_ground', True))
         net.CENTRAL_CRITIC = bool(snap.get('central_critic', sniff_cc))
         net.STATE_RECON_COEF = float(snap.get('state_recon_coef', 1.0 if sniff_sr else 0.0))
-        if snap.get('msg_token_gain') is not None:
-            net._MSG_TOKEN_GAIN = float(snap['msg_token_gain'])
+        net._MSG_TOKEN_GAIN = float(snap['msg_token_gain']) if snap.get('msg_token_gain') is not None else 1.0
         # 집계 방식·이득·난수 sd: networks / vessel_gym_train 모듈 전역을 덮어쓴다 (env 는 import 시점에만 읽힘)
-        if snap.get('agg_mode') is not None:
-            net.AGG_MODE = str(snap['agg_mode']).lower()
-        if snap.get('msg_gain') is not None:
-            net.MSG_GAIN = float(snap['msg_gain'])
+        net.AGG_MODE = str(snap['agg_mode']).lower() if snap.get('agg_mode') is not None else 'sum'
+        net.MSG_GAIN = float(snap['msg_gain']) if snap.get('msg_gain') is not None else 1.0
+        for k_snap, legacy in (('use_attention', False), ('pos_ground', True), ('msg_token_gain', 1.0), ('agg_mode', 'sum'), ('msg_gain', 1.0)):
+            if snap.get(k_snap) is None:
+                notes.append(f"스냅샷에 {k_snap} 없음 → legacy {legacy!r} 로 복원 (YUGIOH 기본값 아님)")
         if snap.get('msg_random_sd') is not None:
             import vessel_gym_train as _vgt
             _vgt.MSG_RANDOM_SD = float(snap['msg_random_sd'])
@@ -186,6 +190,13 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
             max_partners = int(ck_mp)
         # comm_range: import 시점 고정값. 어긋나면 기본 중단.
         ck_cr = snap.get('comm_range')
+        if ck_cr is None:
+            # ★스냅샷에 comm_range 없음 → 학습값을 알 수 없다. YUGIOH 기본 300 으로 조용히 재면 안 되므로 명시 승인 필요.
+            msg = (f"스냅샷에 comm_range 없음(2026-09-05~07 구 스냅샷). 현재 config/vessel_gym 은 {cfg.COMM_RANGE} 임. "
+                   f"학습값(2026-08-30~09-06 런은 대개 200)을 VESSEL_COMM_RANGE 로 주고 allow_comm_range_mismatch 로 진행할 것.")
+            if not allow_comm_range_mismatch:
+                raise SystemExit(f"{tag} 중단: {msg}")
+            notes.append(msg + " (allow_comm_range_mismatch 로 진행)")
         if ck_cr is not None and abs(float(ck_cr) - float(cfg.COMM_RANGE)) > 1e-6:
             msg = (f"ckpt 는 comm_range={ck_cr} 로 학습됐는데 현재 config/vessel_gym 은 {cfg.COMM_RANGE} 임. "
                    f"relpos 정규화·파트너 선택·보상반경이 전부 달라진다. "
@@ -203,17 +214,87 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     else:
         net.CENTRAL_CRITIC = sniff_cc
         net.STATE_RECON_COEF = 1.0 if sniff_sr else 0.0
+        # ★스냅샷 없음(2026-09-05 이전) → 집계 방식·게인은 **legacy 기본**으로(YUGIOH 기본 attention=1·gain 8 로 가면 조용히 틀림)
+        net.USE_ATTENTION = False; net.POS_GROUND = True
+        net.AGG_MODE = 'sum'; net.MSG_GAIN = 1.0; net._MSG_TOKEN_GAIN = 1.0
         if arm is None:
             arm = sd.get('arm') if isinstance(sd, dict) else None
         notes.append(f"cfg_snapshot 없음(2026-09-05 이전 학습). central_critic={sniff_cc} state_recon={sniff_sr} 는 "
-                     f"키로 스니핑했으나 **집계 방식(attention/pos_ground)은 키로 알 수 없음** — 현재 env 값 "
-                     f"attention={net.USE_ATTENTION} pos_ground={net.POS_GROUND} 로 감. 학습 env 와 다르면 조용히 틀림")
+                     f"키로 스니핑했으나 **집계 방식(attention/pos_ground)은 키로 알 수 없음** — legacy 기본 "
+                     f"attention=0 pos_ground=1 token_gain=1 로 감. 학습 env 와 다르면 조용히 틀림")
+        msg = (f"스냅샷 없음 → comm_range 학습값 불명. 현재 config/vessel_gym 은 {cfg.COMM_RANGE}(YUGIOH 300). "
+               f"학습값(08-30 이후 200, 그 전 420)을 VESSEL_COMM_RANGE 로 주고 allow_comm_range_mismatch 로 진행할 것.")
+        if not allow_comm_range_mismatch:
+            raise SystemExit(f"{tag} 중단: {msg}")
+        notes.append(msg + " (allow_comm_range_mismatch 로 진행)")
     if max_partners is None:
         max_partners = int(cfg.MAX_COMM_PARTNERS)
 
     # 4b) 인코더 공유 방식 — 키로는 구분 불가(공유해도 접두어별 사본이 저장됨). 스냅샷이 유일한 근거.
     #     구 체크포인트(스냅샷에 키 없음)는 인코더 3벌 = '0'.
     net.SHARED_ENCODER = str((snap or {}).get('shared_encoder', '0')).lower()
+
+    # 4c) ★MoE 구조·shape 결정자 (2026-09-10 YUGIOH 에서 발견·수정). 기본값(공유 MoE 폭 1.0)으로 만들면
+    #     단일망(core.)·얇게(폭≠1)·두껍게(MOE_SHARED=0) 체크포인트가 strict 로드 실패하거나 — MOE_SHARED 는 키·shape 이
+    #     같아서 — 5벌 다른 인코더를 한 객체에 덮어써 *마지막 전문가만 남는 조용한 오염*이 난다.
+    #     스냅샷 우선, 없으면 키(use_moe)·텐서 동일성(moe_shared)·conv 채널 수(moe_width)로 스니핑.
+    _S = snap or {}
+    sniff_moe = any(k.startswith('ctr_actor.experts.') for k in _sd)
+    net.USE_MOE = bool(_S.get('use_moe', sniff_moe))
+    _c1 = [k for k in _sd if k.startswith('ctr_actor.') and k.endswith('radar_encoder.conv1.weight')]
+    c1_out = int(_sd[_c1[0]].shape[0]) if _c1 else None
+    if _S.get('moe_width') is not None:
+        net.MOE_WIDTH = float(_S['moe_width'])
+    elif c1_out == 32 or c1_out is None:
+        net.MOE_WIDTH = 1.0
+    else:
+        # 폭 역산: 코어 안에서 _w 로 스케일되는 층 전부(conv1/2, reduce, radar fc, fc2 hidden, fc3)의 out 을 동시에 맞추는 첫 w
+        _pre = _c1[0][:-len('radar_encoder.conv1.weight')]
+        def _shape0(k): return int(_sd[k].shape[0]) if k in _sd else None
+        # (reduce 는 base ch 가 폭과 얽혀 있어 여기서 빼고 아래서 따로 역산)
+        _obs = {'conv1': c1_out, 'conv2': _shape0(_pre + 'radar_encoder.conv2.weight'),
+                'rfc': _shape0(_pre + 'radar_encoder.fc.weight'),
+                'fc2': _shape0(_pre + 'fc2.weight'), 'fc3': _shape0(_pre + 'fc3.weight')}
+        def _pred(w):
+            return {'conv1': net._w(32, w), 'conv2': net._w(64, w),
+                    'rfc': net._w(int(net.RADAR_FEAT_DIM), w), 'fc2': net._w(128, w, floor=8),
+                    'fc3': net._w(64, w) if _obs['fc3'] is not None else None}
+        cand = [w / 1000 for w in range(100, 2001) if _pred(w / 1000) == _obs]
+        if not cand:
+            raise SystemExit(f"{tag} 중단: 스냅샷에 moe_width 없고 층 폭 {_obs} 에 맞는 MOE_WIDTH 를 못 찾음")
+        net.MOE_WIDTH = cand[0]
+        notes.append(f"스냅샷에 moe_width 없음 → 층 폭으로 역산 {net.MOE_WIDTH} (동치 후보 {len(cand)}개 중 최소)")
+    # bottleneck base 채널: 저장된 reduce out 은 _w(base, width, floor=2) 로 *스케일된* 값. base 를 넣어야 생성이 맞는다.
+    if _rk:
+        _rk_out = int(_sd[_rk[0]].shape[0])
+        if _S.get('radar_bottleneck_ch') is not None:
+            _base = int(_S['radar_bottleneck_ch'])
+        elif float(net.MOE_WIDTH) == 1.0:
+            _base = _rk_out
+        else:
+            _fits = [b for b in range(1, 129) if net._w(b, net.MOE_WIDTH, floor=2) == _rk_out]
+            _base = 8 if 8 in _fits else (_fits[0] if _fits else _rk_out)
+            notes.append(f"스냅샷에 radar_bottleneck_ch 없음 → reduce out {_rk_out}·폭 {net.MOE_WIDTH} 로 base {_base} 추정")
+        net._RADAR_BOTTLENECK_CH = _base
+    if _S.get('moe_shared') is not None:
+        net.MOE_SHARED = bool(_S['moe_shared'])
+    elif net.USE_MOE and _c1:
+        k0 = _c1[0]; k1 = k0.replace('experts.0.', 'experts.1.')
+        net.MOE_SHARED = bool(k1 in _sd and torch.equal(_sd[k0], _sd[k1]))
+        notes.append(f"스냅샷에 moe_shared 없음 → 전문가 0/1 인코더 텐서 동일성으로 판정 {net.MOE_SHARED}")
+    else:
+        net.MOE_SHARED = False
+    # shape 만 바꾸는 옵션도 스냅샷이 있으면 맞춘다 (평소엔 기본값과 같음)
+    if _S.get('situation_input') is not None:
+        net.SITUATION_INPUT = bool(_S['situation_input'])
+        net.SIT_INPUT_DIM = net.NUM_COLREGS_SITUATIONS if net.SITUATION_INPUT else 0
+    if _S.get('attn_dim') is not None:
+        net.ATTN_DIM = int(_S['attn_dim'])
+    if _S.get('radar_feat_dim') is not None:
+        net.RADAR_FEAT_DIM = int(_S['radar_feat_dim'])
+    for _name, _cur in (('USE_MOE', cfg.USE_MOE), ('MOE_WIDTH', cfg.MOE_WIDTH), ('MOE_SHARED', cfg.MOE_SHARED)):
+        if getattr(net, _name) != _cur:
+            notes.append(f"{_name.lower()}: ckpt {getattr(net, _name)!r} 로 복원 (현재 config {_cur!r} 와 다름 — ckpt 가 진실)")
     if net.SHARED_ENCODER != cfg.SHARED_ENCODER:
         notes.append(f"shared_encoder: ckpt {net.SHARED_ENCODER!r} 로 복원 (현재 config {cfg.SHARED_ENCODER!r} 와 다름 — ckpt 가 진실)")
 
@@ -231,6 +312,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'agg_mode': net.AGG_MODE, 'msg_gain': float(net.MSG_GAIN),
         'msg_random_sd': (snap or {}).get('msg_random_sd'),
         'shared_encoder': net.SHARED_ENCODER,
+        'use_moe': bool(net.USE_MOE), 'moe_width': float(net.MOE_WIDTH), 'moe_shared': bool(net.MOE_SHARED),
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,

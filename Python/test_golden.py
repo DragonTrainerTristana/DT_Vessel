@@ -13,8 +13,10 @@
   pytest test_golden.py                 # 위 --check 를 pytest 로
 
 케이스
-  default_ON / default_OFF   : env 아무것도 안 줌 = config.py 기본값
-  batch_2026_09_04_ON        : run_repro.sh common_env 와 동일 (실제 12런 배치 설정)
+  default_ON / default_OFF   : env 아무것도 안 줌 = config.py 기본값 = **YUGIOH(2026-09-10 최종판)**. 골든은 YUGIOH 도입 시점 재생성.
+  batch_2026_09_04_ON        : 2026-09-04 배치 설정. YUGIOH 가 바꾼 기본값 11개를 *legacy 값으로 명시 핀* → 과거 골든 그대로 PASS 해야 함.
+  batch_shared_{all,actor}_ON: 위 + 인코더 공유 (09-10 도입 시점 골든)
+  test_defaults_equal_yugioh : 학습 없이 config 만 두 번 import (env 없음 vs config.YUGIOH) 해 상수가 전부 같은지
 
 주의
   - 학습기 코드는 손대지 않는다. subprocess 로 있는 그대로 돌린다.
@@ -38,7 +40,8 @@ GOLDEN_DIR = os.path.join(HERE, 'golden')
 TRAIN = os.path.join(HERE, 'vessel_gym_train.py')
 STAMP = '2026-09-10'
 
-# run_repro.sh common_env() 와 동일 — 여기 바꾸면 그쪽도 바꿀 것
+# 2026-09-04 배치 설정(구 run_repro.sh common_env). 골든 생성 당시엔 아래 6개가 config 기본값이라 안 적었는데
+# YUGIOH(2026-09-10)가 기본값을 바꿨으므로 **legacy 값을 명시 핀** — 이 케이스가 PASS = 기본값 변경이 핀된 실행에 영향 없음.
 BATCH_ENV = {
     'VESSEL_STATE_RECON_COEF': '1.0', 'VESSEL_CENTRAL_CRITIC': '1', 'VESSEL_USE_ATTENTION': '1',
     'VESSEL_THREAT_COEF': '0', 'VESSEL_GOAL_COMM_COEF': '0', 'VESSEL_INTENT_COEF': '0',
@@ -47,6 +50,9 @@ BATCH_ENV = {
     'VESSEL_POS_GROUND': '1', 'VESSEL_MSG_LN': '1', 'VESSEL_COMM_RANGE': '200',
     'VESSEL_RADAR_RANGE': '56', 'VESSEL_COLREGS_MODE': 'unity', 'VESSEL_SIM_COLREGS_COEF': '0.45',
     'VESSEL_INTENT_K': '3',
+    # legacy 핀 (= config.YUGIOH_LEGACY 중 위에 없는 것)
+    'VESSEL_SHARED_ENCODER': '0', 'VESSEL_RADAR_ACT': 'relu', 'VESSEL_RADAR_HEAD': 'flat',
+    'VESSEL_MSG_TOKEN_GAIN': '1.0', 'VESSEL_CLIP_PER_MODULE': '0', 'VESSEL_MSG_L2': '0.001',
 }
 
 CASES = {
@@ -163,6 +169,38 @@ def regen(names):
         print(f'  생성  {name:24s} → {os.path.relpath(p, HERE)}  (state_dict {len(rec["state_dict"])}텐서)')
 
 
+# ── YUGIOH 기본값 대조 (학습 없음, 수 초) ──
+_YUGIOH_CONSTS = ['USE_ATTENTION', 'CENTRAL_CRITIC', 'STATE_RECON_COEF', 'USE_MOE', 'MOE_SHARED', 'MOE_WIDTH',
+                  'SHARED_ENCODER', 'RADAR_ACT', 'RADAR_HEAD', 'RADAR_BOTTLENECK_CH', 'MSG_LN', 'MSG_TOKEN_GAIN',
+                  'CLIP_PER_MODULE', 'MSG_L2_COEF', 'POS_GROUND', 'COMM_RANGE', 'MAX_COMM_PARTNERS', 'MSG_DIM',
+                  'RADAR_RANGE', 'COLREGS_MODE', 'COLREGS_SIM_COEF', 'INTENT_K', 'THREAT_COEF', 'GOAL_COMM_COEF',
+                  'INTENT_COEF', 'ROLE_COMM_COEF', 'COMM_CONSUMER_COEF', 'RECON_EMA_FLOOR', 'AGG_MODE', 'MSG_GAIN',
+                  'TIMEOUT_BOOTSTRAP', 'MSG_GATE_APPLY']
+
+
+def _config_dump(extra_env):
+    env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
+    env.update(extra_env); env['PYTHONWARNINGS'] = 'ignore'
+    code = ("import json, config as c; print(json.dumps({n: getattr(c, n) for n in %r}))" % _YUGIOH_CONSTS)
+    r = subprocess.run([sys.executable, '-c', code], env=env, cwd=HERE, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-800:]
+    return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+def check_defaults_equal_yugioh():
+    """config 기본값(env 없음) == config.YUGIOH 를 전부 export 한 것. 다르면 그 키 목록."""
+    code = "import json, config as c; print(json.dumps(c.YUGIOH))"
+    r = subprocess.run([sys.executable, '-c', code], cwd=HERE, capture_output=True, text=True,
+                       env={**{k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}, 'PYTHONWARNINGS': 'ignore'})
+    yug = json.loads(r.stdout.strip().splitlines()[-1])
+    a, b = _config_dump({}), _config_dump(yug)
+    return [k for k in _YUGIOH_CONSTS if a[k] != b[k]]
+
+
+def test_defaults_equal_yugioh():
+    assert check_defaults_equal_yugioh() == []
+
+
 # ── pytest 진입점 ──
 def test_golden_default_on():
     assert check(['default_ON'])
@@ -189,7 +227,9 @@ if __name__ == '__main__':
     if a.regen:
         regen(names)
         sys.exit(0)
-    ok = check(names)
+    drift = check_defaults_equal_yugioh()
+    print(f"  {'PASS' if not drift else '★FAIL'}   config 기본값 == YUGIOH" + (f"  차이: {drift}" if drift else ''))
+    ok = check(names) and not drift
     print('=' * 78)
     print(f"VERDICT: {'ALL PASS' if ok else 'FAIL'}")
     sys.exit(0 if ok else 1)

@@ -9,8 +9,10 @@
 #       받은 런이 조용히 CPU 로 떨어지거나 죽는다.
 #   → 저장소를 클론한 제3자가 그대로 돌릴 수 있는 판(version)을 저장소 안에 둔다.
 #
-# 무엇을 재현하나: 2026-09-04 structfix 배치와 *같은 설정*이다(설계를 바꾸지 않았다).
-#   구조: 공유 MoE + attention 집계 + 통합 상태복원 + 중앙 critic
+# 무엇을 재현하나: ★2026-09-10 부터 **YUGIOH 최종판**(config.py 끝 `YUGIOH` 표 = config 기본값).
+#   = 2026-09-04 배치(공유 MoE·attention·중앙 critic·상태복원) + commfix 09-07(leaky·bottleneck·token gain 8·
+#     per-module clip·msg_l2 2e-4·comm 300·state_recon 0.05) + 레이더 인코더 망 간 공유 09-10.
+#   common_env 는 그 표를 *명시* export 하고 preflight 가 config 기본값과 대조한다(드리프트 시 중단).
 #   팔:   OFF(통신 없음) / ON dim6 / ON dim12   × 시드 43·44·45
 #   ⚠️그 배치에서 off_s45 는 학습에 실패해 결과에서 제외됐다(최종보상 1.06 vs 형제 1.53·1.59).
 #     제외는 통신에 *불리한* 방향이라 보수적 선택이다. 자세한 건 runs/m2_ablation/COMM_PLAN.md §4-B.
@@ -62,33 +64,58 @@ echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo
 
-# ── 학습·평가 공통 설정 — 2026-09-04 배치와 동일 ────────────────────────────
-# ⚠️config.py 기본값과 여러 개가 다르다(STATE_RECON_COEF 기본 0.0 vs 여기 1.0,
-#   CENTRAL_CRITIC 기본 0 vs 여기 1). 기본값으로 돌리면 다른 실험이 되므로 전부 명시한다.
+# ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
+# 전부 config 기본값과 같지만 *명시* 한다 — 로그·스냅샷만 보고 설정을 알 수 있게, 그리고 preflight 가 대조하게.
 common_env() {
-  export PYTHONIOENCODING=utf-8
-  export VESSEL_STATE_RECON_COEF=1.0
-  export VESSEL_CENTRAL_CRITIC=1
   export VESSEL_USE_ATTENTION=1
+  export VESSEL_CENTRAL_CRITIC=1
+  export VESSEL_STATE_RECON_COEF=0.05
+  export VESSEL_USE_MOE=1
+  export VESSEL_MOE_SHARED=1
+  export VESSEL_MOE_WIDTH=1.0
+  export VESSEL_SHARED_ENCODER=all
+  export VESSEL_RADAR_ACT=leaky
+  export VESSEL_RADAR_HEAD=bottleneck
+  export VESSEL_RADAR_BOTTLENECK_CH=8
+  export VESSEL_MSG_LN=1
+  export VESSEL_MSG_TOKEN_GAIN=8.0
+  export VESSEL_CLIP_PER_MODULE=1
+  export VESSEL_MSG_L2=0.0002
+  export VESSEL_POS_GROUND=1
+  export VESSEL_COMM_RANGE=300
+  export VESSEL_MAX_PARTNERS=4
+  export VESSEL_RADAR_RANGE=56
+  export VESSEL_COLREGS_MODE=unity
+  export VESSEL_SIM_COLREGS_COEF=0.45
+  export VESSEL_INTENT_K=3
   export VESSEL_THREAT_COEF=0
   export VESSEL_GOAL_COMM_COEF=0
   export VESSEL_INTENT_COEF=0
   export VESSEL_ROLE_COMM_COEF=0
   export VESSEL_COMM_CONSUMER_COEF=0
-  export VESSEL_USE_MOE=1
-  export VESSEL_MOE_SHARED=1
-  export VESSEL_MOE_WIDTH=1.0
-  export VESSEL_POS_GROUND=1
-  export VESSEL_MSG_LN=1
-  export VESSEL_COMM_RANGE=200
-  export VESSEL_RADAR_RANGE=56
-  export VESSEL_COLREGS_MODE=unity
-  export VESSEL_SIM_COLREGS_COEF=0.45
-  export VESSEL_INTENT_K=3
+  export VESSEL_RECON_EMA_FLOOR=0
+  export VESSEL_AGG_MODE=sum
+  export VESSEL_MSG_GAIN=1.0
+  export VESSEL_TIMEOUT_BOOTSTRAP=0
+  export VESSEL_MSG_GATE_APPLY=0
 }
 
 # ── 사전 검증: 미러가 깨졌으면 돌리지 말 것 ─────────────────────────────────
 preflight() {
+  # ★YUGIOH 드리프트 검사: common_env 의 export 값 == config.py 기본값 (누가 config 기본값만 바꾸면 여기서 잡힘)
+  ( common_env; "$PY" - <<'PYCHK'
+import os, json, subprocess, sys
+env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
+code = "import json, config as c; print(json.dumps({k: str(getattr(c, k)) for k in %r}))"
+names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARED_ENCODER','RADAR_ACT','RADAR_HEAD',
+         'MSG_TOKEN_GAIN','CLIP_PER_MODULE','MSG_L2_COEF','COMM_RANGE','MSG_LN','POS_GROUND','MOE_WIDTH','USE_MOE']
+a = json.loads(subprocess.run([sys.executable, '-c', code % names], env=env, capture_output=True, text=True).stdout.strip().splitlines()[-1])
+b = json.loads(subprocess.run([sys.executable, '-c', code % names], capture_output=True, text=True).stdout.strip().splitlines()[-1])
+bad = [k for k in names if a[k] != b[k]]
+print('  YUGIOH 드리프트:', 'PASS (common_env == config 기본값)' if not bad else f'★FAIL {bad}')
+sys.exit(1 if bad else 0)
+PYCHK
+  ) || { echo "preflight 실패: common_env 와 config.py 기본값이 다름 — config.py 끝 YUGIOH 표를 볼 것"; exit 1; }
   echo "[preflight] PPO·통신 미러 검증"
   common_env
   "$PY" -u "$HERE/_verify_ppo_mirror.py"  > "$OUT/_verify_ppo.txt"  2>&1 || { echo "  PPO 미러 FAIL — $OUT/_verify_ppo.txt 확인"; exit 1; }
@@ -132,7 +159,7 @@ train_one() {
     if [ "$arm" = "OFF" ]; then export VESSEL_USE_COMM=0; else export VESSEL_USE_COMM=1; fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
       --arm "$arm" --comm_on_at 0 --steps "$steps" \
-      --envs 128 --vessels 16 --rollout 32 --seed "$s" --ckpt_every 2 \
+      --envs 128 --vessels 16 --rollout 64 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every 2 \
       --save "$CK/${nm}_s$s.pt" --csv "$OUT/${nm}_s$s.csv" \
       > "$OUT/${nm}_s$s.log" 2>&1
     echo "${nm}_s$s rc=$?" >> "$OUT/_status_train.txt"
@@ -219,8 +246,8 @@ case "$MODE" in
     #   사용: VESSEL_DIAG_CKPTS="a.pt b.pt" bash run_repro.sh diag   (CK 아래 상대경로)
     #   추가 인자: VESSEL_DIAG_ARGS="--burn 1000 --collect 900 --envs 32"
     preflight
-    # ⚠️common_env 가 COMM_RANGE=200 을 export 하는데 체크포인트가 다른 값(예: commfix/floorfix 12런 = 300)으로
-    #   학습됐으면 restore_policy 가 중단한다. 그때 VESSEL_DIAG_COMM_RANGE=300 으로 주면 여기서 덮어씀.
+    # ⚠️common_env 가 COMM_RANGE=300(YUGIOH) 을 export 하는데 체크포인트가 다른 값(예: 2026-09-04 배치 = 200)으로
+    #   학습됐으면 restore_policy 가 중단한다. 그때 VESSEL_DIAG_COMM_RANGE=200 으로 주면 여기서 덮어씀.
     #   값을 모르면 `python ckpt_io.py <ckpt>` 가 스냅샷의 comm_range 를 찍어준다.
     [ -n "${VESSEL_DIAG_COMM_RANGE:-}" ] && export VESSEL_COMM_RANGE="$VESSEL_DIAG_COMM_RANGE"
     : > "$OUT/_status_diag.txt"

@@ -508,6 +508,7 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
 
 
 def main():
+    print(f"[version] {getattr(cfg, 'CODE_VERSION', '?')} — env 로 안 준 키는 config 기본값(YUGIOH)", flush=True)
     ap = argparse.ArgumentParser()
     # OFF=통신 없음 / ORACLE=참 파트너 goal 주입(정보 상한) / ON=학습형 comm / RANDOM=난수 메시지 대조군
     ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])

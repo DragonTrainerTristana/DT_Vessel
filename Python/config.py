@@ -80,7 +80,7 @@ def _env_float(key, default):
 
 # ★2026-08-30 420 → 200 (사용자 결정): 통신 반경 = 보상이 반응하는 반경(vessel_gym.REWARD_RANGE)으로 통일.
 #   기존엔 보상 risk 가 56m 하드컷이라 56~420m '통신으로만 아는 구간'에 걸린 보상이 전체의 0.31%뿐이었다(실측).
-COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 200.0) # 통신 범위 200m (vessel_gym.COMM_RANGE 와 같은 env 로 함께 움직임)
+COMM_RANGE = _env_float('VESSEL_COMM_RANGE', 300.0) # 통신 범위 200m (vessel_gym.COMM_RANGE 와 같은 env 로 함께 움직임)
 # ★기본 4 (2026-07-03 사용자 결정으로 8→4 원복): nearest-4 within COMM_RANGE.
 #   이력: 원래 4 → 2026-06-12에 far-band(56~420m) 커버 목적으로 8로 확대(활성 씬 16척, 밴드 점유 8~10척 실측)
 #   → 2026-07-03에 4로 원복. far-band 커버가 필요한 실험은 VESSEL_MAX_PARTNERS=8로 명시 설정할 것.
@@ -89,7 +89,7 @@ MAX_COMM_PARTNERS = _env_int('VESSEL_MAX_PARTNERS', 4)   # nearest-N within COMM
 MSG_LR_SCALE = _env_float('VESSEL_MSG_LR', 1.0)   # 3.0→1.0 (zero-init으로 0에서 자라는 구조: 빠른 LR은 노이즈만↑). env override
 # 메시지 L2 정규화: 통신이 쓸모없으면 메시지를 0으로 우아하게 수렴(불안정 붕괴 방지).
 # 통신이 도움되면 페널티 무릅쓰고 nonzero 유지 → "comm 유용성 자가검증". env로 튜닝.
-MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.001)
+MSG_L2_COEF = _env_float('VESSEL_MSG_L2', 0.0002)
 # 메시지 게이트 개방 페널티 — ★기본 0 (2026-06-12 채널동결 fix): 0.02 + 닫힌 init(−3) 조합은 채널
 # grad가 항등 0인 상태에서 페널티만 작용해 게이트를 −8까지 단조 폐쇄(흡수상태, 체크포인트 실측).
 # 게이트는 이제 중립 init(0)의 자유 다이얼(networks.py) — 페널티는 ablation용으로만 env 재활성.
@@ -104,7 +104,7 @@ MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.0)
 # v_proj 소진폭 init(×0.1, 2026-06-12 fix) — zero-init은 직렬 곱 새들로 채널을 영구 동결시켰음(실측).
 # ⚠️ rollout 도 aggregate_batch(벡터화, networks.py:1084→:1109 return) 사용 → update(evaluate_actions)와 동일 함수형이라 PPO ratio 유효. aggregate_single 은 도달 불가여서 2026-09-10 제거됨.
 # 기본 OFF(=기존 sum) → 켜기 전 빌드/baseline과 100% 동일(anti-rigging). H1b regime에서 ON 비교.
-USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '0') == '1'
+USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '1') == '1'
 ATTN_DIM = _env_int('VESSEL_ATTN_DIM', 32)   # attention query/key 내부차원 (head 1개)
 
 # ★위치 grounding (2026-07-03 기본 ON 승격, 사용자 결정): 수신 메시지에 발신자의 [상대방위 sin·cos, 거리/420]
@@ -162,14 +162,14 @@ GOAL_COMM_COEF = _env_float('VESSEL_GOAL_COMM_COEF', 0.0)
 # 근거: 기존 5-손실은 gradient 89%가 THREAT 하나로 쏠림(_diag_aux_grad), 의도 라벨은
 #       수치 스케일이 작아(우현변위 std 0.013) 계수를 통일해도 자동으로 굶음 → 표준화 필수.
 # 0(기본) = 미사용(구 체크포인트 로드 호환 포함 비트동일). >0이면 기존 5계수는 0으로 둘 것(이중계상 방지).
-STATE_RECON_COEF = _env_float('VESSEL_STATE_RECON_COEF', 0.0)
+STATE_RECON_COEF = _env_float('VESSEL_STATE_RECON_COEF', 0.05)
 
 # ===== 중앙 critic — CTDE (2026-09-04, COMM_PLAN.md 4-2) =====
 # 학습 때만 critic이 전역 함대 상태(전 선박 상대위치·침로·속도)를 추가로 봄. 실행 정책(actor)은 국소 유지.
 # 근거: 분산 critic은 "내 양보 → 남의 이득" 협력 크레딧이 잡음에 묻힘(충돌 100%가 협응 실패형).
 # critic은 배포 시 버려지므로 공정성 문제 없음(CTDE 표준). 양 arm 동일 적용.
 # 0(기본) = 기존 분산 critic 비트동일(구 체크포인트 로드 호환).
-CENTRAL_CRITIC = _env_str('VESSEL_CENTRAL_CRITIC', '0') == '1'
+CENTRAL_CRITIC = _env_str('VESSEL_CENTRAL_CRITIC', '1') == '1'
 
 # ============================================================================
 # Role-broadcast self-supervised (메시지 = sender의 COLREGs 상황/역할; Phase 2)
@@ -246,7 +246,7 @@ MOE_WIDTH = _env_float('VESSEL_MOE_WIDTH', 1.0)
 #   결정부(fc2·gate·consumer·fc3·head)만 상황별 5벌. iso-MoE 붕괴의 근본원인(지배상황 코어의
 #   지각 용량 1/5 축소 — 실측 8.5M goal 3%)을 제거: 지각은 전체 데이터로 학습, 라우팅은 결정 계층만 특화.
 #   총 파라미터 ≈ 단일망 ×1.7 (5x의 ×5 대비). USE_MOE=1일 때만 유효, MOE_WIDTH=1.0과 함께 쓸 것.
-MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '0') == '1'
+MOE_SHARED = _env_str('VESSEL_MOE_SHARED', '1') == '1'
 
 # ============================================================================
 # ★COLREGs situation 정책 입력 (2026-07-02 도입, 2026-07-03 기본 ON 승격): obs[368] 상황(0~4)을
@@ -422,12 +422,12 @@ def get_config_dict():
 #     ckpt_io.restore_policy 참조. import 후 os.environ 을 바꿔도 아무 효과 없음.
 # ══════════════════════════════════════════════════════════════════════════════
 # 레이더 인코더 (state_dict 키·shape 결정자: RADAR_HEAD, RADAR_BOTTLENECK_CH. RADAR_ACT 는 가중치에 흔적 없음)
-RADAR_ACT = _env_str('VESSEL_RADAR_ACT', 'relu').lower()           # 'relu' | 'leaky' (LeakyReLU 0.01, dying-ReLU 완화 2026-09-05)
-RADAR_HEAD = _env_str('VESSEL_RADAR_HEAD', 'flat').lower()         # 'flat' | 'bottleneck' (1×1 conv 64→ch, 2026-09-07)
+RADAR_ACT = _env_str('VESSEL_RADAR_ACT', 'leaky').lower()           # 'relu' | 'leaky' (LeakyReLU 0.01, dying-ReLU 완화 2026-09-05)
+RADAR_HEAD = _env_str('VESSEL_RADAR_HEAD', 'bottleneck').lower()         # 'flat' | 'bottleneck' (1×1 conv 64→ch, 2026-09-07)
 RADAR_BOTTLENECK_CH = _env_int('VESSEL_RADAR_BOTTLENECK_CH', 8)
 # 통신 집계 (rollout comm_gather / _get_others_msg 와 update evaluate_actions 가 **같은 networks 전역**을 읽는다 — 미러)
 MSG_LN = _env_str('VESSEL_MSG_LN', '1') == '1'                     # MessageActor msg_out 앞 LayerNorm (2026-08-31). state_dict 키 결정자
-MSG_TOKEN_GAIN = _env_float('VESSEL_MSG_TOKEN_GAIN', 1.0)          # attention 토큰 안 msg 상수배 (2026-09-07)
+MSG_TOKEN_GAIN = _env_float('VESSEL_MSG_TOKEN_GAIN', 8.0)          # attention 토큰 안 msg 상수배 (2026-09-07)
 AGG_MODE = _env_str('VESSEL_AGG_MODE', 'sum').lower()              # POS_GROUND=0·USE_ATTENTION=0 대조군에서만 유효
 NEAREST_SCALE = _env_float('VESSEL_NEAREST_SCALE', 0.0)
 MSG_GAIN = _env_float('VESSEL_MSG_GAIN', 1.0)
@@ -443,7 +443,7 @@ FARFIELD_COEF = _env_float('VESSEL_FARFIELD_COEF', 0.0)            # far-field P
 PERPAIR_COEF = _env_float('VESSEL_PERPAIR_COEF', -0.15)            # ⚠️C# VesselAgent 기본은 0(off) — 경로별 불일치, 저자 결정 대기
 TIMEOUT_BOOTSTRAP = _env_str('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
 GRAD_TELEMETRY = _env_str('VESSEL_GRAD_TELEMETRY', '0') == '1'     # 모듈별 grad norm·clip 계수 기록 (진단)
-CLIP_PER_MODULE = _env_str('VESSEL_CLIP_PER_MODULE', '0') == '1'   # msg_actor/ctr_actor/critic/나머지 각각 clip
+CLIP_PER_MODULE = _env_str('VESSEL_CLIP_PER_MODULE', '1') == '1'   # msg_actor/ctr_actor/critic/나머지 각각 clip
 MSG_GATE_APPLY = _env_str('VESSEL_MSG_GATE_APPLY', '0') == '1'     # 게이트 개방 페널티를 loss 에 실제로 가산 (기본 0 = 안 함)
 NOCOMM_SWEEP = _env_str('VESSEL_NOCOMM_SWEEP', '').strip()         # 혼합 함대: 통신 불가 선박 지정
 NOCOMM_MODE = _env_str('VESSEL_NOCOMM_MODE', 'mix').lower()
@@ -489,5 +489,33 @@ REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → Ve
 #   구현 — 모듈 aliasing(MOE_SHARED 와 같은 방식). state_dict 키 불변(공유 텐서가 접두어별 동일 사본으로 저장).
 #     parameters()/optimizer 는 자동 dedup. 스냅샷 'shared_encoder' 에 기록되고 ckpt_io.restore_policy 가 복원.
 #   ⚠️구 체크포인트(인코더 3벌 다름)를 공유 모델에 strict 로드하면 마지막 접두어(critic) 것만 남음 → ckpt_io 가 스냅샷으로 막음.
-SHARED_ENCODER = _env_str('VESSEL_SHARED_ENCODER', '0').lower()
+SHARED_ENCODER = _env_str('VESSEL_SHARED_ENCODER', 'all').lower()
 assert SHARED_ENCODER in ('0', 'actor', 'all'), f"VESSEL_SHARED_ENCODER={SHARED_ENCODER!r} - '0' | 'actor' | 'all'"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ★YUGIOH — 최종판 (2026-09-10). **위 기본값 전부 = YUGIOH.** env 를 하나도 안 주면 이 설정으로 학습·평가된다.
+#   = 2026-09-04 배치(공유 MoE·attention·중앙 critic·상태복원)
+#     + commfix 09-07 (leaky·bottleneck ch8·token gain 8·per-module clip·msg_l2 2e-4·comm 300·state_recon 0.05)
+#     + 레이더 인코더 망 간 공유 09-10 (SHARED_ENCODER=all).  floorfix(recon_ema_floor 0.05)는 4셀 전부 나빠져 제외.
+#   2026-09-10 이전 기본값("legacy")은 YUGIOH_LEGACY. test_golden.batch_2026_09_04_ON 이 legacy 를 명시해 과거 결과를 보호하고,
+#   ckpt_io.restore_policy 는 스냅샷에 키가 없으면 YUGIOH 가 아니라 legacy 로 복원한다(구 체크포인트 오염 방지).
+#   출처: runs/m2_ablation/commfix/eval/cf_ON_s43.txt 헤더 + cf_ON_s43.log + run_repro.sh common_env(09-04).
+CODE_VERSION = 'YUGIOH-2026-09-10'
+YUGIOH = {  # env 이름 → 값. run_repro.sh common_env 가 이걸 그대로 export 하고 preflight 가 기본값과 대조한다.
+    'VESSEL_USE_ATTENTION': '1', 'VESSEL_CENTRAL_CRITIC': '1', 'VESSEL_STATE_RECON_COEF': '0.05',
+    'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '1', 'VESSEL_MOE_WIDTH': '1.0',
+    'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_ACT': 'leaky', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_BOTTLENECK_CH': '8',
+    'VESSEL_MSG_LN': '1', 'VESSEL_MSG_TOKEN_GAIN': '8.0', 'VESSEL_CLIP_PER_MODULE': '1', 'VESSEL_MSG_L2': '0.0002',
+    'VESSEL_POS_GROUND': '1', 'VESSEL_COMM_RANGE': '300', 'VESSEL_MAX_PARTNERS': '4', 'VESSEL_MSG_DIM': '6',
+    'VESSEL_RADAR_RANGE': '56', 'VESSEL_COLREGS_MODE': 'unity', 'VESSEL_SIM_COLREGS_COEF': '0.45', 'VESSEL_INTENT_K': '3',
+    'VESSEL_THREAT_COEF': '0', 'VESSEL_GOAL_COMM_COEF': '0', 'VESSEL_INTENT_COEF': '0', 'VESSEL_ROLE_COMM_COEF': '0',
+    'VESSEL_COMM_CONSUMER_COEF': '0', 'VESSEL_RECON_EMA_FLOOR': '0', 'VESSEL_AGG_MODE': 'sum', 'VESSEL_MSG_GAIN': '1.0',
+    'VESSEL_TIMEOUT_BOOTSTRAP': '0', 'VESSEL_MSG_GATE_APPLY': '0',
+}
+# 학습기 인자 (gym 경로). commfix 12런과 동일 — crossing 2 는 eval 헤더(README_진단 :21)로 확인, rollout 64 는 스냅샷 args.
+YUGIOH_ARGS = '--envs 128 --vessels 16 --rollout 64 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320'
+YUGIOH_LEGACY = {  # 2026-09-10 이전 config 기본값 중 YUGIOH 가 바꾼 11개
+    'VESSEL_USE_ATTENTION': '0', 'VESSEL_CENTRAL_CRITIC': '0', 'VESSEL_STATE_RECON_COEF': '0.0', 'VESSEL_MOE_SHARED': '0',
+    'VESSEL_SHARED_ENCODER': '0', 'VESSEL_RADAR_ACT': 'relu', 'VESSEL_RADAR_HEAD': 'flat', 'VESSEL_MSG_TOKEN_GAIN': '1.0',
+    'VESSEL_CLIP_PER_MODULE': '0', 'VESSEL_MSG_L2': '0.001', 'VESSEL_COMM_RANGE': '200',
+}
