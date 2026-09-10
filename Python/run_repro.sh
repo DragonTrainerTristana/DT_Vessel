@@ -200,12 +200,19 @@ case "$MODE" in
     ;;
 
   train)
+    # ★VESSEL_TRAIN_ARMS 로 팔 선택 (기본 "off on6 on12"). YUGIOH 6런 = VESSEL_TRAIN_ARMS="off on6".
+    #   학습 중 통신 텔레메트리를 보려면 VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 를 같이 줄 것(ON 팔만 *_comm.csv).
     preflight
     : > "$OUT/_status_train.txt"
     for s in $SEEDS; do
-      train_one off  OFF 6  "$s" 16056320
-      train_one on6  ON  6  "$s" 16056320
-      train_one on12 ON  12 "$s" 16056320
+      for arm in ${VESSEL_TRAIN_ARMS:-off on6 on12}; do
+        case "$arm" in
+          off)  train_one off  OFF 6  "$s" 16056320 ;;
+          on6)  train_one on6  ON  6  "$s" 16056320 ;;
+          on12) train_one on12 ON  12 "$s" 16056320 ;;
+          *) echo "모르는 팔: $arm (off|on6|on12)"; exit 1 ;;
+        esac
+      done
     done
     wait
     echo "학습 완료"
