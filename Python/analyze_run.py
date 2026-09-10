@@ -1,20 +1,24 @@
 """
 한 run 폴더(또는 results 상위 폴더)를 통째로 분석 — 학습 후 '무엇이 문제였나' 바로 확인.
-각 run의 metric.csv(13열) + events.csv를 읽어 수렴구간(마지막 30%) ground-truth 리포트.
+각 run의 metric.csv + events.csv를 읽어 수렴구간(마지막 30%) ground-truth 리포트.
 reward 임계값 추정 금지 — 오직 실제 outcome/연료/궤적으로만.
 
 사용:
   python analyze_run.py <build>\results            # 아래 run 폴더 전부 스캔 + 비교
   python analyze_run.py <build>\results\<run>       # 단일 run
 
-metric.csv 13열: 0 id,1 ep,2 outcome,3 steps,4 fuel,5 rudderVar,6 comp,7 occl,8 cmdVar,
-                 9 minVesselDist,10 nearMissSteps,11 straightness,12 headingTravel
-events.csv     : id,ep,outcome,step,startX,startZ,endX,endZ,heading,speed
+metric.csv : metric_io.read_metric 으로 읽음(9/13/15/17열 세대 자동 판별, 열이름 접근).
+             사용 열 = outcome, steps, fuel, commandVar, compliance, straightness, headingTravel,
+             minVesselDist, nearMissSteps (없는 세대면 nan).
+events.csv : id,ep,outcome,step,startX,startZ,endX,endZ,heading,speed (VESSEL_EVENT_LOG, metric_io 비대상)
+2026-09-10 metric_io 로 교체, 위치 인덱스 사용 금지.
 """
 import csv
 import os
 import sys
 import math
+
+from metric_io import read_metric, Metric, OUTCOMES
 
 # Windows 콘솔(cp949)에서 em-dash·한글 출력 시 UnicodeEncodeError 방지 — UTF-8 강제
 try:
@@ -25,9 +29,9 @@ except Exception:
 
 TAIL_FRAC = 0.30
 NCHUNK = 5
-C_OUTCOME, C_STEPS, C_FUEL, C_RUDVAR, C_COMP, C_OCCL, C_CMDVAR = 2, 3, 4, 5, 6, 7, 8
-C_MINVD, C_NEARMISS, C_STRAIGHT, C_HEADTRAVEL = 9, 10, 11, 12
 NEAR_CENTER_R = 3.0   # 원통 근처 판정 반경(m, 튜닝). 충돌이 중심에 몰리는지.
+# events.csv(VESSEL_EVENT_LOG) 전용 — metric.csv 와 다른 파일, metric_io 미적용
+EV_OUTCOME, EV_ENDX, EV_ENDZ = 2, 6, 7
 
 
 def read_csv(path, min_cols):
@@ -44,10 +48,19 @@ def fnum(r, idx):
         return None
 
 
-def outcome_counts(rows):
-    c = {"goal": 0, "collision_vessel": 0, "collision_obstacle": 0, "timeout": 0}
-    for r in rows:
-        c[r[C_OUTCOME]] = c.get(r[C_OUTCOME], 0) + 1
+def nrows(m):
+    return len(m["outcome"]) if "outcome" in m else 0
+
+
+def sub(m, lo, hi):
+    """행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric."""
+    return Metric({k: v[lo:hi] for k, v in m.items()})
+
+
+def outcome_counts(m):
+    c = {k: 0 for k in OUTCOMES}
+    for o in m["outcome"].tolist():
+        c[o] = c.get(o, 0) + 1
     return c
 
 
@@ -55,56 +68,59 @@ def pct(c, n, *keys):
     return 100.0 * sum(c.get(k, 0) for k in keys) / n if n else 0.0
 
 
-def per_step_mean(rows, idx, skip_neg=False):
-    v = []
-    for r in rows:
-        x, s = fnum(r, idx), fnum(r, C_STEPS)
-        if x is None or s is None or s <= 0 or (skip_neg and x < 0):
-            continue
-        v.append(x / s)
-    return sum(v) / len(v) if v else float("nan")
+def per_step_mean(m, col, skip_neg=False):
+    if col not in m:
+        return float("nan")
+    x, s = m[col], m["steps"]
+    ok = s > 0
+    if skip_neg:
+        ok &= ~(x < 0)
+    vals = (x[ok] / s[ok]).tolist()
+    return sum(vals) / len(vals) if vals else float("nan")
 
 
-def mean_col(rows, idx, skip_neg=False):
-    v = [fnum(r, idx) for r in rows]
-    v = [x for x in v if x is not None and not (skip_neg and x < 0)]
-    return sum(v) / len(v) if v else float("nan")
+def mean_col(m, col, skip_neg=False):
+    if col not in m:
+        return float("nan")
+    x = m[col]
+    vals = (x[~(x < 0)] if skip_neg else x).tolist()
+    return sum(vals) / len(vals) if vals else float("nan")
 
 
-def late_collapse(rows):
-    n = len(rows)
+def late_collapse(m):
+    n = nrows(m)
     csz = max(1, n // NCHUNK)
     coll = []
     for i in range(NCHUNK):
         lo = i * csz
         hi = (i + 1) * csz if i < NCHUNK - 1 else n
-        ch = rows[lo:hi]
-        coll.append(pct(outcome_counts(ch), len(ch), "collision_vessel", "collision_obstacle"))
+        ch = sub(m, lo, hi)
+        coll.append(pct(outcome_counts(ch), nrows(ch), "collision_vessel", "collision_obstacle"))
     mono = all(coll[i] <= coll[i + 1] + 1e-6 for i in range(NCHUNK - 1))
     flag = (coll[-1] > max(coll[0], 1.0) * 1.15) or mono
     return coll, flag
 
 
-def chunk_trend(rows):
+def chunk_trend(m):
     """시계열 5등분 chunk별 goal%/충돌%(vColl+oColl)/timeout% + 좋아짐/나빠짐 판정.
     충돌이 핵심 안전지표 → 충돌 상승을 우선 경계. 초기 2 chunk vs 최근 2 chunk 비교."""
-    n = len(rows)
+    n = nrows(m)
     csz = max(1, n // NCHUNK)
     chunks = []
     for i in range(NCHUNK):
         lo = i * csz
         hi = (i + 1) * csz if i < NCHUNK - 1 else n
-        ch = rows[lo:hi]
-        m = len(ch)
-        if m == 0:
+        ch = sub(m, lo, hi)
+        mm = nrows(ch)
+        if mm == 0:
             chunks.append(None)
             continue
         cc = outcome_counts(ch)
         chunks.append({
-            "ep": m,
-            "goal": pct(cc, m, "goal"),
-            "coll": pct(cc, m, "collision_vessel", "collision_obstacle"),
-            "to": pct(cc, m, "timeout"),
+            "ep": mm,
+            "goal": pct(cc, mm, "goal"),
+            "coll": pct(cc, mm, "collision_vessel", "collision_obstacle"),
+            "to": pct(cc, mm, "timeout"),
         })
     valid = [c for c in chunks if c]
     if len(valid) < 2:
@@ -113,7 +129,7 @@ def chunk_trend(rows):
     late = valid[-2:]
     d_goal = (sum(c["goal"] for c in late) / len(late)) - (sum(c["goal"] for c in early) / len(early))
     d_coll = (sum(c["coll"] for c in late) / len(late)) - (sum(c["coll"] for c in early) / len(early))
-    _, collapse = late_collapse(rows)
+    _, collapse = late_collapse(m)
     # 판정: 충돌 상승(또는 LATE 붕괴)·goal 하락 = 나빠짐 / 충돌 하락·goal 상승 = 좋아짐 / 그 외 횡보
     if collapse or d_coll >= 5.0 or d_goal <= -5.0:
         verdict = "나빠지는중 ▼"
@@ -128,8 +144,8 @@ def analyze_events(path):
     rows = read_csv(path, 10)
     coll = []
     for r in rows:
-        if r[C_OUTCOME].startswith("collision"):
-            x, z = fnum(r, 6), fnum(r, 7)   # endX,endZ
+        if r[EV_OUTCOME].startswith("collision"):
+            x, z = fnum(r, EV_ENDX), fnum(r, EV_ENDZ)   # endX,endZ
             if x is not None and z is not None:
                 coll.append(math.hypot(x, z))
     if not coll:
@@ -142,15 +158,18 @@ def analyze_events(path):
 
 
 def analyze_run(run_dir):
-    rows = read_csv(os.path.join(run_dir, "metric.csv"), 9)
-    if not rows:
+    path = os.path.join(run_dir, "metric.csv")
+    if not os.path.exists(path):
         return None
-    n = len(rows)
-    tail = rows[int(n * (1 - TAIL_FRAC)):]
-    m = len(tail)
+    m = read_metric(path)
+    n = m.n
+    if not n:
+        return None
+    tail = sub(m, int(n * (1 - TAIL_FRAC)), n)
+    mt = nrows(tail)
     c = outcome_counts(tail)
-    _, collapse = late_collapse(rows)
-    chunks, d_goal, d_coll, verdict = chunk_trend(rows)
+    _, collapse = late_collapse(m)
+    chunks, d_goal, d_coll, verdict = chunk_trend(m)
     return {
         "name": os.path.basename(run_dir.rstrip("\\/")),
         "ep": n,
@@ -158,17 +177,17 @@ def analyze_run(run_dir):
         "d_goal": d_goal,
         "d_coll": d_coll,
         "verdict": verdict,
-        "goal": pct(c, m, "goal"),
-        "vColl": pct(c, m, "collision_vessel"),
-        "oColl": pct(c, m, "collision_obstacle"),
-        "timeout": pct(c, m, "timeout"),
-        "fuel_ps": per_step_mean(tail, C_FUEL),
-        "cmdVar_ps": per_step_mean(tail, C_CMDVAR),
-        "comp": mean_col(tail, C_COMP),
-        "straight": mean_col(tail, C_STRAIGHT),
-        "headTrv_ps": per_step_mean(tail, C_HEADTRAVEL),
-        "minVD": mean_col(tail, C_MINVD, skip_neg=True),
-        "nearMiss_ps": per_step_mean(tail, C_NEARMISS),
+        "goal": pct(c, mt, "goal"),
+        "vColl": pct(c, mt, "collision_vessel"),
+        "oColl": pct(c, mt, "collision_obstacle"),
+        "timeout": pct(c, mt, "timeout"),
+        "fuel_ps": per_step_mean(tail, "fuel"),
+        "cmdVar_ps": per_step_mean(tail, "commandVar"),
+        "comp": mean_col(tail, "compliance"),
+        "straight": mean_col(tail, "straightness"),
+        "headTrv_ps": per_step_mean(tail, "headingTravel"),
+        "minVD": mean_col(tail, "minVesselDist", skip_neg=True),
+        "nearMiss_ps": per_step_mean(tail, "nearMissSteps"),
         "collapse": collapse,
         "ev": analyze_events(os.path.join(run_dir, "events.csv")),
     }

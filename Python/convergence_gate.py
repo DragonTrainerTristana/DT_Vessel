@@ -10,11 +10,14 @@
 usage:
   python convergence_gate.py                       # 기본 RUN_DIR의 FILES 매핑
   python convergence_gate.py a.csv b.csv ...       # 명시 파일들(tag=파일명)
-metric csv = VESSEL_METRIC_LOG (13열). 이 스크립트는 outcome(2)·steps(3)만 사용 → 구버전 9열도 호환.
+metric csv = VESSEL_METRIC_LOG. 이 스크립트는 outcome·steps 열만 사용.
+읽기는 metric_io.read_metric (9/13/15/17열 세대를 열 수로 자동 판별 → 구버전 호환 분기 불필요).
+2026-09-10 metric_io 로 교체, 위치 인덱스 사용 금지.
 """
-import csv
 import os
 import sys
+
+from metric_io import read_metric, Metric, OUTCOMES
 
 # Windows 콘솔(cp949)에서 em-dash·한글 출력 시 UnicodeEncodeError 방지 — UTF-8 강제
 try:
@@ -28,29 +31,38 @@ FILES = {
     "OFF_s42": "base_off_mt.csv", "OFF_s43": "off_s43_mt.csv", "OFF_s44": "off_s44_mt.csv",
     "ON_s42": "on_s42_mt.csv", "ON_s43": "on_s43_mt.csv", "ON_s44": "on_s44_mt.csv",
 }
-C_OUTCOME, C_STEPS = 2, 3
 NCHUNK = 5
 TAIL_FRAC = 0.30
 COLLAPSE_RATIO = 1.15   # 마지막 chunk 충돌이 첫 chunk의 이 배수 초과면 붕괴 의심
 
 
-def load_rows(path):
+def load_metric(path):
+    """metric csv → Metric(열이름→배열). 파일 없으면 None."""
     if not os.path.exists(path):
         return None
-    with open(path, encoding="utf-8", errors="ignore") as f:
-        return [r for r in csv.reader(f) if len(r) >= 4]
+    return read_metric(path)
 
 
-def outcome_pct(rows):
-    n = len(rows)
-    c = {"goal": 0, "collision_vessel": 0, "collision_obstacle": 0, "timeout": 0}
-    steps = []
-    for r in rows:
-        c[r[C_OUTCOME]] = c.get(r[C_OUTCOME], 0) + 1
-        try:
-            steps.append(float(r[C_STEPS]))
-        except (ValueError, IndexError):
-            pass
+def nrows(m):
+    return len(m["outcome"]) if "outcome" in m else 0
+
+
+def sub(m, lo, hi):
+    """행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric."""
+    return Metric({k: v[lo:hi] for k, v in m.items()})
+
+
+def outcome_counts(m):
+    c = {k: 0 for k in OUTCOMES}
+    for o in m["outcome"].tolist():
+        c[o] = c.get(o, 0) + 1
+    return c
+
+
+def outcome_pct(m):
+    n = nrows(m)
+    c = outcome_counts(m)
+    steps = m["steps"].tolist()
     coll = c["collision_vessel"] + c["collision_obstacle"]
     avg_s = sum(steps) / len(steps) if steps else 0
     return {
@@ -64,8 +76,8 @@ def outcome_pct(rows):
     }
 
 
-def analyze(tag, rows):
-    n = len(rows)
+def analyze(tag, m):
+    n = nrows(m)
     if n < NCHUNK:
         print(f"\n=== {tag}: 에피소드 부족({n}) ===")
         return
@@ -76,14 +88,13 @@ def analyze(tag, rows):
     for i in range(NCHUNK):
         lo = i * csz
         hi = (i + 1) * csz if i < NCHUNK - 1 else n
-        s = outcome_pct(rows[lo:hi])
+        s = outcome_pct(sub(m, lo, hi))
         chunk_coll.append(s["coll"])
         print(f"  {i+1}/{NCHUNK:<5}{s['n']:>6}{s['goal']:>7.1f}{s['vColl']:>7.1f}"
               f"{s['oColl']:>7.1f}{s['coll']:>7.1f}{s['timeout']:>8.1f}{s['avgSteps']:>9.0f}")
 
     # 수렴 구간(마지막 30%)
-    tail = rows[int(n * (1 - TAIL_FRAC)):]
-    t = outcome_pct(tail)
+    t = outcome_pct(sub(m, int(n * (1 - TAIL_FRAC)), n))
     print(f"  {'[수렴]':<7}{t['n']:>6}{t['goal']:>7.1f}{t['vColl']:>7.1f}"
           f"{t['oColl']:>7.1f}{t['coll']:>7.1f}{t['timeout']:>8.1f}{t['avgSteps']:>9.0f}   ← 판정은 여기만")
 
@@ -110,11 +121,11 @@ def main():
 
     print(f"=== 수렴 게이트 (마지막 {int(TAIL_FRAC*100)}%만 판정, 5등분 추세로 LATE_COLLAPSE 탐지) ===")
     for tag, path in items:
-        rows = load_rows(path)
-        if rows is None:
+        m = load_metric(path)
+        if m is None:
             print(f"\n=== {tag}: (파일 없음 {path}) ===")
             continue
-        analyze(tag, rows)
+        analyze(tag, m)
     print("\n[규율] mid-training이 좋아도 채택 금지. LATE_COLLAPSE면 그 run은 '아직 나빠지는 중'.")
 
 
