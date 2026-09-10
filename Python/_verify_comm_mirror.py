@@ -118,6 +118,17 @@ CASES = [
     ('shared enc all',          {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_SHARED_ENCODER': 'all'}, 4, False),
     ('shared all + attention',  {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_USE_ATTENTION': '1'}, 4, False),
     ('shared all, MoE 비공유',   {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '0', 'VESSEL_SHARED_ENCODER': 'all'}, 4, False),
+    # ★ABLATION_PLAN §3 구조 4종 × 최종 인코더 설정(공유 all + bottleneck + leaky) (2026-09-10).
+    #   단일망(USE_MOE=0)·얇게(0.416 = bn+SE 에서 단일망과 −0.5% iso-param)·두껍게·공유MoE 가
+    #   전부 같은 인코더 객체를 rollout/update 에서 타는지. A~D 배치 전 필수 통과.
+    ('플랜 단일망 + SE/bn/leaky',      {**BASE, 'VESSEL_USE_MOE': '0', 'VESSEL_SHARED_ENCODER': 'all',
+                                      'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
+    ('플랜 얇게0.416 + SE/bn/leaky',   {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_WIDTH': '0.416', 'VESSEL_MOE_SHARED': '0',
+                                      'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
+    ('플랜 두껍게 + SE/bn/leaky',      {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '0',
+                                      'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
+    ('플랜 공유MoE + SE/bn/leaky',     {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '1',
+                                      'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
 ]
 
 if __name__ == '__main__':
