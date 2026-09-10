@@ -412,3 +412,27 @@ def get_config_dict():
         'comm_consumer_coupling': COMM_CONSUMER_COUPLING,
         'use_oracle': USE_ORACLE
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ★2026-09-10 config 통합 (리팩토링 Tier 4.1a) — networks.py 가 os.environ 을 직접 읽던 12개 +
+#   학습기(vessel_gym_train)가 중복으로 읽던 것. 이름·기본값·의미 불변 (test_golden 비트동일로 검증).
+#   networks / vessel_gym_train 은 여기서 import 만 한다.
+#   ⚠️런타임에 바꿔야 하는 것(체크포인트 복원)은 env 가 아니라 **networks 모듈 전역**을 덮어쓴다 —
+#     ckpt_io.restore_policy 참조. import 후 os.environ 을 바꿔도 아무 효과 없음.
+# ══════════════════════════════════════════════════════════════════════════════
+# 레이더 인코더 (state_dict 키·shape 결정자: RADAR_HEAD, RADAR_BOTTLENECK_CH. RADAR_ACT 는 가중치에 흔적 없음)
+RADAR_ACT = _env_str('VESSEL_RADAR_ACT', 'relu').lower()           # 'relu' | 'leaky' (LeakyReLU 0.01, dying-ReLU 완화 2026-09-05)
+RADAR_HEAD = _env_str('VESSEL_RADAR_HEAD', 'flat').lower()         # 'flat' | 'bottleneck' (1×1 conv 64→ch, 2026-09-07)
+RADAR_BOTTLENECK_CH = _env_int('VESSEL_RADAR_BOTTLENECK_CH', 8)
+# 통신 집계 (rollout comm_gather / _get_others_msg 와 update evaluate_actions 가 **같은 networks 전역**을 읽는다 — 미러)
+MSG_LN = _env_str('VESSEL_MSG_LN', '1') == '1'                     # MessageActor msg_out 앞 LayerNorm (2026-08-31). state_dict 키 결정자
+MSG_TOKEN_GAIN = _env_float('VESSEL_MSG_TOKEN_GAIN', 1.0)          # attention 토큰 안 msg 상수배 (2026-09-07)
+AGG_MODE = _env_str('VESSEL_AGG_MODE', 'sum').lower()              # POS_GROUND=0·USE_ATTENTION=0 대조군에서만 유효
+NEAREST_SCALE = _env_float('VESSEL_NEAREST_SCALE', 0.0)
+MSG_GAIN = _env_float('VESSEL_MSG_GAIN', 1.0)
+MSG_RANDOM_SD = _env_float('VESSEL_MSG_RANDOM_SD', 0.20)           # RANDOM 팔 난수 메시지 표준편차
+# StateRecon / MoE 내부 스위치
+RECON_EMA_FLOOR = _env_float('VESSEL_RECON_EMA_FLOOR', 0.0)        # 그룹 정규화 바닥 (2026-09-07)
+RECON_LEGACY_STAT = _env_str('VESSEL_RECON_LEGACY_STAT', '0') == '1'
+MOE_FAST = _env_str('VESSEL_MOE_FAST', '0') == '1'

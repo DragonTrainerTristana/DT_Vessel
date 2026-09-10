@@ -24,6 +24,8 @@ import vessel_gym as vg
 import networks as net_mod          # 텔레메트리가 모듈 전역(_MSG_TOKEN_GAIN)을 읽는다
 from networks import CNNPolicy
 
+MSG_RANDOM_SD = cfg.MSG_RANDOM_SD   # ★2026-09-10 RANDOM 팔 난수 sd. ckpt_io.restore_policy 가 스냅샷으로 덮어씀
+
 GOAL_SIZE = cfg.GOAL_SIZE
 FRAMES = cfg.FRAMES
 STATE = cfg.STATE_SIZE       # 360
@@ -81,7 +83,7 @@ def make_others_msg(env, arm, E, N, device):
         pg = env.partner_goals_oracle()            # [E,N,2]
         om[..., :GOAL_SIZE] = pg
     elif arm == 'RANDOM':
-        sd = float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20))
+        sd = MSG_RANDOM_SD          # 모듈 전역 (config 기본값; ckpt_io 가 스냅샷으로 덮어씀)
         # 균등분포로 tanh 와 같은 유계 지지집합을 유지하되 표준편차를 sd 에 맞춘다: U(-a,a), a = sd*sqrt(3)
         a = sd * 1.7320508075688772
         om = (torch.rand(E, N, MSG_DIM, device=device) * 2.0 - 1.0) * a
@@ -322,9 +324,8 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     #     에러 없이 학습이 망가지므로 그 설정으로 돌린 gym 실행은 무효다. attention 분기 누락(09-04)과 같은 계열의 버그.
     #   ⚠️VESSEL_MSG_GAIN 도 update(networks.py)에만 걸려 있어 rollout 에 누락돼 있었다 — 여기서 같이 건다.
     Kcount = pmask_f.sum(dim=1, keepdim=True).clamp(min=1.0)                  # [E*N,1,1]
-    agg_mode = os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
-    nearest_scale = float(os.environ.get('VESSEL_NEAREST_SCALE', 0))
-    msg_gain = float(os.environ.get('VESSEL_MSG_GAIN', 1.0))
+    # ★2026-09-10: update(networks.evaluate_actions)와 **같은 모듈 전역**을 읽는다(미러). 예전엔 각자 env 를 읽었다.
+    agg_mode, nearest_scale, msg_gain = net_mod.AGG_MODE, net_mod.NEAREST_SCALE, net_mod.MSG_GAIN
     if nearest_scale > 0:
         agg_mode = 'scale'
     if getattr(policy, 'use_attention', False):
@@ -596,7 +597,7 @@ def main():
     # ★난수 대조군은 상수 입력 경로(OFF/ORACLE와 동일)로 흐르므로 통신 채널 학습이 없어야 정상이다.
     if args.arm == 'RANDOM':
         print(f"[arm RANDOM] 난수 메시지 대조군 - others_msg ~ U(-a,a), sd="
-              f"{float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)):.3f} "
+              f"{MSG_RANDOM_SD:.3f} "
               f"(비교 팔의 실측 om_sd 에 맞출 것: _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py))", flush=True)
 
     # ★2026-09-05 fix(opt-in): timeout 절단을 GAE 에서 '절단'으로 취급할지.

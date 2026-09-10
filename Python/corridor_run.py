@@ -83,13 +83,14 @@ def main():
 
     ck_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ck = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ck_dir, args.ckpt)
-    # ★ckpt 를 먼저 읽어 msg_ln(LayerNorm, 2026-08-31) 유무를 스니핑 → 옛/새 체크포인트 모두 strict 로드
-    sd = torch.load(ck, map_location=dev)
-    _sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
-    os.environ['VESSEL_MSG_LN'] = '1' if any('msg_ln' in k for k in _sd) else '0'
-    policy = CNNPolicy(cfg.MSG_DIM, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(dev)
-    policy.load_state_dict(_sd)
-    policy.eval()
+    # ★2026-09-10: 복원은 ckpt_io.restore_policy 로. 예전엔 msg_ln 만 스니핑하고 attention/pos_ground/radar_head/token_gain 은
+    #   복원하지 않아, 그런 ckpt 는 학습과 다른 집계·인코더로 굴렀다(에러 없이). 이제 스냅샷을 전부 적용하고 헤더로 찍는다.
+    #   ⚠️과거 이 스크립트가 낸 숫자가 불일치 상태였다면 재실행 시 값이 달라진다 — 그 경우 과거 값이 틀린 것.
+    #   comm_range 가 ckpt 와 다르면 중단함. 의도한 것이면 VESSEL_ALLOW_COMM_RANGE_MISMATCH=1.
+    from ckpt_io import restore_policy
+    policy = restore_policy(ck, dev, arm=None,
+                            allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                            tag='[corridor_run]').policy
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()

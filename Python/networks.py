@@ -31,7 +31,8 @@ from config import (STATE_SIZE, RADAR_FEAT_DIM, USE_COMMUNICATION,
                     CENTRAL_CRITIC)
 
 
-_RADAR_LEAKY = os.environ.get('VESSEL_RADAR_ACT', 'relu').lower() == 'leaky'
+import config as _cfg   # ★2026-09-10: 아래 전역의 기본값은 config.py 가 정본. 체크포인트 복원은 이 전역을 덮어쓴다(ckpt_io).
+_RADAR_LEAKY = _cfg.RADAR_ACT == 'leaky'
 
 # ★2026-09-07 레이더 인코더 head 스위치: VESSEL_RADAR_HEAD=flat(기본, 비트동일) | bottleneck
 #   왜 — fc(2880→30) 붕괴의 원인이 *fan-in* 임을 측정으로 확정함.
@@ -44,8 +45,8 @@ _RADAR_LEAKY = os.environ.get('VESSEL_RADAR_ACT', 'relu').lower() == 'leaky'
 #     기각: 중간층 2880→256→30 (앞층 fan-in 그대로 1.37), fc 앞 LayerNorm (‖x‖₁ 2,300 으로 악화),
 #           초기값 축소 (|z|↓ 라 비율 악화), global pool (방위 소실).
 #   활성함수 스위치(VESSEL_RADAR_ACT) 와 독립. 체크포인트 shape 이 바뀌므로 from-scratch.
-_RADAR_HEAD = os.environ.get('VESSEL_RADAR_HEAD', 'flat').lower()
-_RADAR_BOTTLENECK_CH = int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8))
+_RADAR_HEAD = _cfg.RADAR_HEAD
+_RADAR_BOTTLENECK_CH = _cfg.RADAR_BOTTLENECK_CH
 
 # ★2026-09-07 attention 토큰 안 메시지 게인: VESSEL_MSG_TOKEN_GAIN (기본 1.0 = 비트동일)
 #   왜 — 토큰 = [relpos(3) ‖ msg(6)] 인데 relpos 는 O(1), msg 는 실측 std 0.118 로 8배 작다.
@@ -60,7 +61,7 @@ _RADAR_BOTTLENECK_CH = int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8))
 #     others_msg 가 갈리고 PPO ratio 가 조용히 깨진다.
 #   미러 안전: rollout(vessel_gym_train.comm_gather)·update(evaluate_actions) 둘 다
 #     같은 aggregate_batch 를 호출하므로 여기 한 곳만 고치면 양쪽에 동일 적용된다.
-_MSG_TOKEN_GAIN = float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0))
+_MSG_TOKEN_GAIN = _cfg.MSG_TOKEN_GAIN
 
 # ★2026-09-07 StateRecon 그룹 정규화 바닥값: VESSEL_RECON_EMA_FLOOR (기본 0 = 안 걸림, 비트동일)
 #   왜 — StateReconDecoder.loss 는 `total += gl / ema_g` 로 그룹을 합친다. 의도는 "그룹별 기여 균등화"
@@ -70,7 +71,8 @@ _MSG_TOKEN_GAIN = float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0))
 #     결과: 3시드 모두 5개 그룹 중 self·sit 만 담기고 threat·future 는 R²≈0, 메시지 6칸 중 2~3칸만 쓴다.
 #   고침 — 분모에 바닥을 깔아 다 배운 그룹의 배율을 1/floor 로 제한한다(floor=0.05 → 최대 20배).
 #     못 배운 그룹(ema 0.8~1.1)은 바닥 위라 영향 없음 → 굶던 쪽만 상대적으로 살아난다.
-_RECON_EMA_FLOOR = float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0))
+_RECON_EMA_FLOOR = _cfg.RECON_EMA_FLOOR
+_RECON_LEGACY_STAT = _cfg.RECON_LEGACY_STAT
 
 # ★2026-09-07 MoE 라우팅 배치화: VESSEL_MOE_FAST=1 (기본 0 = 기존 루프, 비트동일)
 #   왜 — 지금 라우팅은 전문가마다 `if mask.any(): core(x[mask])` 를 돈다. 문제는 연산량이 아니라
@@ -85,7 +87,14 @@ _RECON_EMA_FLOOR = float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0))
 #     rollout·update 가 같은 전역 스위치를 보므로 두 경로는 항상 같은 함수형이다(PPO ratio 안전).
 #   ⚠️MOE_SHARED=1 (전문가들이 radar_encoder 를 한 객체로 공유) 일 때만 켜진다. 안 그러면 인코더를
 #     배치 전체에 한 번 돌릴 수 없다.
-_MOE_FAST = os.environ.get('VESSEL_MOE_FAST', '0') == '1'
+_MOE_FAST = _cfg.MOE_FAST
+# ★통신 집계 런타임 전역 (2026-09-10): rollout(_get_others_msg·vessel_gym_train.comm_gather)과 update(evaluate_actions)가
+#   **이 넷을 같이 읽어야** PPO ratio 가 유효하다. 예전엔 셋이 각자 os.environ 을 읽었다.
+#   ckpt_io.restore_policy 가 체크포인트 스냅샷으로 여기를 덮어쓴다. 학습기(comm_gather)는 net_mod.AGG_MODE 로 읽는다.
+MSG_LN = _cfg.MSG_LN
+AGG_MODE = _cfg.AGG_MODE
+NEAREST_SCALE = _cfg.NEAREST_SCALE
+MSG_GAIN = _cfg.MSG_GAIN
 
 
 def _bmm_linear(cores, sit, h, attr):
@@ -311,7 +320,7 @@ class StateReconDecoder(nn.Module):
                 #   붕괴(2026-09-04 off_s45)의 원인인지 가르기 위한 대조군. 기본 0 = 수정본.
                 # (2026-09-07 fix) _os_ln 은 MessageActor.__init__ 의 지역 import 라 여기선 NameError.
                 #   통신 ON + STATE_RECON_COEF>0 경로에서만 실행돼 OFF 스모크·OFF 진단배치는 안 걸렸음.
-                if os.environ.get('VESSEL_RECON_LEGACY_STAT', '0') == '1':
+                if _RECON_LEGACY_STAT:
                     valid = torch.ones_like(valid)
                 if float(self.stat_inited) == 0.0:
                     self.run_mean.copy_(torch.where(valid, bm, self.run_mean))
@@ -486,8 +495,7 @@ class _MessageActorCore(nn.Module):
         #   수십까지 자라는 것. LayerNorm 이 pre-tanh 입력 스케일을 O(1) 로 유지 → tanh 선형구간 유지.
         #   VESSEL_MSG_LN=0 으로 옛 구조(포화 위험) 재현 가능. 평가 스크립트는 ckpt 키에 'msg_ln' 유무를
         #   스니핑해 자동 설정(옛 체크포인트 strict 로드 호환).
-        import os as _os_ln
-        self.msg_ln = nn.LayerNorm(self.hidden) if _os_ln.environ.get('VESSEL_MSG_LN', '1') == '1' else None
+        self.msg_ln = nn.LayerNorm(self.hidden) if MSG_LN else None   # 모듈 전역 (2026-09-10; ckpt_io 가 키 스니핑으로 덮어씀)
         self.msg_out = nn.Linear(self.hidden, msg_dim)
         # ★생산측 소진폭 init (2026-06-12 채널동결 fix): weight+bias zero-init은 msg≡tanh(0)=0을 만들어
         #   소비측 zero-init과 직렬 곱 새들 형성 → 채널 전체 grad 항등 0, 1M step 비트동결(실측).
@@ -1042,10 +1050,7 @@ class CNNPolicy(nn.Module):
         ⚠️ evaluate_actions의 update-time 집계와 동일해야 PPO ratio 유효 (attention/pos_ground/sum 각각 미러).
         self_state/goal은 attention query용(receiver 상황). rollout forward가 전달.
         """
-        import os as _os
-        agg_mode = _os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
-        nearest_scale = float(_os.environ.get('VESSEL_NEAREST_SCALE', 0))
-        msg_gain = float(_os.environ.get('VESSEL_MSG_GAIN', 1.0))
+        agg_mode, nearest_scale, msg_gain = AGG_MODE, NEAREST_SCALE, MSG_GAIN   # 모듈 전역 (2026-09-10) — update 와 같은 값
         if nearest_scale > 0:
             agg_mode = 'scale'
 
@@ -1290,10 +1295,7 @@ class CNNPolicy(nn.Module):
         elif USE_COMMUNICATION:
             # 파트너들의 메시지를 그들의 obs로부터 재생성 → 집계. ★ rollout _get_others_msg와 동일 집계여야
             #   PPO ratio(old_logprob)가 유효함 → agg_mode/msg_gain을 여기서 그대로 미러링 ★
-            import os as _os
-            agg_mode = _os.environ.get('VESSEL_AGG_MODE', 'sum').lower()
-            nearest_scale = float(_os.environ.get('VESSEL_NEAREST_SCALE', 0))
-            msg_gain = float(_os.environ.get('VESSEL_MSG_GAIN', 1.0))
+            agg_mode, nearest_scale, msg_gain = AGG_MODE, NEAREST_SCALE, MSG_GAIN   # 모듈 전역 (2026-09-10) — rollout 과 같은 값
             if nearest_scale > 0:
                 agg_mode = 'scale'
 

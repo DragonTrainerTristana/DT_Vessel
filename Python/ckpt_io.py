@@ -45,25 +45,25 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'use_attention': bool(cfg.USE_ATTENTION), 'pos_ground': bool(cfg.POS_GROUND),
         'central_critic': bool(cfg.CENTRAL_CRITIC), 'state_recon_coef': float(cfg.STATE_RECON_COEF),
         'use_moe': bool(cfg.USE_MOE), 'moe_shared': bool(cfg.MOE_SHARED), 'moe_width': float(cfg.MOE_WIDTH),
-        'msg_ln': os.environ.get('VESSEL_MSG_LN', '1') == '1',
+        'msg_ln': bool(net.MSG_LN),
         'comm_range': float(cfg.COMM_RANGE), 'max_partners': int(max_partners),
         'comm_on_at': int(comm_on_at),
         'ring': None if ring is None else float(ring), 'crossing': None if crossing is None else int(crossing),
         'vessels': int(n_vessels), 'envs': int(n_envs),
         'rollout': None if rollout is None else int(rollout), 'seed': int(seed),
-        'msg_random_sd': float(os.environ.get('VESSEL_MSG_RANDOM_SD', 0.20)) if arm == 'RANDOM' else None,
+        'msg_random_sd': float(cfg.MSG_RANDOM_SD) if arm == 'RANDOM' else None,
         # 레이더 인코더: 활성함수는 가중치에 안 남고, head 는 키로만 구분된다.
-        'radar_act': os.environ.get('VESSEL_RADAR_ACT', 'relu').lower(),
-        'radar_head': os.environ.get('VESSEL_RADAR_HEAD', 'flat').lower(),
-        'radar_bottleneck_ch': int(os.environ.get('VESSEL_RADAR_BOTTLENECK_CH', 8)),
+        'radar_act': 'leaky' if net._RADAR_LEAKY else 'relu',
+        'radar_head': net._RADAR_HEAD,
+        'radar_bottleneck_ch': int(net._RADAR_BOTTLENECK_CH),
         # 가중치에 흔적이 안 남는 값들 — 스냅샷이 유일한 근거
-        'msg_token_gain': float(os.environ.get('VESSEL_MSG_TOKEN_GAIN', 1.0)),
+        'msg_token_gain': float(net._MSG_TOKEN_GAIN),
         'clip_per_module': os.environ.get('VESSEL_CLIP_PER_MODULE', '0') == '1',
         'msg_l2_coef': float(cfg.MSG_L2_COEF),
-        'recon_ema_floor': float(os.environ.get('VESSEL_RECON_EMA_FLOOR', 0.0)),
+        'recon_ema_floor': float(net._RECON_EMA_FLOOR),
         'comm_telemetry': os.environ.get('VESSEL_COMM_TELEMETRY', '0') == '1',
-        'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum').lower(),
-        'msg_gain': float(os.environ.get('VESSEL_MSG_GAIN', 1.0)),
+        'agg_mode': net.AGG_MODE,
+        'msg_gain': float(net.MSG_GAIN),
         'timeout_bootstrap': trunc_boot,
         # ★2026-09-10 추가: env 보상 계수. 학습기는 env 로 읽는데 스냅샷에 없어서 평가·진단이 각자 리터럴을 박았다.
         'farfield_coef': float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),
@@ -125,7 +125,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
 
     # 1) msg_ln — CNNPolicy.__init__ 이 생성 시점에 env 를 읽으므로 먼저 맞춘다
     has_ln = any('msg_ln' in k for k in _sd)
-    os.environ['VESSEL_MSG_LN'] = '1' if has_ln else '0'
+    net.MSG_LN = has_ln          # 모듈 전역 (2026-09-10; 예전엔 env — import 후 env 는 효과 없음)
 
     # 2) msg_dim — cfg.MSG_DIM 은 import 시점 고정. ckpt 가 진실. make_others_msg 가 쓰는 모듈 전역도 동기화.
     _mk = [k for k in _sd if k.endswith('msg_out.weight')]
@@ -165,12 +165,14 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         net.STATE_RECON_COEF = float(snap.get('state_recon_coef', 1.0 if sniff_sr else 0.0))
         if snap.get('msg_token_gain') is not None:
             net._MSG_TOKEN_GAIN = float(snap['msg_token_gain'])
-        for k_env, k_snap in (('VESSEL_MSG_RANDOM_SD', 'msg_random_sd'),
-                              ('VESSEL_AGG_MODE', 'agg_mode'),
-                              ('VESSEL_MSG_GAIN', 'msg_gain')):
-            v = snap.get(k_snap)
-            if v is not None:
-                os.environ[k_env] = str(v)
+        # 집계 방식·이득·난수 sd: networks / vessel_gym_train 모듈 전역을 덮어쓴다 (env 는 import 시점에만 읽힘)
+        if snap.get('agg_mode') is not None:
+            net.AGG_MODE = str(snap['agg_mode']).lower()
+        if snap.get('msg_gain') is not None:
+            net.MSG_GAIN = float(snap['msg_gain'])
+        if snap.get('msg_random_sd') is not None:
+            import vessel_gym_train as _vgt
+            _vgt.MSG_RANDOM_SD = float(snap['msg_random_sd'])
         # max_partners: 학습값이 진실
         ck_mp = snap.get('max_partners')
         if ck_mp is not None:
@@ -214,9 +216,9 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'central_critic': bool(net.CENTRAL_CRITIC), 'state_recon_coef': float(net.STATE_RECON_COEF),
         'radar_head': net._RADAR_HEAD, 'radar_act': 'leaky' if net._RADAR_LEAKY else 'relu',
         'radar_bottleneck_ch': int(getattr(net, '_RADAR_BOTTLENECK_CH', 8)) if _rk else None,
-        'msg_ln': has_ln, 'msg_token_gain': float(getattr(net, '_MSG_TOKEN_GAIN', 1.0)),
-        'agg_mode': os.environ.get('VESSEL_AGG_MODE', 'sum'), 'msg_gain': float(os.environ.get('VESSEL_MSG_GAIN', 1.0)),
-        'msg_random_sd': os.environ.get('VESSEL_MSG_RANDOM_SD'),
+        'msg_ln': bool(net.MSG_LN), 'msg_token_gain': float(net._MSG_TOKEN_GAIN),
+        'agg_mode': net.AGG_MODE, 'msg_gain': float(net.MSG_GAIN),
+        'msg_random_sd': (snap or {}).get('msg_random_sd'),
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,
