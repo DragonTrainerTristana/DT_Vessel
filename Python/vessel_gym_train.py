@@ -508,7 +508,8 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
 
 
 def main():
-    print(f"[version] {getattr(cfg, 'CODE_VERSION', '?')} — env 로 안 준 키는 config 기본값(YUGIOH)", flush=True)
+    # (ASCII 대시만 — U+2014 는 cp949 콘솔(Windows 리다이렉트)에서 UnicodeEncodeError 로 즉사함, 2026-09-10 실측)
+    print(f"[version] {getattr(cfg, 'CODE_VERSION', '?')} - env 로 안 준 키는 config 기본값(YUGIOH)", flush=True)
     ap = argparse.ArgumentParser()
     # OFF=통신 없음 / ORACLE=참 파트너 goal 주입(정보 상한) / ON=학습형 comm / RANDOM=난수 메시지 대조군
     ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])
@@ -692,6 +693,7 @@ def main():
     outcome_counts = torch.zeros(5, device=device)
     t_start = time.time()
     update_i = 0
+    _comm_was_active = False   # [comm] 전환 로그용 (comm_on_at 커리큘럼에서 9M 에 켜졌는지 로그로 확인)
     # ★재개 시 이미 저장된 마크에서 시작 (2026-08-31 fix). 0 으로 두면 재개 직후 첫 업데이트에서
     #   mark > 0 이 성립해 *방금 재개한 그 체크포인트*를 덮어쓴다. 9M 경계에서 재개하면
     #   comm_on_at 을 이미 넘은 상태라, 통신 OFF 모델이어야 할 .step9M.pt 가
@@ -752,6 +754,9 @@ def main():
             # ─── rollout ───
             # ★comm curriculum: ON arm이고 comm_on_at 넘으면 학습형 comm 활성(이 rollout 내내 일관 → PPO 정합)
             comm_active = (args.arm == 'ON' and total_decisions >= args.comm_on_at)
+            if comm_active and not _comm_was_active:
+                print(f"[comm] ON at dec={total_decisions/1e6:.3f}M (comm_on_at={args.comm_on_at}) - 이 rollout 부터 학습형 통신 + 텔레메트리", flush=True)
+            _comm_was_active = comm_active
             keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
             if cfg.CENTRAL_CRITIC:
                 keys += ['gf']
@@ -1014,6 +1019,7 @@ def main():
                     ckpt_mark = mark
                     cp = f"{os.path.splitext(args.save)[0]}.step{mark * args.ckpt_every:g}M.pt"
                     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm,
+                                'comm_active': bool(comm_active),   # ★저장 시점 실효 통신 (ON 팔의 .step9M.pt = OFF 모델 판별용)
                                 'seed': args.seed, 'steps': total_decisions,
                                 'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
                                 'optimizer_state_dict': opt.state_dict()}, cp)
@@ -1067,6 +1073,7 @@ def main():
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,
+                'comm_active': bool(args.arm == 'ON' and total_decisions >= args.comm_on_at),
                 'steps': total_decisions, 'value_norm': vnorm.state(), 'cfg_snapshot': _cfg_snapshot(),
                 'optimizer_state_dict': opt.state_dict()}, save)
     print(f"saved -> {save} ({total_decisions/1e6:.2f}M decisions, {(time.time()-t_start)/60:.1f}min)")

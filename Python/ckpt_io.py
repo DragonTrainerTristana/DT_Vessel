@@ -206,6 +206,15 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
             notes.append(msg + " (allow_comm_range_mismatch 로 진행)")
         # arm: 다르면 다른 실험
         ck_arm = snap.get('arm') or (sd.get('arm') if isinstance(sd, dict) else None)
+        # ★실효 팔 (2026-09-10): --arm ON 이라도 comm_on_at 커리큘럼의 .step9M.pt 는 저장 시점에 통신이 꺼져 있던 OFF 모델.
+        #   저장 키 comm_active(2026-09-10 이후) 우선, 없으면 steps < comm_on_at 로 추정. OFF 모델을 ON 으로 평가하면 조용히 틀림.
+        ck_steps = sd.get('steps') if isinstance(sd, dict) else None
+        ck_ca = sd.get('comm_active') if isinstance(sd, dict) else None
+        if ck_ca is None and ck_arm == 'ON' and snap.get('comm_on_at') and ck_steps is not None:
+            ck_ca = int(ck_steps) >= int(snap['comm_on_at'])
+        if ck_arm == 'ON' and ck_ca is False:
+            notes.append(f"ckpt 는 --arm ON 이지만 저장 시점(steps={ck_steps})에 통신이 꺼져 있었음(comm_on_at={snap.get('comm_on_at')}) → 실효 팔 OFF")
+            ck_arm = 'OFF'
         if arm is None:
             arm = ck_arm
         elif ck_arm and ck_arm != arm and not allow_arm_mismatch:
@@ -314,6 +323,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'shared_encoder': net.SHARED_ENCODER,
         'use_moe': bool(net.USE_MOE), 'moe_width': float(net.MOE_WIDTH), 'moe_shared': bool(net.MOE_SHARED),
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
+        'ckpt_steps': (sd.get('steps') if isinstance(sd, dict) else None),
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,
                  max_partners=max_partners, effective=effective, notes=notes, path=path)

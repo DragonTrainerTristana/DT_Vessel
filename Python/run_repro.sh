@@ -33,6 +33,7 @@
 #   VESSEL_JOBS      동시 실행 프로세스 수. 기본 = NGPU × 2 (VRAM 프로세스당 ~5.2GB 기준)
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
+export PYTHONIOENCODING=utf-8   # ★Windows cp949 콘솔로 리다이렉트할 때 한글·기호 print 가 UnicodeEncodeError 로 죽는 것 방지 (2026-09-10)
 
 MODE="${1:-smoke}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
