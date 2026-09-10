@@ -28,8 +28,11 @@ Python/something.md
 # 로컬 전용 분석 스크립트 — 공개 repo 제외
 Python/analyze_mixed.py
 
-# Claude Code 로컬 설정·연구 노트(CLAUDE.md)·에이전트 정의 — 공개 repo 제외(로컬 전용)
-.claude/
+# Claude Code — 로컬 설정만 제외. 지침 문서(CLAUDE.md)·에이전트 정의는 추적(코드와 같이 리뷰되게)
+# 2026-09-10: 통째 제외 상태로 3개월간 CLAUDE.md 가 코드와 어긋나 git 이력 0건이었음 → 추적으로 전환
+.claude/*
+!.claude/CLAUDE.md
+!.claude/agents/
 
 # 모델·피규어·궤적 데이터 (Assets 밖이 정석이나 가드)
 models/
