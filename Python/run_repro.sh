@@ -219,6 +219,10 @@ case "$MODE" in
     #   사용: VESSEL_DIAG_CKPTS="a.pt b.pt" bash run_repro.sh diag   (CK 아래 상대경로)
     #   추가 인자: VESSEL_DIAG_ARGS="--burn 1000 --collect 900 --envs 32"
     preflight
+    # ⚠️common_env 가 COMM_RANGE=200 을 export 하는데 체크포인트가 다른 값(예: commfix/floorfix 12런 = 300)으로
+    #   학습됐으면 restore_policy 가 중단한다. 그때 VESSEL_DIAG_COMM_RANGE=300 으로 주면 여기서 덮어씀.
+    #   값을 모르면 `python ckpt_io.py <ckpt>` 가 스냅샷의 comm_range 를 찍어준다.
+    [ -n "${VESSEL_DIAG_COMM_RANGE:-}" ] && export VESSEL_COMM_RANGE="$VESSEL_DIAG_COMM_RANGE"
     : > "$OUT/_status_diag.txt"
     for c in ${VESSEL_DIAG_CKPTS:?VESSEL_DIAG_CKPTS 를 줄 것}; do
       throttle
