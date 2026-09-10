@@ -102,7 +102,7 @@ MSG_GATE_COEF = _env_float('VESSEL_MSG_GATE_L2', 0.0)
 # key/value → softmax 가중선택(sum의 무차별 합 대신 "누가·어디서·지금 얼마나 중요한지" 반영).
 # 출력차원 dv=MSG_DIM이라 ControlActor/Critic의 게이트·fc2 메시지슬롯 *불변*(인터페이스 동일, 연산만 추가).
 # v_proj 소진폭 init(×0.1, 2026-06-12 fix) — zero-init은 직렬 곱 새들로 채널을 영구 동결시켰음(실측).
-# ⚠️ rollout(aggregate_single)·update(aggregate_batch) 동일 함수형이라 PPO ratio 유효.
+# ⚠️ rollout 도 aggregate_batch(벡터화, networks.py:1084→:1109 return) 사용 → update(evaluate_actions)와 동일 함수형이라 PPO ratio 유효. aggregate_single 호출부(networks.py:1168)는 도달 불가(2026-09-10 확인).
 # 기본 OFF(=기존 sum) → 켜기 전 빌드/baseline과 100% 동일(anti-rigging). H1b regime에서 ON 비교.
 USE_ATTENTION = _env_str('VESSEL_USE_ATTENTION', '0') == '1'
 ATTN_DIM = _env_int('VESSEL_ATTN_DIM', 32)   # attention query/key 내부차원 (head 1개)
@@ -222,7 +222,7 @@ USE_ORACLE = _env_str('VESSEL_ORACLE', '0') == '1'
 # ============================================================================
 # COLREGs Mixture-of-Experts (상황별 정책 head hard-routing)
 # ============================================================================
-# Unity가 판정한 COLREGs 상황(cachedDangerSituation, obs[389]=마지막 슬롯, 0~4)으로 정책 head를 hard-route.
+# Unity가 판정한 COLREGs 상황(cachedDangerSituation, obs[368]=마지막 슬롯, 0~4)으로 정책 head를 hard-route.
 #   0=None(조우없음/항해) 1=HeadOn 2=CrossingStandOn 3=CrossingGiveWay 4=Overtaking (COLREGsHandler enum 일치).
 # 공유 backbone(radar 인지 + 통신 융합 → z 128D) 위에 상황별 maneuvering head(fc3→μ,σ) 5개.
 #   단일 정책이 4상황의 상충하는 회피규칙(head-on→우현 / stand-on→유지 / give-way→우현+감속 / overtake→keep clear)을

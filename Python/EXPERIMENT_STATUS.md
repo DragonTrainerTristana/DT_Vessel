@@ -1,3 +1,6 @@
+> ⚠️ 2026-06-02 기준. 붕괴 원인은 `Python/COLLAPSE_ROOTCAUSE.md`(2026-09-05, §0 결론 :12 — ControlActor RadarEncoder **dying ReLU**)가 정본.
+> 여기의 'EV 평형 `p_eq≈6%`' 서술(:3·:10·:13)은 그 이전 가설. — 배너 추가 2026-09-10
+
 # 실험 현황 핸드오프 — 2026-06-02 갱신
 
 > **상태: ONE 빌드 6-run sweep 완료 → 게이트 fix 검증됨 + rush>avoid 붕괴 근본원인 확정(EV 평형).**

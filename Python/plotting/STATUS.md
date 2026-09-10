@@ -1,3 +1,6 @@
+> ⚠️ 2026-08-26 기준. 2026-08-31 에 §1-1(도착반경)·1순위가 철회됨(진짜 원인 `--ring 0.7`).
+> 정본은 /Users/seunghyun/Dropbox/Private_Paper_Project/0702_NewVessel/runs/STATUS.md (:5-6 철회 블록). — 배너 추가 2026-09-10
+
 # 현황과 할 일
 
 2026-08-26 기준. 그림·실행 매칭은 `Figures/RUNS.md` 를 볼 것. 여기는 문제점과 다음 작업임.

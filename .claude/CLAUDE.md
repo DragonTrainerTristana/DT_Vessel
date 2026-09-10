@@ -1,110 +1,262 @@
-# Vessel Multi-Agent RL — 통신 협력 항해 연구
+# Vessel Multi-Agent RL — 구조·설정·진단 규약
 
-## 프로젝트 (간단)
-다중 선박이 강화학습으로 목표까지 항해하면서 **COLREGs(해양 충돌규정)**를 지키고 서로 충돌을 피한다.
-핵심 연구 질문: **에이전트 간 통신(latent 메시지 교환)이 협력적 충돌 회피를 개선하는가?**
-- **환경**: Unity ML-Agents (C#) — `Assets/Scripts/Agent`, `Navigation`, `Management`
-- **학습**: PyTorch PPO (Python) — `Assets/Scripts/Python` (단일 source of truth: `config.py`)
-- shared policy, 에이전트들이 `MSG_DIM`차원 latent 메시지를 범위 내(COMM_RANGE) 이웃과 교환
+2026-09-10 전면 재작성(코드에서 직접 뽑음). 이전 2026-06-02판(obs 59D·MLP·게이트 −3·MoE 없음)은 전부 폐기.
+규칙(허락·정직성·말투)은 루트 `CLAUDE.md`. **현재 상태·할 일은 여기 안 씀 → `runs/STATUS.md`만.**
+라인 번호는 2026-09-10 `refactor/2026-09-10` 기준. "(미확인)" 표시는 코드로 못 확인한 값.
 
 ---
 
-## 🎯 연구 목표 (Hypotheses — *전제 아님, 정직하게 입증할 가설*)
+## 1. 프로젝트 — 학습 경로 두 개
 
-> ⚠️ 통신은 **자동으로 좋아지지 않는다**(학습돼야 하고 실패할 수 있음). 아래는 *증명 대상*이며,
-> "통신이 이기도록 강제"하는 게 아니라 **공정하게 입증**하는 것이 목표다.
+다중 선박이 shared policy PPO로 목표까지 항해하며 COLREGs 준수·충돌 회피. 연구 질문 = 에이전트 간 latent 메시지 통신이 협력 회피를 개선하는가.
 
-### H1. 통신 ON > 통신 OFF (reward · fuel_consumption ↓ · trajectory 간소화)
-통신 ON이 OFF보다 **(a) 보상, (b) 연료 소비↓, (c) 궤적 간소화(멀리서 부드러운 조기 회피)**에서 우월함을 보인다.
+| 경로 | 파일 | 역할 |
+|---|---|---|
+| **GPU 배치 (현행 주 경로)** | `vessel_gym.py`(VesselBatchEnv) + `vessel_gym_train.py` | 탐색·절제실험 전부. `run_repro.sh`가 돌리는 것 |
+| **Unity** | `main.py` + ML-Agents(C# `Agent/`, `Navigation/`, `Management/`) | ground-truth 판정(sim2sim 판정관). `VESSEL_OUTCOME_LOG`/`VESSEL_METRIC_LOG` |
 
-**두 단계로 나눠서 (둘은 다른 주장):**
-- **H1a (불변식·반드시 성립): comm-ON ≥ comm-OFF — 통신은 *절대 더 나빠지면 안 된다.*** 근거: 정보가치 비음수 정리 — 에이전트는 메시지를 무시할 수 있다(ControlActor fc2의 메시지 가중치=0 → comm-OFF와 동일). **comm-ON이 comm-OFF보다 *나쁘면 = 구현/최적화 버그* (반드시 고칠 것).** 현재 의심 원인: SUM 집계(others_msg ±4 큰 노이즈→무시 어려움), 약한 메시지 정규화(MSG_L2=0.001), 메시지 LR 3배, critic이 노이즈 메시지 조건화. → 수정: 강한 정규화/mean·정규화 집계/LR 1배로 comm-ON이 최소 comm-OFF는 따라잡게.
-- **H1b (목표·조건부): comm-ON > comm-OFF — 통신이 *더 우월.*** 이건 *자동 아님* — task가 통신을 *필요*로 할 때만(국소 인지 부족/협응 모호). 완전관측에선 comm-ON = comm-OFF(같음)가 최선.
-- **순서: H1a 먼저(안 나빠지게) → H1b(도움되게 regime 부여).**
+- **두 경로가 공유하는 것 = `config.py` + `networks.py` 뿐.** 체크포인트 shape 호환은 이 둘 때문임.
+- 나머지는 각자 구현(같은 이름이라도 다른 코드):
 
-**정직하게 입증하는 법 (rigging 방지 — 필수):**
-1. **Ground-truth로 평가**: shaped reward가 아니라 **실제 충돌률·연료·궤적·COLREGs 준수** (`VESSEL_METRIC_LOG`, `VESSEL_OUTCOME_LOG`).
-2. **공정한 baseline**: comm-ON은 *불구화 안 된 최선의 comm-OFF*를 이겨야 함. comm-OFF를 "못 보는 위협"으로 페널티 줘 인위적으로 나쁘게 만들면 = **rigging(무효)**. → 3-way 비교: `baseline-OFF` vs `extended-ON`, extended-ON이 *baseline-OFF*를 ground-truth로 이겨야 진짜.
-3. **통신이 필요한 조건에서만**: 완전관측 COLREGs는 *기하로 최적행동이 결정*돼 통신 잉여. 통신은 **국소 인지 부족**(레이더 밖/가림) 또는 **협응 모호**(다물체)에서만 가치 → 그 regime에서 시험.
+| 기능 | GPU 배치 | Unity |
+|---|---|---|
+| frame stack | `vessel_gym_train.FrameStack` (:43) | `frame_stack.MultiAgentFrameStack` |
+| GAE | `vessel_gym_train.batched_gae` (:95) + `ValueNorm` (:116) | `memory.Memory` (dones/truncateds 경계) |
+| PPO 루프 | `vessel_gym_train.py` :846-901 | `main.ppo_update` (:81) |
+| others_msg(rollout) | `vessel_gym_train.comm_gather` (:259) | `networks.CNNPolicy._get_others_msg` (:1032) |
+| 체크포인트 스냅샷 | `_cfg_snapshot()` (:672) | `main._unity_snapshot` (:725) → `ckpt_io.snapshot_config` |
+| 평가·진단 | `eval_ckpt.py` · `eval_mixed.py` · `diag_ckpt.py` (전부 `ckpt_io` 경유) | `VESSEL_LOAD_MODEL=1 VESSEL_TRAIN=0` |
+
+- `vessel_gym_train.py` 헤더 docstring은 "ON arm 배치 집계는 별도 작업"이라 적혀 있으나 `comm_gather`가 이미 구현됨 — docstring이 낡음.
+
+---
+
+## 2. 가설·정직성 (문구 유지)
+
+> 통신은 **자동으로 좋아지지 않음**(학습돼야 하고 실패할 수 있음). 아래는 *증명 대상*이며 "통신이 이기도록 강제"가 아니라 **공정하게 입증**하는 것이 목표.
+
+### H1. 통신 ON > 통신 OFF (reward · fuel↓ · 궤적 간소화)
+- **H1a (불변식·반드시 성립): comm-ON ≥ comm-OFF — 통신은 절대 더 나빠지면 안 됨.** 근거: 정보가치 비음수 — 에이전트는 메시지를 무시할 수 있음(게이트·fc2 메시지 가중치 0 → comm-OFF와 동일). **comm-ON이 OFF보다 나쁘면 = 구현/최적화 버그(반드시 고침).**
+- **H1b (목표·조건부): comm-ON > comm-OFF.** 자동 아님 — task가 통신을 *필요*로 할 때만(국소 인지 부족/협응 모호). 완전관측에선 ON = OFF가 최선.
+- 순서: H1a 먼저(안 나빠지게) → H1b(도움되게 regime 부여).
+
+**anti-rigging 3원칙 (필수):**
+1. **Ground-truth로 평가** — shaped reward 아닌 실제 충돌률·연료·궤적·COLREGs 준수.
+2. **공정한 baseline** — comm-ON은 *불구화 안 된 최선의 comm-OFF*를 이겨야 함. OFF를 인위적으로 나쁘게 만들면 = rigging(무효).
+3. **통신이 필요한 조건에서만** — 완전관측 COLREGs는 기하로 최적행동이 결정돼 통신 잉여. 국소 인지 부족·협응 모호 regime에서 시험.
 
 ### H2. latent 차원 ↑ → 통신 질 ↑
-메시지 차원 `MSG_DIM`이 클수록 정보량·협응 질이 올라간다.
-- ⚠️ **H1이 성립한 *후에만* 의미.** 통신이 실제로 안 쓰이면 차원 수는 무의미 (실제로 MSG_DIM 2~12가 동일 수렴한 전례 있음 — 통신이 안 쓰여서). 통신이 가치를 가질 때 차원 스케일링 측정 (수확체감·과적합·불안정 주의).
+- **판정 완료: 불지지.** `runs/m2_ablation/RESULT.md` — 18런(C1~C6, 차원 2~12) 수렴평가 ANOVA **F(5,12)=0.39** (임계 3.11). 붕괴 시드 없음.
+- H1이 성립한 *후에만* 의미 있음(통신이 안 쓰이면 차원은 무의미). **H1 선행 필요.**
 
 ---
 
-## 현재 상태 & 핵심 발견 (2026-06-02)
-- **★★H1a 통신 게이트 fix = 검증됨 (3-seed×1M, ground-truth)**: naive comm(fix前)은 수렴 vColl이 OFF의 ~2배(H1a 위배). 진단 결과 근본원인 = **"메시지 무시"가 init-time 성질일 뿐 학습 평형이 아님**(zero-init은 출발선만 맞추고 약한 L2로는 메시지가 0에서 자람). 수정: **학습형 게이트** `others_msg×sigmoid(msg_gate)` (ControlActor·Critic, gate 초기 −3=닫힘) + 게이트 개방 페널티(`MSG_GATE_COEF`/`VESSEL_MSG_GATE_L2`=0.02) + 생산측(`MessageActor.msg_out`) zero-init + `VESSEL_MSG_L2=0.01`. 전부 ON만(OFF는 others_msg≡0이라 불변=anti-rigging). **결과: comm-ON(fixed)이 OFF를 seed-paired Pareto로 이김 — goal 88.2 vs 86.0%, vColl 3.4 vs 5.7%, LATE 0/3 vs 3/3.** H1a 회복 + H1b 양성(단 3-seed, comm은 붕괴 *완화*지 제거 아님, 더 많은 seed 필요).
-- **★★OFF baseline 자체가 깊은 수렴(1M)에서 rush>avoid 붕괴**: 보상재설계(0601)가 mid-training(~7천ep)엔 vColl ~1%로 좋아 보였으나, 1M 수렴서 **3/3 LATE, vColl 5.7%로 회귀**(goal 86%로 최대화·timeout 7%로 바닥나며 직선 돌진, straight 0.89). **보상재설계는 깊은 수렴서 충돌회귀를 못 막음 = 다음 디버그 1순위(통신 아닌 보상 문제, ON·OFF 공통).** "mid-training 좋아도 채택 금지" 재확인.
-- **★레이더 장님 버그가 충돌의 진짜 원인이었음** (`VesselAgent.cs`의 빈 LayerMask가 radar 기본값 `~0`을 덮어씀 → 감지 0). 수정(`!=0 ? : ~0`) 후 **배충돌 34% → 4%.** 회피는 **egocentric ARPA 인지**로 해결됨. → "충돌 30% 구조적"이라던 과거 결론들은 *장님 데이터*라 무효.
-- **통신은 아직 미입증**: 완전관측(레이더 56m)에선 잉여, 레이더 줄여도 도움 안 됨. 막힘 3개: (1) 메시지에 **위치 없음**(sum 집계 → 받는 배가 위협 방위 모름), (2) 보상 risk가 통신범위 미반영(56m까지만 → 먼 위협 조기회피 보상 0), (3) **decentralized critic**(협력 credit 노이즈).
-- **다음 작업(통신을 학습 가능하게)**: ① 메시지에 sender **상대위치 grounding + attention**(sum 대신), ② 보상 risk를 통신범위로 확장(**privileged/CTDE** — 보상≠관측), ③ **중앙 critic(MAPPO)**. 그 후 H1/H2 시험. (참고: 보상이 "먼 위협"을 알아도 obs는 국소 유지 → 통신이 *필수*가 되는 게 CTDE 핵심.)
+## 3. obs 계약 — 369D
 
----
+| index | dim | 내용 | 네트워크 입력 | frame-stack |
+|---|---|---|---|---|
+| `[0:360]` | 360 | 레이더 raw ray 1°. 값 = dist/range − 0.5, 미감지 +0.5 | RadarEncoder | **×3** (Conv 채널축 = 시간) |
+| `[360:362]` | 2 | goal: dist `d/(d+k)`, angle/180 | ✓ | ✗ |
+| `[362:366]` | 4 | self: speed, yawRate, heading, rudder (정규화) | ✓ | ✗ |
+| `[366:368]` | 2 | position x, z | **제외** — 통신 파트너·relpos 계산용 | ✗ |
+| `[368]` | 1 | COLREGs situation 0~4 (None/HeadOn/CrossingStandOn/CrossingGiveWay/Overtaking). 1-step stale(의도) | **MoE 라우팅 키 + one-hot 5D 입력**(`SITUATION_INPUT`) | ✗ |
 
-## obs 계약 (59D) — ⚠️ 바꾸면 4파일 동시 수정
-`VesselAgent.CollectObservations`가 59 floats 송신:
+- 네트워크 실입력 = radar 3×360 + 2 + 4 + one-hot 5.
+- **동시 수정 파일 (차원·순서 바꾸면 전부):**
 
-| index | dim | 내용 | frame-stack |
-|---|---|---|---|
-| `[0:30]` | 30 | Radar 30섹터 min-distance (`GetSectorMinDistances`) | ✅ ×3 |
-| `[30:32]` | 2 | Goal (dist 비선형 `d/(d+k)`, angle/180) | ✗ |
-| `[32:36]` | 4 | Self (speed, yawRate, heading, rudder) | ✗ |
-| `[36:57]` | 21 | **ARPA** top-3 접점 × 7 (sin,cos,range,closing,dcpa,tcpa,valid) — label-blind 충돌기하 | ✗ |
-| `[57:59]` | 2 | Position (x,z) — 통신 파트너 계산용, **네트워크 입력 제외** |
-
-네트워크 입력 57D. `config.py`: STATE_SIZE=30, GOAL_SIZE=2, SELF_STATE_SIZE=4, ARPA_SIZE=21, COLREGS_SIZE=0, POSITION_SIZE=2, OBSERVATION_SIZE=59.
-networks fc2 입력: MessageActor `256+2+4+21=283`, ControlActor/Critic `256+2+4+21+MSG_DIM`.
-**obs 차원/순서 변경 시 동시 수정**: `VesselAgent.cs:CollectObservations`(+ `Initialize`의 `VectorObservationSize`) → `obs_utils.py:parse_observation` → `config.py` → `networks.py` fc2. (`test.py`/`export_onnx.py`도 stale — 학습엔 무관, 분석 전 갱신 필요.)
-
-## 네트워크 (요약)
-- **MessageActor**: obs → MLP → 6D 메시지 (tanh, **msg_out zero-init**). **ControlActor**: obs + **gate·**others_msg → action(squashed gaussian). **Critic**: obs + **gate·**others_msg → value. (Conv1D는 MLP로 교체됨, COLREGs classifier 제거됨.)
-- **★메시지 게이트 (H1a fix, 2026-06-02, 검증됨)**: ControlActor·Critic이 `others_msg × sigmoid(msg_gate)` 사용, `msg_gate` 초기 −3(거의 닫힘). loss에 게이트 개방 페널티 `MSG_GATE_COEF·sigmoid(gate)` (ON만). **"메시지 무시"를 init-time이 아닌 *학습된 안정 평형*으로** 만들어 value-of-information≥0를 수렴까지 보장. fc2 메시지슬라이스 zero-init(기존)만으론 메시지가 0에서 자라 H1a 위배됐던 게 근본원인. comm-OFF는 others_msg≡0이라 게이트 무영향(anti-rigging 안전).
-- **통신 gradient 수정**: PPO update의 `evaluate_actions`가 **파트너 obs로 MessageActor 재실행**(masked-sum) → sender→receiver gradient (이전 straight-through self-loop 버그 수정, grad≠0 실측). 메시지 L2 정규화(`MSG_L2_COEF`)로 안정화.
-
-## Action (2D continuous)
-`[0]` rudder ∈[-1,1]→×maxTurnRate, `[1]` thrust ∈[-1,1]→`(x+1)/2`×maxSpeed. 변경 시 `VesselAgent.OnActionReceived` + `config.CONTINUOUS_ACTION_SIZE`.
-
-## 보상 (C#, `VesselAgent.CalculateReward`)
-time penalty / forward bonus / lowSpeed penalty / **fuel proxy**(thrust²+0.5turn²) / proximity(±135°,≤19.6m) / **dense 충돌코스 페널티**(true risk, 매스텝, U자 회귀 방지) / nav(arrival+100, progress, angle) / COLREGs compliance + early-DCPA / smoothness / collision −300.
-
----
-
-## env 토글 (재빌드 없이 튜닝 — 대부분 Python/런타임)
-| env | 의미 |
+| 파일 | 위치 |
 |---|---|
-| `VESSEL_USE_COMM` | 통신 ON(1)/OFF(0). **통신은 Python 전담 → 같은 빌드로 ON/OFF 비교** |
-| `VESSEL_MSG_DIM` | 메시지 차원 (H2용) |
-| `VESSEL_CROSSING` | 1=4-way 교차(가장 먼 목표 배정, coordination-hard) |
-| `VESSEL_RADAR_RANGE` | 에이전트 레이더 범위(m) override (인지부족 실험). 보상 risk는 불변 |
-| `VESSEL_COLCOURSE_COEF` | dense 충돌코스 페널티 계수 (기본 -0.8) |
-| `VESSEL_MSG_L2` | 메시지 L2 정규화 (통신 안정화, 기본 0.001; **H1a 시험 시 0.01 권장**) |
-| `VESSEL_MSG_GATE_L2` | 메시지 게이트 개방 페널티 (기본 **0.02**). 게이트가 "메시지 무시"로 수렴하도록 압박 → H1a value-of-info≥0 보장. 너무 크면 H1b regime서 통신 죽임 |
-| `VESSEL_MSG_LR` | MessageActor LR 배수 (기본 1.0; 3.0→1.0, zero-init 구조에선 빠른 LR=노이즈) |
-| `VESSEL_AGG_MODE` | 메시지 집계 'sum'(기본)/'mean'/'scale'. ⚠️ rollout=update 동일해야 PPO ratio 유효. **H1a 시험 시 mean 권장** |
-| **`VESSEL_ANGLE_COEF`** | angleReward 계수 (기본 **0.15**, 0.5→0.15). path-dependent 회피 변침 페널티 완화(rush>avoid 수정) |
-| **`VESSEL_TIME_PENALTY`** | time penalty (기본 **-0.07**, -0.1→-0.07). 회피 detour 시간비용 완화. **-0.03 밑 금지(loiter)** |
-| **`VESSEL_EARLY_RISK_GATE`** | earlyAvoid 발화 risk 게이트 (기본 **0.1**, 0.3→0.1). 근접에서도 DCPA-증가 회피보상 |
-| **`VESSEL_EARLY_RELAX_TCPA`** | 1(기본)=earlyAvoid의 tcpa>11.5s 게이트 제거(any tcpa). 0이면 옛 동작 |
-| **`VESSEL_STRAIGHT_BONUS`** | 1=직진보너스 재활성. 기본 0(off): rudder≈0 보상이 회피 변침과 충돌 |
-| `VESSEL_RUDDER_RATE` | 타속(steering-gear, °/s). 기본 12(GlobalScale.RUDDER_RATE, 허용 8~18). 타가 명령으로 슬루 → 깔작 방지. **C#이라 재빌드 필요? 아니오 — VesselAgent.Initialize에서 env 읽어 주입(재빌드 없이 튜닝)** |
-| `VESSEL_LOAD_MODEL` | 1이면 `VESSEL_MODEL_PATH` 로드(관찰/이어학습). 기본 0=from-scratch |
-| `VESSEL_GRAPHICS` | 1이면 빌드 창 띄워 관찰(headless 끔). 오버헤드 카메라 자동 생성(CameraController, batchmode면 미생성) |
-| `VESSEL_MAX_STEP` `VESSEL_RUN_STEP` `VESSEL_SEED` `VESSEL_NUM_ENVS` `VESSEL_BASE_PORT` `VESSEL_USE_EDITOR` `VESSEL_ENV_PATH` `VESSEL_MODEL_PATH` `VESSEL_COMM_FOLDER` `VESSEL_OUTCOME_LOG` `VESSEL_METRIC_LOG` `VESSEL_TIME_SCALE` | 학습/환경/로그 |
+| `Agent/VesselAgent.cs` | `CollectObservations` :958-1000 (radar :974, goal/self :981-990, pos :993-994, situation :1000), `Initialize` VectorObservationSize :333 |
+| `Python/vessel_gym.py` | `_build_obs` :674-707 (조립 :698-706) |
+| `Python/vessel_gym_train.py` | `parse_obs` :34-40 |
+| `Python/obs_utils.py` | `parse_observation` :10-33 (Unity 경로) |
+| `Python/config.py` | :44-66 (RADAR_RAYS/STATE_SIZE 360, GOAL 2, SELF 4, POSITION 2, SITUATION 1, OBSERVATION_SIZE 369, FRAMES 3 :55) |
+| `Python/networks.py` | fc2 입력 :482 / :604 / :861, `SIT_INPUT_DIM` :149 |
 
-**성능**: latency-bound, GPU 놀음. 무위험 속도개선=**독립 프로세스 병렬(이 머신 ~6개)**. 단일 run은 못 빠르게(동기 왕복). NUM_ENVS>1(한 프로세스)은 2× 느림. 레이더 ray↓/척수↑는 *결과를 바꿈*(버그 아님). C# 바꾸면 **재빌드** 필수, Editor는 자동 반영.
-
-**평가는 항상 ground-truth 로그로**: `VESSEL_OUTCOME_LOG`(goal/collision_vessel/collision_obstacle/timeout), `VESSEL_METRIC_LOG`(**13열**: id,ep,outcome,steps,fuel,rudderVar,compliance,occlRate,commandVar,**minVesselDist,nearMissSteps,straightness,headingTravel**). 뒤 4열=near-miss/circling **진단 전용, 보상 절대 비연결**(제약3). `convergence_gate.py`(수렴게이트+LATE_COLLAPSE), `analyze_circling_safety.py`(circling/near-miss)로 분석. reward 임계값 추정 금지.
-- **★보상 재설계 + 통신 zero-init (2026-06-01)**: 진단 결과 'rush>avoid'의 원인은 progress가 아니라(이미 γ=1 telescoping) **path-dependent 항**(angleReward·직진보너스·timePenalty)이 회피 변침을 직접 벌함. 수정: angleReward 0.5→0.15, 직진보너스 off, timePenalty -0.1→-0.07, **earlyAvoid 게이트 0.3→0.1 + any-tcpa + ×speedRatio**(회피=DCPA증가 이벤트, orbit=보상0). progress는 불변(γ=0.99 PBS는 정지 farming 버그라 기각). **통신 H1a 진짜 버그=ControlActor/Critic fc2 메시지 슬라이스 random-init**(zero-init 아니라 comm-ON이 OFF와 다른 출발선)→`networks.py` zero-init으로 value-of-information≥0 구조 보장. **from-scratch 재학습 필수**.
-- **★타속 슬루(2026-06-01)**: 타가 명령으로 *즉시* 안 가고 `RUDDER_RATE`(°/s)로 슬루(`VesselDynamics`) → "배 깔작대기" 물리버그 수정. 영향: ① **fuel·smoothness 보상은 *commanded* 타각 기반**(실제 타각은 슬루로 평탄화돼 gradient 소실 — RL연구원 진단). ② `commandMismatchCoef`(-0.03) 타속포화 패널티 신규. ③ rudderVar(실제) 메트릭은 슬루로 절대값↓ → **commandVar(명령)이 진짜 부드러움 신호**. ④ per-dim logstd(rudder std↓). **동역학 변경 → from-scratch 재학습 필수**(옛 모델 호환X).
+- Unity 빌드 obs 크기 ≠ 369면 연결 시 RuntimeError(build trap, `main.py`).
 
 ---
 
-## 코드 규칙
-- **C#**: PascalCase(클래스/메서드), camelCase(지역). 주석 한국어. `[Header]` public 필드. `Debug.Log` 금지(`Debug.LogWarning`만, setup 에러).
-- **Python**: snake_case. 주석 한국어/docstring 영어. **모든 상수·경로·차원은 `config.py`.** production 코드에 bare `print()` 금지(학습 진행/에러 출력만).
-- **데이터 위치**: `models/`,`trajectory_data/`,`figures/`는 `Assets/` *밖*(Unity 무한 import 방지).
-- **GitHub**: git root=`Assets/Scripts/`. C# 파일 복사 금지(Unity 중복 컴파일). 원본 직접 `git add`.
+## 4. 네트워크 (`networks.py`)
 
-## 과학적 정직성 (이 프로젝트의 제1원칙)
-통신이 도우면 ground-truth로 입증, **안 도우면 정직하게 "안 도움"이 결론.** baseline을 불구화해 통신을 이기게 만들지 않는다. H1/H2는 *달성할 목표*지만 *조작으로 만들 결과*가 아니다.
+세 망 **MessageActor / ControlActor / Critic 각자 독립 인스턴스**(RadarEncoder 포함, 공유 없음). MoE ON이면 망마다 코어 5벌.
+
+| 구성요소 | 코드 | 내용 |
+|---|---|---|
+| **RadarEncoder** | :163-218 | Conv1D circular ×3: 3→32 k5 s2 (:183), 32→64 k5 s2 (:184), 64→64 k3 s2 (:185) → 360→180→90→45. 옵션 1×1 bottleneck `reduce` 64→8 (`VESSEL_RADAR_HEAD=bottleneck`, :187-190) → flatten(2880, bottleneck이면 360) → Linear→`RADAR_FEAT_DIM`=30 (:194). 활성 ReLU, `VESSEL_RADAR_ACT=leaky`로 LeakyReLU(0.01) (:34, :204) |
+| **MoE** | `USE_MOE` 기본 **ON** (config :235), 전문가 5 (:236), `MOE_WIDTH` 1.0 (:244), `MOE_SHARED` 0 (:249) | 코어 통째 hard-routing(obs[368]). ModuleList :529/:671/:896. `_share_radar_encoder` (:130-135) = **MOE_SHARED=1일 때 전문가 5벌끼리만** 인코더 공유(세 망 간 공유 아님) |
+| **situation one-hot** | `SITUATION_INPUT` 기본 ON (config :264) → `SIT_INPUT_DIM`=5 (:149), `_situation_onehot` :152 | 세 망 fc2에 concat. MoE에서도 입력(코어 내 상수, 무해) |
+| **MessageActor 코어** | :467-511 | radar30 + goal2 + self4 + sit5 = **fc2 41**→128 ReLU → `msg_ln` LayerNorm(**기본 ON**, `VESSEL_MSG_LN`, :490, 2026-08-31 tanh 포화 방지) → `msg_out` 128→MSG_DIM tanh. `msg_out` **×0.1 소진폭**(:495-497) |
+| **ControlActor 코어** | :587-651 | **fc2 47**(41+msg 6)→128 tanh → fc3 128→64 tanh → action_mean 64→2 (×0.1, :621-622). fc2 **메시지 슬라이스 ×0.1** (:607-608). `msg_gate` 초기 **0.0 = sigmoid 0.5 중립** (:610). per-dim logstd [−1.0, −0.5] (:625). mean clamp ±3, logstd [−2.3, 0] (:794-795, :824-825). `consumer_decoder` 128→64→K·2 항상 생성(:613, K=min(COMM_CONSUMER_K 3, MAX_PARTNERS 4)=3) |
+| **Critic 코어** | :846-882 | **fc2 47**→128 ReLU → value 1. `CENTRAL_CRITIC=1`이면 `glob_enc` 6→64→64 per-ship mean-pool 추가 → **fc2 111** (:858-861). 메시지 슬라이스 ×0.1 (:862-863), `msg_gate` 0.0 (:864) |
+| **집계 모듈** | `msg_encoder` 9→32→6 (:990-992, POS_GROUND 기본 ON config :117) · `GroundedAttention` q 6→32 / k 9→32 / v 9→6 ×0.1 (:413-464, USE_ATTENTION 기본 **OFF** config :107) | 둘 다 항상 생성 |
+| **디코더 5** | intent :1005 · threat :1012 · goal :1017 · role :1023 (항상 생성) · state_recon :1027 (계수>0일 때만) | 계수 기본 **전부 0** (config :128/:144/:157/:186/:165). consumer 계수 0 (:199) → `consumer_decoder` 미사용 |
+| **CTDE** | `CENTRAL_CRITIC` 기본 OFF (config :172) | 켜면 `CNNPolicy.forward(global_feat=…)` 필수 — 안 넘기면 zeros 경고(:1233) |
+| **행동** | 2D squashed Gaussian. `action_raw`(pre-tanh) 저장→update 재사용(:786-844) | `[0]` rudder, `[1]` thrust |
+
+**설계 결정(기각 이력 포함):**
+- 게이트 **−3 init + 개방 페널티(0.02) 설계는 2026-06-12 기각** — 채널 grad 0 상태에서 페널티만 작용해 −8까지 단조 폐쇄(흡수상태, 체크포인트 실측). 현재 중립 0 + 페널티 0 (config :93-96).
+- **zero-init 기각** — 생산측(msg_out)·소비측(fc2 슬라이스·v_proj) zero가 직렬곱 새들 형성 → 채널 grad 항등 0, 1M step 동결(실측). 전부 ×0.1 소진폭.
+- `msg_ln` — 시드 절반이 mean|tanh|=1.000 포화로 학습 정지(실측) → LayerNorm으로 pre-tanh O(1) 고정.
+
+**파라미터 수 (2026-09-10 실측, torch 1.9 CPU, `CNNPolicy.parameters()` 합):**
+
+| 구성 | 총합 | msg / ctr / critic | 공용(attn+msg_encoder+4디코더) | state_dict 키 |
+|---|---|---|---|---|
+| **기본값**(MoE5 폭1.0 shared0 LN1 SIT1) | **1,827,999** | 580,020 / 663,885 / 579,360 | 4,734 | 261 |
+| 기본 + MOE_SHARED=1 | 512,823 | 141,628 / 225,493 / 140,968 | 4,734 | 261 |
+| USE_MOE=0 (단일) | 369,387 | 116,004 / 132,777 / 115,872 | 4,734 | 73 |
+| MOE_WIDTH=0.44 | 363,564 | 114,195 / 130,740 / 113,895 | 4,734 | 261 |
+| 2026-09-04 배치(shared1 attn1 cc1 sr1) | 581,847 | 141,628 / 225,493 / 204,968 | 9,758 | 289 |
+| **09-04 배치 + `RADAR_HEAD=bottleneck(ch=8)` = 12런 실제 구성** | **356,607** | 인코더당 fc 2880→30(86,430) → 1×1 conv(520)+fc 360→30(10,830), 3벌 −225,240 | 9,758 | 319 |
+
+- README.md의 364,397 / 1,821,985 / 358,270 = **3망 합(공용 모듈 제외)·msg_ln 없음** 기준 — 위 실측과 정합(LN 제외 단일 3망 합 = 364,397).
+- 0908 문서·`Vessel_신경망_층별명세`의 356,607 = 위 bottleneck 행 (2026-09-10 CPU 실측 재현). 12런 평가 헤더 `head=bottleneck(ch=8) act=leaky` 로 확인.
+
+---
+
+## 5. state_dict 키 결정자 (체크포인트 호환의 핵심)
+
+**키 생성/삭제·shape를 바꾸는 것** — 다르면 strict 로드 실패. `ckpt_io.restore_policy`가 키 스니핑으로 복원(§8).
+
+| 결정자 | 코드 | 키 영향 |
+|---|---|---|
+| `VESSEL_MSG_LN` (기본 1) | networks :490 | `msg_actor.*.msg_ln.{weight,bias}` 생성/부재. ckpt_io가 키로 스니핑 |
+| `USE_MOE` (config :235) | :529/:534, :671/:676, :896/:901 | 접두 `experts.{0..4}.` ↔ `core.` |
+| `CENTRAL_CRITIC` (config :172) | :858-861 | `critic.*.glob_enc.{0,2}.*` 생성 + critic fc2 (128,47)→(128,111) |
+| `STATE_RECON_COEF>0` (config :165) | :1027 | `state_recon.net.{0,2}.*` + 버퍼 `run_mean/run_var/stat_inited/loss_ema` (조건부 생성) |
+| `VESSEL_RADAR_HEAD=bottleneck` | :47-48, :187-190 | `*.radar_encoder.reduce.*` 생성 + fc (30,2880)→(30,360) |
+| **무조건 생성(계수 0·미사용이어도 키 있음)** | `consumer_decoder` :613 · intent/threat/goal/role 디코더 :1005/:1012/:1017/:1023 · `msg_encoder` :990 · `attn` :999 | **제거 금지** — 지우면 기존 체크포인트 전부 strict 로드 깨짐 |
+| `MOE_SHARED` / `_share_radar_encoder` | :130-135 | **키 불변** — 5벌 동일 사본 저장(load 호환). 파라미터 수만 다름. RUNS.md는 텐서 동일성으로 공유 여부 판정 |
+| `VESSEL_MOE_FAST` / `_bmm_*` | :88, :91-128 | **키 불변** — 매 forward stack. 단 비트동일 아님(~1e-7) |
+| fc2 concat 순서 | ctr :635-636, critic :870-879 | **[radar, goal, self, sit, (glob), msg] — msg 항상 마지막.** `[:, -msg_dim:]` 인덱싱(×0.1 init·텔레메트리)이 의존 |
+
+**shape만 바꾸는 옵션** (키 이름 동일, 차원 불일치 → from-scratch):
+`MSG_DIM` (config :53) · `MOE_WIDTH` (:244, `_w` :138) · `SITUATION_INPUT` (:264, fc2 ±5) · `ATTN_DIM` (:108) · `RADAR_FEAT_DIM` (:49) · `INTENT_K`/`THREAT_K` (디코더 out) · `COMM_CONSUMER_K` (consumer out, ≤MAX_PARTNERS) · `COMM_CONSUMER_COUPLING` (fc3 in 128→134) · `VESSEL_RADAR_BOTTLENECK_CH`.
+
+**키에 영향 없는 옵션 = "조용히 다른 실험"** (가중치에 흔적 없음, **cfg_snapshot이 유일한 근거**):
+`USE_ATTENTION` · `POS_GROUND` · `VESSEL_AGG_MODE` · `VESSEL_NEAREST_SCALE` · `VESSEL_MSG_GAIN` · `VESSEL_MSG_TOKEN_GAIN` · `VESSEL_RADAR_ACT` · `VESSEL_RECON_EMA_FLOOR/PRE/LEGACY_STAT` · `COMM_RANGE` · `MAX_COMM_PARTNERS` · 모든 손실 계수 · `USE_ORACLE` · `USE_COMMUNICATION` · 보상·시뮬 상수 전부.
+
+---
+
+## 6. rollout = update 미러 (PPO ratio 유효 조건)
+
+others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio가 에러 없이 조용히 깨짐.
+
+| 복제 | 코드 | 역할 |
+|---|---|---|
+| `vessel_gym_train.comm_gather` | :259 (분기 :325-345) | GPU 경로 rollout |
+| `networks.CNNPolicy._get_others_msg` | :1032 (oracle :1057, attention :1084, pos_ground :1116, sum/mean/scale :1178-1185, mean-field fallback :1188) | Unity 경로 rollout |
+| `networks.CNNPolicy.evaluate_actions` | :1246 (oracle :1280, attention :1304, pos_ground :1308, sum/mean/scale :1313-1318) | 양 경로 공통 update |
+
+- **우선순위: attention > pos_ground > sum·mean·scale**, 끝에 `msg_gain`. 세 곳 모두 같은 순서·같은 함수형.
+- MoE 라우팅도 미러 대상: 파트너 메시지는 저장된 `partner_situations`로 재생성(:1302), 자기 행동은 저장된 `situation`으로 재라우팅.
+- **검증기 둘 다 ALL PASS 필수** — `_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`(:91-112, ALL PASS grep :96-99)가 grep으로 강제.
+- **"한 곳만 고치면 4번째 사고"** — 과거 3건:
+
+| # | 일자 | 사고 | 기록 |
+|---|---|---|---|
+| 1 | 2026-09-04 | `comm_gather`에 attention 분기 없음 → rollout=mean / update=attention | `runs/m2_ablation/COMM_PLAN.md` :197-198 |
+| 2 | 2026-09-05 | `POS_GROUND=0`이면 rollout=pos_ground / update=sum (blocker) | `vessel_gym_train.py` :319-322 |
+| 3 | 2026-09-05 | `VESSEL_MSG_GAIN`이 update에만 걸림 | `vessel_gym_train.py` :323 |
+
+- 배치 통계 정규화 금지(rollout E·N vs update 미니배치 통계가 달라짐) — 상수배만(:59).
+
+---
+
+## 7. 설정
+
+**원칙: `config.py`가 정본.** 차원·경로·하이퍼파라미터·토글 전부 거기서 읽음. 그런데 현재 아래 세 파일이 `os.environ`을 직접 읽음 → **Tier 4에서 config로 통합 예정.** 그 전까지 새 env 키를 여기 추가하지 말 것.
+
+| 파일 | 직접 읽는 VESSEL_* 키 (unique, grep 2026-09-10) |
+|---|---|
+| `networks.py` (12) | `RADAR_ACT` :34 · `RADAR_HEAD` :47 · `RADAR_BOTTLENECK_CH` :48 · `MSG_TOKEN_GAIN` :63 · `RECON_EMA_FLOOR` :73 · `MOE_FAST` :88 · `RECON_EMA_PRE` :276 · `RECON_LEGACY_STAT` :314 · `MSG_LN` :490 · `AGG_MODE`/`NEAREST_SCALE`/`MSG_GAIN` :1046-1048, :1294-1296 |
+| `vessel_gym.py` (27) | 시뮬: `RADAR_RANGE` `ALLOW_SMALL_RADAR` `RADAR_DROPOUT_P/LEN` `COMM_RANGE` `MIN_GOAL_DIST` `RESPAWN_RNG_CONST` `MAX_EP_STEPS`/`MAX_STEP` `COLREGS_MODE` · 보상: `EARLY_AVOID_COEF` `EARLY_RISK_GATE` `EARLY_RELAX_TCPA` `COLREGS_GATE` `CMD_MISMATCH_COEF` `PROXRAMP_COEF/DIST` `LOS_GATE` `SPEED_AVOID_UNLOCK` `SPEED_UNLOCK_GATE` `COLLISION_PENALTY` `FUEL_COEF` `PROGRESS_COEF` `SIM_COLREGS_COEF` `FARPAIR_COEF/EXP` `REWARD_RANGE` |
+| `vessel_gym_train.py` (23) | `AGG_MODE` `NEAREST_SCALE` `MSG_GAIN` `MSG_LN` `MSG_RANDOM_SD` `MSG_TOKEN_GAIN` `MSG_GATE_APPLY` `RADAR_ACT/HEAD/BOTTLENECK_CH` `RECON_EMA_FLOOR` `FARFIELD_COEF` `PERPAIR_COEF` `ORACLE` `TIMEOUT_BOOTSTRAP` `GRAD_TELEMETRY` `CLIP_PER_MODULE` `COMM_TELEMETRY`/`_EVERY` `NOCOMM_SWEEP/MODE` `VALNORM_BETA` `BLIND_WARN_AFTER` |
+
+**주요 토글 (`config.py`, 기본값은 코드 확인):**
+
+| env | config 상수 | 기본 | 라인 | 의미 |
+|---|---|---|---|---|
+| `VESSEL_USE_COMM` | `USE_COMMUNICATION` | **1** | :275 | 통신 ON/OFF. OFF = others_msg≡0 |
+| `VESSEL_MSG_DIM` | `MSG_DIM` | 6 | :53 | 메시지 차원(≥GOAL_SIZE 2 assert :976) |
+| `VESSEL_COMM_RANGE` | `COMM_RANGE` | **200** | :83 | 통신 반경 = 보상 반경(2026-08-30 420→200). `vessel_gym.py` :61도 같은 env |
+| `VESSEL_MAX_PARTNERS` | `MAX_COMM_PARTNERS` | 4 | :88 | nearest-K |
+| `VESSEL_USE_MOE` | `USE_MOE` | **1** | :235 | 상황별 코어 5벌. 단일망 baseline은 0 명시 |
+| `VESSEL_MOE_WIDTH` / `VESSEL_MOE_SHARED` | `MOE_WIDTH` / `MOE_SHARED` | 1.0 / 0 | :244 / :249 | iso-param 폭 / 전문가 간 인코더 공유 |
+| `VESSEL_SITUATION_INPUT` | `SITUATION_INPUT` | 1 | :264 | one-hot 5 입력(0 = fc2 36/42 ablation) |
+| `VESSEL_POS_GROUND` | `POS_GROUND` | 1 | :117 | relpos+msg_encoder mean 집계 |
+| `VESSEL_USE_ATTENTION` / `VESSEL_ATTN_DIM` | `USE_ATTENTION` / `ATTN_DIM` | 0 / 32 | :107 / :108 | GroundedAttention |
+| `VESSEL_CENTRAL_CRITIC` | `CENTRAL_CRITIC` | 0 | :172 | CTDE critic |
+| `VESSEL_STATE_RECON_COEF` | `STATE_RECON_COEF` | 0.0 | :165 | 통합 상태복원 aux (>0이면 구 5계수는 0으로) |
+| `VESSEL_INTENT/THREAT/GOAL_COMM/ROLE_COMM/COMM_CONSUMER_COEF` | 각 `*_COEF` | 0.0 | :128/:144/:157/:186/:199 | 구 aux 디코더 계수 |
+| `VESSEL_ORACLE` | `USE_ORACLE` | 0 | :220 | 참 파트너 goal 주입 통제군(comm 승리 주장에 쓰지 않음) |
+| `VESSEL_MSG_L2` / `VESSEL_MSG_GATE_L2` / `VESSEL_MSG_LR` | `MSG_L2_COEF` / `MSG_GATE_COEF` / `MSG_LR_SCALE` | 0.001 / **0.0** / 1.0 | :92 / :96 / :89 | 게이트 페널티 0 = 06-12 기각 설계의 잔재(ablation 전용) |
+| `VESSEL_RADAR_FEAT_DIM` | `RADAR_FEAT_DIM` | 30 | :49 | 인코더 출력 |
+| `VESSEL_LOAD_MODEL` / `VESSEL_TRAIN` / `VESSEL_MODEL_PATH` | `LOAD_MODEL` / `TRAIN_MODE` / `MODEL_PATH` | 0 / 1 / — | :280-284 | Unity 경로 로드·eval |
+| `VESSEL_USE_EDITOR` / `VESSEL_NUM_ENVS` / `VESSEL_BASE_PORT` / `VESSEL_TIME_SCALE` | — | 1 / 2 / 5004 / 100 | :314-317 | Unity 환경 |
+| PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
+
+- `run_repro.sh common_env()`(:68-88) = 2026-09-04 배치 설정 — **config 기본값과 여러 개 다름**(STATE_RECON 1.0, CENTRAL_CRITIC 1, USE_ATTENTION 1, MOE_SHARED 1). 기본값으로 돌리면 다른 실험. `test_golden.py BATCH_ENV`와 동일해야 함.
+- `config.py` import 시 `models/<COMM_FOLDER>/VesselNavigation_<시각>/logs` 디렉토리 생성 부작용(:347-348) — 스크립트에서 import만 해도 빈 폴더 생김.
+
+---
+
+## 8. 진단·평가 규약 (`ckpt_io.py`, `diag_ckpt.py`, `test_golden.py` — 전부 2026-09-10)
+
+배경: 체크포인트를 여는 스크립트 9개 중 스냅샷을 읽는 건 2개뿐이었고 나머지 + `runs/m2_ablation/diag/` 10개는 env를 손으로 박아 **학습과 다른 설정으로 측정 → 측정 2회 무효.**
+
+| 규약 | 구현 |
+|---|---|
+| 체크포인트는 **`ckpt_io.restore_policy()`로만** 연다 | 순서 고정: `torch.load` → msg_ln(:127)/msg_dim/radar_head(:143) 키 스니핑 → `networks` 모듈 전역 덮어쓰기(USE_ATTENTION·POS_GROUND·CENTRAL_CRITIC·STATE_RECON_COEF·_MSG_TOKEN_GAIN·_RADAR_*) → **그 다음** `CNNPolicy()`(:208) → strict 로드. `CNNPolicy.__init__`이 전역을 그 시점에 읽으므로 순서 바꾸면 무효 |
+| 평가 env는 **`ckpt_io.make_env_from_snapshot()`으로만** | ring·crossing·vessels·farfield·perpair를 스냅샷에서. override는 전부 로그 |
+| **`VESSEL_*`를 스크립트에서 직접 세팅 금지** | 스냅샷과 어긋나는 import-시점 값(comm_range·arm)은 기본 **중단**. 의도한 교차평가만 `allow_*` |
+| 진단은 **`diag_ckpt.py`로만** | 지표 정의 = `vessel_gym_train.comm_telemetry` 하나(재구현 금지). `restore → make_env → burn → 게이트 → telemetry → JSON+CSV` |
+| **게이트 3개 통과 못 하면 숫자 안 냄** | ① 조우율(sit≠0) ≥ 5% (`--min_sit_rate`) ② 설정 == 스냅샷(restore가 불일치 시 중단) ③ `--expect_vcoll` 주면 창 vColl이 평가값 ±50% 안 |
+| **검증 안 된 숫자 보고 금지** | 조우율 낮은 창·다른 설정으로 잰 숫자가 두 번 보고 후 철회됨 — 그게 `diag_ckpt.py`가 생긴 이유 |
+| **골든 테스트** `test_golden.py --check` | 학습기(`vessel_gym_train.py`·`networks.py`·`config.py`·`vessel_gym.py`) **변경마다.** 케이스 `default_ON` / `default_OFF` / `batch_2026_09_04_ON`, 고정시드 CPU 2 update → state_dict SHA256·곡선 CSV·스냅샷·Adam 비트 비교. 골든 `Python/golden/2026-09-10_*.json`(git 추적). `--regen`은 명시 승인 필요 |
+| **스냅샷 키** | `ckpt_io.snapshot_config` — 추가 자유, **삭제·의미 변경 금지** |
+| Unity ground-truth | `VESSEL_OUTCOME_LOG`(goal/collision_vessel/collision_obstacle/timeout) · `VESSEL_METRIC_LOG` **17열**(`VesselAgent.cs` :903-904: agentId,episodeIndex,outcome,steps,fuel,rudderVar,complianceMean,occlRate,commandVar,minVesselDist,nearMissSteps,straightness,headingTravel,minDCPA,dcpaBelowSteps,fuelThrust,fuelTurn). 뒤 8열 = 진단 전용, 보상 비연결 |
+
+- `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → 현재 env 값으로 감. **조용히 틀릴 수 있음** 명시 보고.
+- 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
+
+---
+
+## 9. 권위 문서 (주제별 정본 1개)
+
+| 주제 | 정본 | 기준일 |
+|---|---|---|
+| **현재 상태·할 일** | `runs/STATUS.md` | 08-26 기준 + **08-31 갱신**(ring 0.7 원인 확정·1-1 철회 포함) |
+| 배치 실행 계획 | `runs/ABLATION_PLAN.md` | 08-31 확정 |
+| 통신 계획·사전등록 | `runs/m2_ablation/COMM_PLAN.md` | 09-04 |
+| 붕괴 원인(off_s45, dying ReLU) | `Python/COLLAPSE_ROOTCAUSE.md` | 09-05 |
+| H2 판정 | `runs/m2_ablation/RESULT.md` | 09-01 정리 (ANOVA F(5,12)=0.39) |
+| 그림 ↔ 런 ↔ 설정 매핑 | `Python/plotting/RUNS.md` | 파일 08-20 (구조 열은 체크포인트 직접 열어 판정) |
+| sim2sim 핸드오프 | `Python/SIM2SIM_HANDOFF.md` | 07-04 작성 |
+| 신경망 층별 설명·근거 | `README.md` (git root) | 07-03 — **MoE 기본값(현재 ON)·msg_ln·CTDE·state_recon 미반영, 파라미터 수는 3망 합 기준** |
+| 재현 실행 | `Python/run_repro.sh` | 09-05 |
+
+**낡은 문서 — 인용 금지:**
+
+| 파일 | 이유 |
+|---|---|
+| `Python/EXPERIMENT_STATUS.md` | 06-02판. obs 59D·게이트 −3 시대 |
+| `Python/plotting/STATUS.md` | 08-26. `runs/STATUS.md`의 옛 사본(08-31 갱신 없음) |
+| `runs/m2_ablation/diag/README_진단.md` | 09-01. **잘못된 설정으로 측정**(env 손으로 박음 — `ckpt_io.py` 헤더). 결론 인용 금지 |
+| 이 파일의 2026-06-02판 | git `2e02e89`에 기록만 남김 |
+
+---
+
+## 10. 코드 규칙·과학적 정직성
+
+**코드 규칙**
+- **C#**: PascalCase(클래스/메서드), camelCase(지역). 주석 한국어. `[Header]` public 필드. `Debug.Log` 금지(`Debug.LogWarning`만, setup 에러). C# 변경 → **재빌드** 필수(Editor는 자동 반영).
+- **Python**: snake_case. 주석 한국어/docstring 영어. **모든 상수·경로·차원은 `config.py`**(§7 예외는 통합 대상). production 코드에 bare `print()` 금지(학습 진행/에러 출력만).
+- **기본값 = 비트동일 원칙**: 모든 새 기능은 토글, 끈 상태가 없는 상태와 비트동일. `test_golden.py --check`로 확인.
+- **데이터 위치**: `models/`, `trajectory_data/`, `figures/`, 체크포인트는 `Assets/` *밖*(Unity 무한 import 방지). 체크포인트는 Dropbox 밖(`VESSEL_CKPT_DIR`).
+- **GitHub**: git root = `Assets/Scripts/`. C# 파일 복사 금지(Unity 중복 컴파일). 원본 직접 `git add`.
+- 학습기 본체(`vessel_gym_train.py` `vessel_gym.py` `networks.py` `main.py` `eval_ckpt.py` `eval_mixed.py` `ckpt_io.py` `diag_ckpt.py` `test_golden.py`) 수정 전 담당 확인 — 동시 작업 중인 경우 있음.
+
+**과학적 정직성 (제1원칙)**
+통신이 도우면 ground-truth로 입증, **안 도우면 정직하게 "안 도움"이 결론.** baseline을 불구화해 통신을 이기게 만들지 않음. H1/H2는 *달성할 목표*지 *조작으로 만들 결과*가 아님. 시드 제외는 통신에 불리한 방향으로만, 그리고 제외 전에 코드를 먼저 의심(`COLLAPSE_ROOTCAUSE.md`).
