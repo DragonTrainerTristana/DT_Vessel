@@ -512,8 +512,9 @@ YUGIOH = {  # env 이름 → 값. run_repro.sh common_env 가 이걸 그대로 e
     'VESSEL_COMM_CONSUMER_COEF': '0', 'VESSEL_RECON_EMA_FLOOR': '0', 'VESSEL_AGG_MODE': 'sum', 'VESSEL_MSG_GAIN': '1.0',
     'VESSEL_TIMEOUT_BOOTSTRAP': '0', 'VESSEL_MSG_GATE_APPLY': '0',
 }
-# 학습기 인자 (gym 경로). commfix 12런과 동일 — crossing 2 는 eval 헤더(README_진단 :21)로 확인, rollout 64 는 스냅샷 args.
-YUGIOH_ARGS = '--envs 128 --vessels 16 --rollout 64 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320'
+# 학습기 인자 (gym 경로). commfix 12런과 동일 — crossing 2 는 eval 헤더(README_진단 :21), envs 128·rollout 32 는
+#   run_repro.sh(09-05) 원본 + cf_ON_s43_aux.csv 가 update 당 65,536 결정(=128×16×32)으로 245행인 것으로 확인.
+YUGIOH_ARGS = '--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320'
 YUGIOH_LEGACY = {  # 2026-09-10 이전 config 기본값 중 YUGIOH 가 바꾼 11개
     'VESSEL_USE_ATTENTION': '0', 'VESSEL_CENTRAL_CRITIC': '0', 'VESSEL_STATE_RECON_COEF': '0.0', 'VESSEL_MOE_SHARED': '0',
     'VESSEL_SHARED_ENCODER': '0', 'VESSEL_RADAR_ACT': 'relu', 'VESSEL_RADAR_HEAD': 'flat', 'VESSEL_MSG_TOKEN_GAIN': '1.0',

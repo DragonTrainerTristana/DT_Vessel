@@ -159,7 +159,7 @@ train_one() {
     if [ "$arm" = "OFF" ]; then export VESSEL_USE_COMM=0; else export VESSEL_USE_COMM=1; fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
       --arm "$arm" --comm_on_at 0 --steps "$steps" \
-      --envs 128 --vessels 16 --rollout 64 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every 2 \
+      --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every 2 \
       --save "$CK/${nm}_s$s.pt" --csv "$OUT/${nm}_s$s.csv" \
       > "$OUT/${nm}_s$s.log" 2>&1
     echo "${nm}_s$s rc=$?" >> "$OUT/_status_train.txt"
