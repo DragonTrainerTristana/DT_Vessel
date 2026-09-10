@@ -117,18 +117,25 @@ def main():
     counts = torch.zeros(5, dtype=torch.long)
     sit_hits = sit_total = 0
     tele_rows = []
-    split = {'enc': [], 'non': []}          # msg 텐서 조각 (조우 중 / 비조우)
+    enc_rows = {'msg': [], 'ctr': [], 'cri': []}   # 세 망 레이더 인코더 출력 통계 (OFF 팔도 측정)
+    chunks = []                                     # (msg[M,D], sit[M]) — 조우/비조우·상황별 분해용
     for t in range(args.collect):
         x = fs.get()
         s2 = sit.reshape(E, N)
         enc = (s2 != 0)
         sit_hits += int(enc.sum()); sit_total += E * N
-        if r.arm == 'ON' and t % args.tele_every == 0:
+        if t % args.tele_every == 0:
             with torch.no_grad():
-                tele_rows.append(comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, vg.RADAR_RANGE))
-                msg = policy.msg_actor(x, goal, self_s, sit).reshape(E * N, -1)
-                em = enc.reshape(-1)
-                split['enc'].append(msg[em].cpu()); split['non'].append(msg[~em].cpu())
+                xf = x.reshape(E * N, -1)
+                # 인코더 건강: 출력 30차원의 산포·유효차원. MOE_SHARED=1 이면 cores()[0] 이 5벌 공용, 아니면 전문가 0 만.
+                for name, mod in (('msg', policy.msg_actor), ('ctr', policy.ctr_actor), ('cri', policy.critic)):
+                    core = mod.cores()[0] if hasattr(mod, 'cores') else mod
+                    if hasattr(core, 'radar_encoder'):
+                        enc_rows[name].append(msg_stats(core.radar_encoder(xf)))
+                if r.arm == 'ON':
+                    tele_rows.append(comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, vg.RADAR_RANGE))
+                    msg = policy.msg_actor(x, goal, self_s, sit).reshape(E * N, -1)
+                    chunks.append((msg.cpu(), s2.reshape(-1).cpu()))
         obs, _, done, outcome = env.step(act(x, goal, self_s, sit))
         for oc in range(1, 5):
             counts[oc] += int((outcome == oc).sum())
@@ -166,34 +173,65 @@ def main():
 
     # ── 5. 지표 ──
     rec = dict(header)
+    # 인코더 건강 (세 망, 평균) — 2026-09-10 조사에서 ctr/cri 는 텔레메트리 밖이라 따로 재야 했음
+    rec['encoder'] = {n: {k: sum(rw[k] for rw in rows) / len(rows) for k in rows[0]} for n, rows in enc_rows.items() if rows}
+    rec['encoder_note'] = ('cores()[0].radar_encoder — MOE_SHARED=1 이면 5벌 공용, 아니면 전문가 0 만' if r.effective else '')
+    for n, d in rec['encoder'].items():
+        print(f"[diag] 인코더[{n}] sd={d['sd']:.5f} eff_dim={d['eff_dim']:.2f} axes90={d['axes90']:.0f} dc={d['dc']:.3f}")
     if r.arm == 'ON':
         rec['telemetry'] = _mean_rows(tele_rows)
         rec['telemetry_n'] = len(tele_rows)
-        sp = {}
-        for g in ('enc', 'non'):
-            if split[g]:
-                m = torch.cat(split[g], 0)
-                sp[g] = dict(n=int(m.shape[0]), **msg_stats(m))
-        rec['msg_split'] = sp
         print(f"[diag] 텔레메트리 {len(tele_rows)}회 평균:")
         for k in COMM_TELE_COLS:
             print(f"         {k:14s} {rec['telemetry'][k]:.4f}")
-        for g, d in sp.items():
-            print(f"[diag] msg[{g}] n={d['n']} " + ' '.join(f"{k}={v:.4f}" for k, v in d.items() if k != 'n'))
+        if chunks:
+            M_all = torch.cat([c[0] for c in chunks], 0); S_all = torch.cat([c[1] for c in chunks], 0)
+            em = S_all != 0
+            sp = {}
+            for g, m in (('enc', M_all[em]), ('non', M_all[~em])):
+                if m.shape[0] >= 2:
+                    sp[g] = dict(n=int(m.shape[0]), **msg_stats(m))
+            rec['msg_split'] = sp
+            for g, d in sp.items():
+                print(f"[diag] msg[{g}] n={d['n']} " + ' '.join(f"{k}={v:.4f}" for k, v in d.items() if k != 'n'))
+            # ── 상황별 분해 (조우 중): 메시지가 '연속 정보' 인지 '상황 번호표' 인지 ──
+            #   between_share = 그룹평균 분산 / 전체 분산 (조우 중 메시지 기준). ≈1 이고 그룹 안 sd≈0 이면 번호표.
+            me, se = M_all[em], S_all[em]
+            by = {}
+            if me.shape[0] >= 4:
+                mu = me.double().mean(0); tot = float(((me.double() - mu) ** 2).sum(1).mean())
+                between = 0.0
+                for g in sorted(set(se.tolist())):
+                    mg = me[se == g]
+                    if mg.shape[0] < 2:
+                        continue
+                    by[int(g)] = dict(n=int(mg.shape[0]), **msg_stats(mg))
+                    between += mg.shape[0] / me.shape[0] * float(((mg.double().mean(0) - mu) ** 2).sum())
+                rec['msg_by_sit'] = {'groups': by, 'between_share': (between / tot) if tot > 0 else float('nan'),
+                                     'within_sd_mean': (sum(d['sd'] * d['n'] for d in by.values()) / sum(d['n'] for d in by.values())) if by else float('nan'),
+                                     'note': 'between_share≈1 & within_sd≈0 → 메시지 = 송신자 COLREGs 상황 번호표. 낮으면 상황 안에서도 연속 정보'}
+                print(f"[diag] 상황별 분해(조우 중): between_share={rec['msg_by_sit']['between_share']:.3f} "
+                      f"within_sd={rec['msg_by_sit']['within_sd_mean']:.4f}  " +
+                      ' '.join(f"sit{g}:n={d['n']},sd={d['sd']:.3f},dim={d['eff_dim']:.1f}" for g, d in by.items()))
     else:
         rec['telemetry'] = None
-        print(f"[diag] arm={r.arm}: 통신 지표는 정의되지 않음 (outcome·조우율만)")
+        print(f"[diag] arm={r.arm}: 통신 지표는 정의되지 않음 (outcome·조우율·인코더만)")
 
     if args.out:
         json.dump(rec, open(args.out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
         csvp = os.path.splitext(args.out)[0] + '.csv'
         cols = ['ckpt', 'arm', 'sit_rate', 'n_episodes', 'goal', 'vColl', 'oColl', 'TO']
         vals = [rec['ckpt'], r.arm, f"{sit_rate:.5f}", total] + [f"{rates[k]:.4f}" for k in ('goal', 'vColl', 'oColl', 'TO')]
+        for n_, d in rec['encoder'].items():
+            for k in ('sd', 'eff_dim', 'axes90', 'dc'):
+                cols.append(f'enc_{n_}_{k}'); vals.append(f"{d[k]:.6g}")
         if rec.get('telemetry'):
             cols += list(COMM_TELE_COLS); vals += [f"{rec['telemetry'][k]:.6g}" for k in COMM_TELE_COLS]
             for g in ('enc', 'non'):
-                for k, v in rec['msg_split'].get(g, {}).items():
+                for k, v in rec.get('msg_split', {}).get(g, {}).items():
                     cols.append(f'{g}_{k}'); vals.append(f"{v:.6g}" if isinstance(v, float) else str(v))
+            if rec.get('msg_by_sit'):
+                cols += ['between_share', 'within_sd']; vals += [f"{rec['msg_by_sit']['between_share']:.6g}", f"{rec['msg_by_sit']['within_sd_mean']:.6g}"]
         with open(csvp, 'w', encoding='utf-8') as f:
             f.write(','.join(cols) + '\n' + ','.join(map(str, vals)) + '\n')
         print(f"[diag] → {args.out}, {csvp}")
