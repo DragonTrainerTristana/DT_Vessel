@@ -97,7 +97,7 @@ powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 2
 
 ## 참고
 
-- 브랜치: 기본 `msgComparision`(single 기본). `Thick_MoE`/`Light_MoE`는 MoE 3-arm 비교용 —
+- 브랜치: 기본 `main`(2026-09-10 승격, 0905 라인 = 리팩토링·공유 인코더 포함). `msgComparision` 은 Fig4 메시지 차원 축 전용 브랜치(RUNS.md). `Thick_MoE`/`Light_MoE`는 MoE 3-arm 비교용 —
   이번 계단(Stage 1/2)에서는 사용하지 않음
 - 전 run의 설정 스냅샷은 각 결과 폴더의 `run_meta.txt` + `config_snapshot.txt`
   (`AGG_MODE=mean` 표기는 pos_ground 기본 ON에서는 미사용 폴백 — 무시)
