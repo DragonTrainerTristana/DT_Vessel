@@ -67,3 +67,6 @@ Vessel_Training.meta
 *.pth
 # 진단 스크립트가 뱉는 원본 결과
 Python/*.jsonl
+
+# run_repro.sh 출력(로그·CSV·평가 txt). 결과는 runs/ 규약대로 git 밖에서 관리 (2026-09-11)
+Python/_repro_out*/
