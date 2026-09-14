@@ -37,5 +37,6 @@ def inspect(path):
     # MessageActor 본체(radar_encoder/fc2)가 init에서 움직였는지 → intent 없으면 gradient 0이어야 함
     print(f"  (msg_dim 추론값 = {md})")
 
-for p in sys.argv[1:]:
-    inspect(p)
+if __name__ == "__main__":
+    for p in sys.argv[1:]:
+        inspect(p)

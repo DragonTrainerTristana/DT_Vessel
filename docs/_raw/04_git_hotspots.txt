@@ -1,0 +1,184 @@
+# 04. git 변경 핫스팟 — 최근 1년 (--since=1.year), 상위 40
+# 도구: git log (외부 도구 없음)
+# 생성: 2026-09-14T05:37:11Z   root=/Users/seunghyun/Dropbox/Private_Paper_Project/0702_NewVessel/Assets/Scripts
+# 기간 내 커밋: 83   전체 커밋: 109
+# 최초 커밋: 2025-04-07 33d0204   최신: 2026-09-11 fd358e8
+# 대상 확장자: py cs sh ps1 md   (삭제된 파일도 집계에 남음 → [삭제됨] 표시)
+
+==============================================================================
+## A. 변경 횟수(커밋 수) 상위 40
+==============================================================================
+    커밋  파일
+    24  Python/networks.py
+    24  Python/config.py
+    18  Python/main.py
+    15  Agent/VesselAgent.cs
+    14  Python/vessel_gym_train.py
+    11  Navigation/COLREGsHandler.cs
+    10  Python/memory.py
+     9  Python/run_repro.sh
+     9  Management/VesselManager.cs
+     9  Agent/VesselRadar.cs
+     8  Python/plotting/make_ablation_rewards.py
+     7  Python/eval_ckpt.py
+     7  GlobalScale.cs
+     6  Python/plotting/RUNS.md
+     6  Python/ckpt_io.py
+     6  .claude/CLAUDE.md
+     5  Python/vessel_gym.py
+     5  Python/test_golden.py
+     5  Python/obs_utils.py
+     5  Python/_verify_comm_mirror.py
+     5  Navigation/VesselAutoPilot.cs
+     5  Agent/VesselDynamics.cs
+     4  WINDOWS_RUN.md
+     4  Python/plotting/build_final.py
+     4  Python/functions.py
+     4  Python/frame_stack.py
+     4  Python/eval_mixed.py
+     4  Python/convergence_gate.py
+     3  Python/test.py   [삭제됨]
+     3  Python/run_sweep.ps1
+     3  Python/run_sweep_attention.ps1
+     3  Python/launch_sweep_fromscratch.sh
+     3  Python/EXPERIMENT_STATUS.md
+     3  Python/eval_astar_global.py
+     3  Python/COLLAPSE_ROOTCAUSE.md
+     3  Python/analyze_trajectory.py
+     3  Python/analyze_timeout_safety.py
+     3  Python/analyze_circling_safety.py
+     3  Navigation/TrajectoryRenderer.cs   [삭제됨]
+     2  Vessel_Training/Python/networks.py   [삭제됨]
+
+==============================================================================
+## B. 총 변경 라인(추가+삭제) 상위 40
+==============================================================================
+      합계       추가       삭제  파일
+    8201     4699     3502  Python/networks.py
+    7836     4246     3590  Python/main.py
+    5720     3136     2584  Agent/VesselAgent.cs
+    2695     2526      169  Python/test.py
+    2693     1589     1104  Management/VesselManager.cs
+    1808      904      904  Scripts/Documents/Unity_to_Python_Data_Flow.md
+    1798      984      814  Navigation/COLREGsHandler.cs
+    1703     1066      637  Python/config.py
+    1667     1375      292  Python/vessel_gym_train.py
+    1622      811      811  Python/compute_metrics.py
+    1513      780      733  Agent/VesselRadar.cs
+    1448     1448        0  Python/_archive/2026-09/plot_analysis.py
+    1346      751      595  Python/memory.py
+    1273      781      492  Python/plotting/RUNS.md
+    1246      623      623  Vessel_Training/Python/main.py
+    1238      619      619  Python/astar_fig9/eval_astar_global.py
+    1235     1154       81  Python/vessel_gym.py
+    1220     1109      111  "\352\260\234\353\260\234
+    1143      762      381  Python/_smoke_fullmoe.py
+    1084      542      542  Python/test_simulation.py
+    1080      703      377  Navigation/VesselAutoPilot.cs
+    1050      525      525  Vessel_Training/Agent/VesselAgent.cs
+     954      477      477  Python/latent_message_analyzer.py
+     949      814      135  Python/eval_ckpt.py
+     904      904        0  Python/_archive/2026-09/gen_5graphs_final.py
+     874      874        0  Python/analyze_efficiency.py
+     858      429      429  Vessel_Training/Navigation/COLREGsHandler.cs
+     844      422      422  Vessel_Training/Python/networks.py
+     798      798        0  Python/_archive/2026-09/plot_comparison.py
+     765      765        0  Python/_archive/2026-09/plot_all_figures.py
+     750      500      250  Python/plotting/make_reward_folder.py
+     745      745        0  Python/_archive/2026-09/plot_narrow_analysis.py
+     734      734        0  Python/_archive/2026-09/gen_mixed_graphs.py
+     713      463      250  Python/plotting/make_ablation_rewards.py
+     712      356      356  Python/TRAINING_GUIDE.md
+     705      705        0  Python/_archive/2026-09/plot_trajectory_analysis.py
+     678      452      226  Python/plotting/plot_all_curves.py
+     676      338      338  Python/analyze_training.py
+     660      660        0  Python/_archive/2026-09/analyze_mixed.py
+     653      434      219  Python/plotting/build_final.py
+
+==============================================================================
+## C. 핫스팟 교차표 — 커밋수 × 현재 규모 (현존 py/cs 파일, 커밋수 상위 40)
+==============================================================================
+    커밋       라인   커밋/100L  파일
+    24     1404      1.71  Python/networks.py
+    24      522      4.60  Python/config.py
+    18     1071      1.68  Python/main.py
+    15     1152      1.30  Agent/VesselAgent.cs
+    14     1083      1.29  Python/vessel_gym_train.py
+    11      475      2.32  Navigation/COLREGsHandler.cs
+    10      248      4.03  Python/memory.py
+     9      743      1.21  Management/VesselManager.cs
+     9      169      5.33  Agent/VesselRadar.cs
+     8      213      3.76  Python/plotting/make_ablation_rewards.py
+     7      679      1.03  Python/eval_ckpt.py
+     7      172      4.07  GlobalScale.cs
+     6      452      1.33  Python/ckpt_io.py
+     5     1073      0.47  Python/vessel_gym.py
+     5      248      2.02  Python/test_golden.py
+     5       46     10.87  Python/obs_utils.py
+     5      141      3.55  Python/_verify_comm_mirror.py
+     5      326      1.53  Navigation/VesselAutoPilot.cs
+     5      173      2.89  Agent/VesselDynamics.cs
+     4      215      1.86  Python/plotting/build_final.py
+     4       88      4.55  Python/functions.py
+     4      119      3.36  Python/frame_stack.py
+     4      350      1.14  Python/eval_mixed.py
+     4      133      3.01  Python/convergence_gate.py
+     3      623      0.48  Python/eval_astar_global.py
+     3       54      5.56  Python/analyze_trajectory.py
+     3       96      3.12  Python/analyze_timeout_safety.py
+     3      126      2.38  Python/analyze_circling_safety.py
+     2      177      1.13  Python/plotting/plot_task_return.py
+     2      122      1.64  Python/plotting/plot_nqi.py
+     2      103      1.94  Python/plotting/plot_moe_axis.py
+     2       92      2.17  Python/plotting/plot_h2_dimension.py
+     2       85      2.35  Python/plotting/plot_h1_paired.py
+     2      226      0.88  Python/plotting/plot_all_curves.py
+     2       65      3.08  Python/plotting/paper_style.py
+     2      250      0.80  Python/plotting/make_reward_folder.py
+     2      162      1.23  Python/plotting/make_mixed_fleet.py
+     2      191      1.05  Python/measure_regimes.py
+     2      241      0.83  Python/diag_ckpt.py
+     2      137      1.46  Python/corridor_run.py
+
+==============================================================================
+## D. 저자별 커밋 수 (기간 내)
+==============================================================================
+  48 Seung Hyun OH
+  35 DragonTrainerTristana
+
+## E. 파일별 저자 수 (소유권 분산, 2명 이상만)
+   2 Python/vessel_gym.py
+   2 Python/vessel_gym_train.py
+   2 Python/plotting/plot_task_return.py
+   2 Python/plotting/plot_nqi.py
+   2 Python/plotting/plot_moe_axis.py
+   2 Python/plotting/plot_h2_dimension.py
+   2 Python/plotting/plot_h1_paired.py
+   2 Python/plotting/plot_all_curves.py
+   2 Python/plotting/paper_style.py
+   2 Python/plotting/make_reward_folder.py
+   2 Python/plotting/make_ablation_rewards.py
+   2 Python/plotting/build_final.py
+   2 Python/networks.py
+   2 Python/memory.py
+   2 Python/main.py
+   2 Python/functions.py
+   2 Python/frame_stack.py
+   2 Python/eval_mixed.py
+   2 Python/eval_ckpt.py
+   2 Python/convergence_gate.py
+(위가 비어 있으면 = 모든 파일이 단독 저자)
+
+==============================================================================
+## F. 월별 커밋 분포 (기간 내)
+==============================================================================
+   1 2025-09
+   4 2025-11
+   1 2025-12
+   4 2026-03
+   1 2026-04
+   3 2026-05
+  15 2026-06
+   6 2026-07
+  13 2026-08
+  35 2026-09

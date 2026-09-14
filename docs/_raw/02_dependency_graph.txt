@@ -1,0 +1,283 @@
+# 02. 의존 그래프 + 순환 의존
+# 도구: (1) Python ast 정적 파싱 — 로컬 import 그래프 + Tarjan SCC
+#       (2) pylint 3.x cyclic-import (venv 격리) — 교차 검증
+#       (3) C# — 파일명=클래스명 Unity 규약 기반 grep 참조 카운트
+# pydeps/graphviz 는 dot 미설치라 DOT 텍스트만 저장(§7)
+# 생성: 2026-09-14T05:36:22Z   root=/Users/seunghyun/Dropbox/Private_Paper_Project/0702_NewVessel/Assets/Scripts
+
+==============================================================================
+## PART 1 — Python (ast)
+==============================================================================
+# Python 내부 의존 그래프 + 순환 (AST 정적 분석)
+# 대상: Python, Python/plotting, Python/astar_fig9  (패키지 아님 — 플랫 스크립트, __init__.py 없음)
+# 제외: _archive, __pycache__, _repro_out, logs, models, checkpoints, trajectory_data, golden, docs
+# 모듈 49개, 내부 엣지 79개
+
+## 1. 순환 의존 (SCC size>1)
+[1] 크기 2: ckpt_io <-> vessel_gym_train
+      ckpt_io -> vessel_gym_train
+      vessel_gym_train -> ckpt_io
+자기참조: 없음
+
+## 2. fan-in 상위 (많이 import 당하는 = 코어)
+  18  config                       Python/config.py
+  13  vessel_gym                   Python/vessel_gym.py
+  12  networks                     Python/networks.py
+   9  ckpt_io                      Python/ckpt_io.py
+   9  vessel_gym_train             Python/vessel_gym_train.py
+   8  paper_style                  Python/plotting/paper_style.py
+   5  metric_io                    Python/metric_io.py
+   2  functions                    Python/functions.py
+   1  frame_stack                  Python/frame_stack.py
+   1  memory                       Python/memory.py
+   1  obs_utils                    Python/obs_utils.py
+
+## 3. fan-out 상위 (많이 import 하는 = 조립부)
+   7  main                         Python/main.py
+   5  corridor_run                 Python/corridor_run.py
+   5  eval_astar_global            Python/eval_astar_global.py
+   5  eval_ckpt                    Python/eval_ckpt.py
+   5  eval_mixed                   Python/eval_mixed.py
+   5  measure_regimes              Python/measure_regimes.py
+   4  _verify_comm_mirror          Python/_verify_comm_mirror.py
+   4  ckpt_io                      Python/ckpt_io.py
+   4  diag_ckpt                    Python/diag_ckpt.py
+   4  test_ckpt_compat             Python/test_ckpt_compat.py
+   4  vessel_gym_train             Python/vessel_gym_train.py
+   2  _smoke_fullmoe               Python/_smoke_fullmoe.py
+   2  _verify_ppo_mirror           Python/_verify_ppo_mirror.py
+   2  export_onnx                  Python/export_onnx.py
+   2  memory                       Python/memory.py
+   1  analyze_circling_safety      Python/analyze_circling_safety.py
+   1  analyze_run                  Python/analyze_run.py
+   1  analyze_timeout_safety       Python/analyze_timeout_safety.py
+   1  analyze_trajectory           Python/analyze_trajectory.py
+   1  convergence_gate             Python/convergence_gate.py
+   1  make_fig9_from_eval          Python/astar_fig9/make_fig9_from_eval.py
+   1  make_reward_folder           Python/plotting/make_reward_folder.py
+   1  networks                     Python/networks.py
+   1  obs_utils                    Python/obs_utils.py
+   1  plot_all_curves              Python/plotting/plot_all_curves.py
+   1  plot_h1_paired               Python/plotting/plot_h1_paired.py
+   1  plot_h2_dimension            Python/plotting/plot_h2_dimension.py
+   1  plot_moe_axis                Python/plotting/plot_moe_axis.py
+   1  plot_nqi                     Python/plotting/plot_nqi.py
+   1  plot_task_return             Python/plotting/plot_task_return.py
+   1  radar_fidelity_compare       Python/radar_fidelity_compare.py
+   1  test_vessel_gym_fidelity     Python/test_vessel_gym_fidelity.py
+   1  unity_fidelity_compare       Python/unity_fidelity_compare.py
+   1  vessel_gym                   Python/vessel_gym.py
+
+## 4. 고립 모듈 (내부 의존 0, 피의존 0)
+      build_final                  Python/plotting/build_final.py
+      compose_voyage               Python/compose_voyage.py
+      inspect_channel_freeze       Python/inspect_channel_freeze.py
+      make_ablation_rewards        Python/plotting/make_ablation_rewards.py
+      make_fig9_paper              Python/astar_fig9/make_fig9_paper.py
+      make_mixed_fleet             Python/plotting/make_mixed_fleet.py
+      regenerate_all               Python/plotting/regenerate_all.py
+      route_astar_real             Python/astar_fig9/route_astar_real.py
+      worldmap_extract             Python/worldmap_extract.py
+      write_fig_code               Python/plotting/write_fig_code.py
+      (총 10개)
+
+## 5. 인접 리스트 (모듈 -> 내부 의존)
+_smoke_fullmoe               -> config, networks
+_verify_comm_mirror          -> config, networks, vessel_gym, vessel_gym_train
+_verify_ppo_mirror           -> config, networks
+analyze_circling_safety      -> metric_io
+analyze_run                  -> metric_io
+analyze_timeout_safety       -> metric_io
+analyze_trajectory           -> metric_io
+build_final                  -> (없음)
+ckpt_io                      -> config, networks, vessel_gym, vessel_gym_train
+compose_voyage               -> (없음)
+config                       -> (없음)
+convergence_gate             -> metric_io
+corridor_run                 -> ckpt_io, config, networks, vessel_gym, vessel_gym_train
+diag_ckpt                    -> ckpt_io, config, vessel_gym, vessel_gym_train
+eval_astar_global            -> ckpt_io, config, networks, vessel_gym, vessel_gym_train
+eval_ckpt                    -> ckpt_io, config, networks, vessel_gym, vessel_gym_train
+eval_mixed                   -> ckpt_io, config, networks, vessel_gym, vessel_gym_train
+export_onnx                  -> config, networks
+frame_stack                  -> (없음)
+functions                    -> (없음)
+inspect_channel_freeze       -> (없음)
+main                         -> ckpt_io, config, frame_stack, functions, memory, networks, obs_utils
+make_ablation_rewards        -> (없음)
+make_fig9_from_eval          -> paper_style
+make_fig9_paper              -> (없음)
+make_mixed_fleet             -> (없음)
+make_reward_folder           -> paper_style
+measure_regimes              -> ckpt_io, config, networks, vessel_gym, vessel_gym_train
+memory                       -> config, functions
+metric_io                    -> (없음)
+networks                     -> config
+obs_utils                    -> config
+paper_style                  -> (없음)
+plot_all_curves              -> paper_style
+plot_h1_paired               -> paper_style
+plot_h2_dimension            -> paper_style
+plot_moe_axis                -> paper_style
+plot_nqi                     -> paper_style
+plot_task_return             -> paper_style
+radar_fidelity_compare       -> vessel_gym
+regenerate_all               -> (없음)
+route_astar_real             -> (없음)
+test_ckpt_compat             -> ckpt_io, config, vessel_gym, vessel_gym_train
+test_vessel_gym_fidelity     -> vessel_gym
+unity_fidelity_compare       -> vessel_gym
+vessel_gym                   -> config
+vessel_gym_train             -> ckpt_io, config, networks, vessel_gym
+worldmap_extract             -> (없음)
+write_fig_code               -> (없음)
+
+## 6. 외부 패키지 의존 (top-level, 빈도)
+  42  os
+  30  numpy
+  22  torch
+  18  sys
+  15  math
+  14  matplotlib
+  13  argparse
+  11  re
+   9  time
+   8  json
+   5  csv
+   3  mlagents_envs
+   3  shutil
+   2  collections
+   2  heapq
+   2  importlib
+   2  warnings
+   1  array
+   1  datetime
+   1  glob
+   1  hashlib
+   1  inspect
+   1  onnxruntime
+   1  random
+   1  scipy
+   1  statistics
+   1  subprocess
+   1  threading
+
+## 7. DOT (graphviz 미설치 — 텍스트로만 저장)
+digraph deps {
+  rankdir=LR; node [shape=box];
+  "_smoke_fullmoe" -> "config";
+  "_smoke_fullmoe" -> "networks";
+  "_verify_comm_mirror" -> "config";
+  "_verify_comm_mirror" -> "networks";
+  "_verify_comm_mirror" -> "vessel_gym";
+  "_verify_comm_mirror" -> "vessel_gym_train";
+  "_verify_ppo_mirror" -> "config";
+  "_verify_ppo_mirror" -> "networks";
+  "analyze_circling_safety" -> "metric_io";
+  "analyze_run" -> "metric_io";
+  "analyze_timeout_safety" -> "metric_io";
+  "analyze_trajectory" -> "metric_io";
+  "ckpt_io" -> "config";
+  "ckpt_io" -> "networks";
+  "ckpt_io" -> "vessel_gym";
+  "ckpt_io" -> "vessel_gym_train";
+  "convergence_gate" -> "metric_io";
+  "corridor_run" -> "ckpt_io";
+  "corridor_run" -> "config";
+  "corridor_run" -> "networks";
+  "corridor_run" -> "vessel_gym";
+  "corridor_run" -> "vessel_gym_train";
+  "diag_ckpt" -> "ckpt_io";
+  "diag_ckpt" -> "config";
+  "diag_ckpt" -> "vessel_gym";
+  "diag_ckpt" -> "vessel_gym_train";
+  "eval_astar_global" -> "ckpt_io";
+  "eval_astar_global" -> "config";
+  "eval_astar_global" -> "networks";
+  "eval_astar_global" -> "vessel_gym";
+  "eval_astar_global" -> "vessel_gym_train";
+  "eval_ckpt" -> "ckpt_io";
+  "eval_ckpt" -> "config";
+  "eval_ckpt" -> "networks";
+  "eval_ckpt" -> "vessel_gym";
+  "eval_ckpt" -> "vessel_gym_train";
+  "eval_mixed" -> "ckpt_io";
+  "eval_mixed" -> "config";
+  "eval_mixed" -> "networks";
+  "eval_mixed" -> "vessel_gym";
+  "eval_mixed" -> "vessel_gym_train";
+  "export_onnx" -> "config";
+  "export_onnx" -> "networks";
+  "main" -> "ckpt_io";
+  "main" -> "config";
+  "main" -> "frame_stack";
+  "main" -> "functions";
+  "main" -> "memory";
+  "main" -> "networks";
+  "main" -> "obs_utils";
+  "make_fig9_from_eval" -> "paper_style";
+  "make_reward_folder" -> "paper_style";
+  "measure_regimes" -> "ckpt_io";
+  "measure_regimes" -> "config";
+  "measure_regimes" -> "networks";
+  "measure_regimes" -> "vessel_gym";
+  "measure_regimes" -> "vessel_gym_train";
+  "memory" -> "config";
+  "memory" -> "functions";
+  "networks" -> "config";
+  "obs_utils" -> "config";
+  "plot_all_curves" -> "paper_style";
+  "plot_h1_paired" -> "paper_style";
+  "plot_h2_dimension" -> "paper_style";
+  "plot_moe_axis" -> "paper_style";
+  "plot_nqi" -> "paper_style";
+  "plot_task_return" -> "paper_style";
+  "radar_fidelity_compare" -> "vessel_gym";
+  "test_ckpt_compat" -> "ckpt_io";
+  "test_ckpt_compat" -> "config";
+  "test_ckpt_compat" -> "vessel_gym";
+  "test_ckpt_compat" -> "vessel_gym_train";
+  "test_vessel_gym_fidelity" -> "vessel_gym";
+  "unity_fidelity_compare" -> "vessel_gym";
+  "vessel_gym" -> "config";
+  "vessel_gym_train" -> "ckpt_io";
+  "vessel_gym_train" -> "config";
+  "vessel_gym_train" -> "networks";
+  "vessel_gym_train" -> "vessel_gym";
+}
+
+==============================================================================
+## PART 2 — pylint cyclic-import 교차 검증
+==============================================================================
+# 실행: pylint --disable=all --enable=cyclic-import,R0401 Python/*.py
+************* Module worldmap_extract
+worldmap_extract.py:1:0: R0401: Cyclic import (ckpt_io -> vessel_gym_train) (cyclic-import)
+
+==============================================================================
+## PART 3 — C# (Unity)
+==============================================================================
+## C# 파일 간 타입 참조 그래프 (Unity, 클래스명=파일명 규약 기반 grep)
+# 방식: 각 .cs 파일명에서 타입명 추출 -> 다른 파일에서 해당 식별자 출현 횟수 grep
+
+WaypointPathFinder           (./Agent/VesselAgent.cs
+./Agent/VesselDynamics.cs
+./Agent/VesselRadar.cs
+./CameraController.cs
+./GlobalScale.cs
+./Management/SpawnZone.cs
+./Management/VesselManager.cs
+./Navigation/COLREGsHandler.cs
+./Navigation/VesselAutoPilot.cs
+./Navigation/WaypointPathFinder.cs)
+
+## C# 파일별 라인 수
+wc: ./Agent/VesselAgent.cs
+./Agent/VesselDynamics.cs
+./Agent/VesselRadar.cs
+./CameraController.cs
+./GlobalScale.cs
+./Management/SpawnZone.cs
+./Management/VesselManager.cs
+./Navigation/COLREGsHandler.cs
+./Navigation/VesselAutoPilot.cs
+./Navigation/WaypointPathFinder.cs: open: No such file or directory

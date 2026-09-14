@@ -1,0 +1,3689 @@
+{
+  "statistics": {
+    "detectionDate": "2026-09-14T05:34:43.045Z",
+    "formats": {
+      "python": {
+        "sources": {
+          "Python/plotting/write_fig_code.py": {
+            "lines": 315,
+            "tokens": 1870,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/regenerate_all.py": {
+            "lines": 41,
+            "tokens": 402,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_task_return.py": {
+            "lines": 177,
+            "tokens": 3009,
+            "sources": 1,
+            "clones": 7,
+            "duplicatedLines": 92,
+            "duplicatedTokens": 1027,
+            "percentage": 51.98,
+            "percentageTokens": 34.13,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_nqi.py": {
+            "lines": 122,
+            "tokens": 2004,
+            "sources": 1,
+            "clones": 5,
+            "duplicatedLines": 64,
+            "duplicatedTokens": 694,
+            "percentage": 52.46,
+            "percentageTokens": 34.63,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_moe_axis.py": {
+            "lines": 103,
+            "tokens": 1620,
+            "sources": 1,
+            "clones": 5,
+            "duplicatedLines": 51,
+            "duplicatedTokens": 668,
+            "percentage": 49.51,
+            "percentageTokens": 41.23,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_h2_dimension.py": {
+            "lines": 92,
+            "tokens": 1275,
+            "sources": 1,
+            "clones": 4,
+            "duplicatedLines": 45,
+            "duplicatedTokens": 508,
+            "percentage": 48.91,
+            "percentageTokens": 39.84,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_h1_paired.py": {
+            "lines": 85,
+            "tokens": 1353,
+            "sources": 1,
+            "clones": 3,
+            "duplicatedLines": 34,
+            "duplicatedTokens": 467,
+            "percentage": 40,
+            "percentageTokens": 34.52,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/plot_all_curves.py": {
+            "lines": 226,
+            "tokens": 3093,
+            "sources": 1,
+            "clones": 3,
+            "duplicatedLines": 23,
+            "duplicatedTokens": 326,
+            "percentage": 10.18,
+            "percentageTokens": 10.54,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/paper_style.py": {
+            "lines": 65,
+            "tokens": 956,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/make_reward_folder.py": {
+            "lines": 250,
+            "tokens": 4173,
+            "sources": 1,
+            "clones": 6,
+            "duplicatedLines": 58,
+            "duplicatedTokens": 852,
+            "percentage": 23.2,
+            "percentageTokens": 20.42,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/make_mixed_fleet.py": {
+            "lines": 162,
+            "tokens": 2015,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/make_ablation_rewards.py": {
+            "lines": 213,
+            "tokens": 2911,
+            "sources": 1,
+            "clones": 4,
+            "duplicatedLines": 31,
+            "duplicatedTokens": 539,
+            "percentage": 14.55,
+            "percentageTokens": 18.52,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/build_final.py": {
+            "lines": 215,
+            "tokens": 3142,
+            "sources": 1,
+            "clones": 3,
+            "duplicatedLines": 22,
+            "duplicatedTokens": 193,
+            "percentage": 10.23,
+            "percentageTokens": 6.14,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/astar_fig9/route_astar_real.py": {
+            "lines": 226,
+            "tokens": 3155,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 6,
+            "duplicatedTokens": 100,
+            "percentage": 2.65,
+            "percentageTokens": 3.17,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/astar_fig9/paper_style.py": {
+            "lines": 15,
+            "tokens": 149,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/astar_fig9/make_fig9_paper.py": {
+            "lines": 227,
+            "tokens": 3540,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/astar_fig9/make_fig9_from_eval.py": {
+            "lines": 158,
+            "tokens": 2079,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/worldmap_extract.py": {
+            "lines": 181,
+            "tokens": 2536,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 10,
+            "duplicatedTokens": 106,
+            "percentage": 5.52,
+            "percentageTokens": 4.18,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/unity_fidelity_compare.py": {
+            "lines": 156,
+            "tokens": 1727,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 6,
+            "duplicatedTokens": 68,
+            "percentage": 3.85,
+            "percentageTokens": 3.94,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/test_vessel_gym_fidelity.py": {
+            "lines": 211,
+            "tokens": 2557,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/test_golden.py": {
+            "lines": 248,
+            "tokens": 2731,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/test_ckpt_compat.py": {
+            "lines": 104,
+            "tokens": 1385,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/radar_fidelity_compare.py": {
+            "lines": 185,
+            "tokens": 2167,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 6,
+            "duplicatedTokens": 68,
+            "percentage": 3.24,
+            "percentageTokens": 3.14,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/obs_utils.py": {
+            "lines": 46,
+            "tokens": 438,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/metric_io.py": {
+            "lines": 104,
+            "tokens": 1109,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/memory.py": {
+            "lines": 248,
+            "tokens": 3017,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/measure_regimes.py": {
+            "lines": 191,
+            "tokens": 2421,
+            "sources": 1,
+            "clones": 8,
+            "duplicatedLines": 61,
+            "duplicatedTokens": 587,
+            "percentage": 31.94,
+            "percentageTokens": 24.25,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/inspect_channel_freeze.py": {
+            "lines": 41,
+            "tokens": 354,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/functions.py": {
+            "lines": 88,
+            "tokens": 676,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/frame_stack.py": {
+            "lines": 119,
+            "tokens": 668,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/export_onnx.py": {
+            "lines": 99,
+            "tokens": 998,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/eval_mixed.py": {
+            "lines": 350,
+            "tokens": 4662,
+            "sources": 1,
+            "clones": 10,
+            "duplicatedLines": 58,
+            "duplicatedTokens": 786,
+            "percentage": 16.57,
+            "percentageTokens": 16.86,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/eval_ckpt.py": {
+            "lines": 679,
+            "tokens": 9961,
+            "sources": 1,
+            "clones": 5,
+            "duplicatedLines": 40,
+            "duplicatedTokens": 609,
+            "percentage": 5.89,
+            "percentageTokens": 6.11,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/eval_astar_global.py": {
+            "lines": 623,
+            "tokens": 8154,
+            "sources": 1,
+            "clones": 9,
+            "duplicatedLines": 71,
+            "duplicatedTokens": 975,
+            "percentage": 11.4,
+            "percentageTokens": 11.96,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/diag_ckpt.py": {
+            "lines": 241,
+            "tokens": 3523,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 9,
+            "duplicatedTokens": 86,
+            "percentage": 3.73,
+            "percentageTokens": 2.44,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/corridor_run.py": {
+            "lines": 137,
+            "tokens": 1698,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 15,
+            "duplicatedTokens": 125,
+            "percentage": 10.95,
+            "percentageTokens": 7.36,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/convergence_gate.py": {
+            "lines": 133,
+            "tokens": 1161,
+            "sources": 1,
+            "clones": 8,
+            "duplicatedLines": 86,
+            "duplicatedTokens": 723,
+            "percentage": 64.66,
+            "percentageTokens": 62.27,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/config.py": {
+            "lines": 522,
+            "tokens": 3365,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/compose_voyage.py": {
+            "lines": 106,
+            "tokens": 836,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/ckpt_io.py": {
+            "lines": 452,
+            "tokens": 5739,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/analyze_trajectory.py": {
+            "lines": 54,
+            "tokens": 531,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 17,
+            "duplicatedTokens": 157,
+            "percentage": 31.48,
+            "percentageTokens": 29.57,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/analyze_timeout_safety.py": {
+            "lines": 96,
+            "tokens": 823,
+            "sources": 1,
+            "clones": 3,
+            "duplicatedLines": 31,
+            "duplicatedTokens": 289,
+            "percentage": 32.29,
+            "percentageTokens": 35.12,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/analyze_run.py": {
+            "lines": 248,
+            "tokens": 2543,
+            "sources": 1,
+            "clones": 3,
+            "duplicatedLines": 35,
+            "duplicatedTokens": 299,
+            "percentage": 14.11,
+            "percentageTokens": 11.76,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/analyze_circling_safety.py": {
+            "lines": 126,
+            "tokens": 1077,
+            "sources": 1,
+            "clones": 4,
+            "duplicatedLines": 41,
+            "duplicatedTokens": 376,
+            "percentage": 32.54,
+            "percentageTokens": 34.91,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/_verify_ppo_mirror.py": {
+            "lines": 448,
+            "tokens": 6261,
+            "sources": 1,
+            "clones": 10,
+            "duplicatedLines": 56,
+            "duplicatedTokens": 1062,
+            "percentage": 12.5,
+            "percentageTokens": 16.96,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/_verify_comm_mirror.py": {
+            "lines": 141,
+            "tokens": 2038,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/_smoke_fullmoe.py": {
+            "lines": 381,
+            "tokens": 5483,
+            "sources": 1,
+            "clones": 6,
+            "duplicatedLines": 36,
+            "duplicatedTokens": 642,
+            "percentage": 9.45,
+            "percentageTokens": 11.71,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 9450,
+          "tokens": 117385,
+          "sources": 47,
+          "clones": 58,
+          "duplicatedLines": 502,
+          "duplicatedTokens": 6166,
+          "percentage": 5.31,
+          "percentageTokens": 5.25,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      },
+      "markdown": {
+        "sources": {
+          "Python/plotting/STATUS.md": {
+            "lines": 258,
+            "tokens": 2695,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/RUNS.md": {
+            "lines": 287,
+            "tokens": 3769,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/plotting/README.md": {
+            "lines": 66,
+            "tokens": 670,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/astar_fig9/README.md": {
+            "lines": 6,
+            "tokens": 80,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/agents/unity-expert.md": {
+            "lines": 44,
+            "tokens": 711,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/agents/rl-researcher.md": {
+            "lines": 45,
+            "tokens": 928,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/agents/refactorer.md": {
+            "lines": 53,
+            "tokens": 887,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/agents/qa-engineer.md": {
+            "lines": 56,
+            "tokens": 911,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/agents/physicist.md": {
+            "lines": 29,
+            "tokens": 626,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "개발 로그/1230.md": {
+            "lines": 14,
+            "tokens": 93,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "개발 로그/0330.md": {
+            "lines": 11,
+            "tokens": 62,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "개발 로그/0122.md": {
+            "lines": 267,
+            "tokens": 1234,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "개발 로그/0114.md": {
+            "lines": 706,
+            "tokens": 4962,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 400,
+            "duplicatedTokens": 4558,
+            "percentage": 56.66,
+            "percentageTokens": 91.86,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/something.md": {
+            "lines": 49,
+            "tokens": 970,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/SIM2SIM_HANDOFF.md": {
+            "lines": 113,
+            "tokens": 2010,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/EXPERIMENT_STATUS.md": {
+            "lines": 143,
+            "tokens": 2121,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/EVAL_ASTAR_README.md": {
+            "lines": 133,
+            "tokens": 1875,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/COLLAPSE_ROOTCAUSE.md": {
+            "lines": 182,
+            "tokens": 1842,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          ".claude/CLAUDE.md": {
+            "lines": 274,
+            "tokens": 6496,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "requirements.txt": {
+            "lines": 20,
+            "tokens": 26,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "WINDOWS_RUN.md": {
+            "lines": 106,
+            "tokens": 1241,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "README.md": {
+            "lines": 367,
+            "tokens": 4717,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 3229,
+          "tokens": 38926,
+          "sources": 22,
+          "clones": 1,
+          "duplicatedLines": 200,
+          "duplicatedTokens": 2279,
+          "percentage": 6.19,
+          "percentageTokens": 5.85,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      },
+      "powershell": {
+        "sources": {
+          "Python/run_sweep_rushfix.ps1": {
+            "lines": 68,
+            "tokens": 487,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 6,
+            "duplicatedTokens": 62,
+            "percentage": 8.82,
+            "percentageTokens": 12.73,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep_msgdim.ps1": {
+            "lines": 87,
+            "tokens": 685,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep_moe.ps1": {
+            "lines": 81,
+            "tokens": 549,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep_commgate.ps1": {
+            "lines": 119,
+            "tokens": 925,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep_c5c.ps1": {
+            "lines": 109,
+            "tokens": 702,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep_attention.ps1": {
+            "lines": 74,
+            "tokens": 638,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_sweep.ps1": {
+            "lines": 42,
+            "tokens": 377,
+            "sources": 1,
+            "clones": 1,
+            "duplicatedLines": 6,
+            "duplicatedTokens": 62,
+            "percentage": 14.29,
+            "percentageTokens": 16.45,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_experiment.ps1": {
+            "lines": 64,
+            "tokens": 581,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_eval_gt.ps1": {
+            "lines": 67,
+            "tokens": 738,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/launch_editor_dim6.ps1": {
+            "lines": 31,
+            "tokens": 148,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 742,
+          "tokens": 5830,
+          "sources": 10,
+          "clones": 1,
+          "duplicatedLines": 6,
+          "duplicatedTokens": 62,
+          "percentage": 0.81,
+          "percentageTokens": 1.06,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      },
+      "bash": {
+        "sources": {
+          "Python/run_repro.sh": {
+            "lines": 284,
+            "tokens": 1994,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/run_aggregation_diagnostics.sh": {
+            "lines": 51,
+            "tokens": 272,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/launch_sweep_fromscratch.sh": {
+            "lines": 75,
+            "tokens": 344,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Python/launch_latentNEW.sh": {
+            "lines": 103,
+            "tokens": 485,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 513,
+          "tokens": 3095,
+          "sources": 4,
+          "clones": 0,
+          "duplicatedLines": 0,
+          "duplicatedTokens": 0,
+          "percentage": 0,
+          "percentageTokens": 0,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      },
+      "csharp": {
+        "sources": {
+          "Navigation/WaypointPathFinder.cs": {
+            "lines": 102,
+            "tokens": 816,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Navigation/VesselAutoPilot.cs": {
+            "lines": 326,
+            "tokens": 2679,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Navigation/COLREGsHandler.cs": {
+            "lines": 475,
+            "tokens": 4087,
+            "sources": 1,
+            "clones": 8,
+            "duplicatedLines": 54,
+            "duplicatedTokens": 574,
+            "percentage": 11.37,
+            "percentageTokens": 14.04,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Management/VesselManager.cs": {
+            "lines": 743,
+            "tokens": 6856,
+            "sources": 1,
+            "clones": 8,
+            "duplicatedLines": 84,
+            "duplicatedTokens": 692,
+            "percentage": 11.31,
+            "percentageTokens": 10.09,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Management/SpawnZone.cs": {
+            "lines": 99,
+            "tokens": 789,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Agent/VesselRadar.cs": {
+            "lines": 169,
+            "tokens": 1552,
+            "sources": 1,
+            "clones": 2,
+            "duplicatedLines": 10,
+            "duplicatedTokens": 108,
+            "percentage": 5.92,
+            "percentageTokens": 6.96,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "Agent/VesselDynamics.cs": {
+            "lines": 173,
+            "tokens": 1589,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "GlobalScale.cs": {
+            "lines": 172,
+            "tokens": 1851,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          },
+          "CameraController.cs": {
+            "lines": 83,
+            "tokens": 857,
+            "sources": 1,
+            "clones": 0,
+            "duplicatedLines": 0,
+            "duplicatedTokens": 0,
+            "percentage": 0,
+            "percentageTokens": 0,
+            "newDuplicatedLines": 0,
+            "newClones": 0
+          }
+        },
+        "total": {
+          "lines": 2342,
+          "tokens": 21076,
+          "sources": 9,
+          "clones": 9,
+          "duplicatedLines": 74,
+          "duplicatedTokens": 687,
+          "percentage": 3.16,
+          "percentageTokens": 3.26,
+          "newDuplicatedLines": 0,
+          "newClones": 0
+        }
+      }
+    },
+    "total": {
+      "lines": 16276,
+      "tokens": 186312,
+      "sources": 92,
+      "clones": 69,
+      "duplicatedLines": 782,
+      "duplicatedTokens": 9194,
+      "percentage": 4.8,
+      "percentageTokens": 4.93,
+      "newDuplicatedLines": 0,
+      "newClones": 0
+    }
+  },
+  "duplicates": [
+    {
+      "format": "python",
+      "lines": 12,
+      "fragment": "\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '00_MAIN'); os.makedirs(OUT, exist_ok=True)\r\nps.apply()\r\n\r\nPAT",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_nqi.py",
+        "start": 12,
+        "end": 23,
+        "startLoc": {
+          "line": 12,
+          "column": 4,
+          "position": 42
+        },
+        "endLoc": {
+          "line": 23,
+          "column": 4,
+          "position": 179
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 18,
+        "end": 29,
+        "startLoc": {
+          "line": 18,
+          "column": 3,
+          "position": 119
+        },
+        "endLoc": {
+          "line": 29,
+          "column": 5,
+          "position": 256
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\r\nimport os, re\r\nimport numpy as np\r\n\r\n\r\ndef _sd(v):\r\n    # sample stdev; returns 0 when only one run (avoids NaN)\r\n    v = np.asarray(v, dtype=float)\r\n    return float(np.std(v, ddof=1)) if v.size > 1 else 0.0\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nimport",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_moe_axis.py",
+        "start": 7,
+        "end": 19,
+        "startLoc": {
+          "line": 7,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 19,
+          "column": 7,
+          "position": 112
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 6,
+        "end": 18,
+        "startLoc": {
+          "line": 6,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 18,
+          "column": 5,
+          "position": 112
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 18,
+      "fragment": "\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '00_MAIN'); os.makedirs(OUT, exist_ok=True)\r\nps.apply()\r\n\r\nPAT = re.compile(r'\\[(\\w+)\\].*?goal=\\s*([\\d.]+)%.*?vColl=\\s*([\\d.]+)%.*?oColl=\\s*([\\d.]+)%'\r\n                 r'.*?fuel=\\s*([\\d.]+)\\s+headTravel=\\s*([\\d.]+)deg.*?epReward=\\s*(-?[\\d.]+)'\r\n                 r'\\s+colregs=\\s*([\\d.]+)\\s+colregsOK=\\s*([\\d.]+)%')\r\n\r",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_moe_axis.py",
+        "start": 15,
+        "end": 32,
+        "startLoc": {
+          "line": 15,
+          "column": 4,
+          "position": 86
+        },
+        "endLoc": {
+          "line": 32,
+          "column": 2,
+          "position": 270
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_nqi.py",
+        "start": 9,
+        "end": 26,
+        "startLoc": {
+          "line": 9,
+          "column": 3,
+          "position": 18
+        },
+        "endLoc": {
+          "line": 26,
+          "column": 6,
+          "position": 202
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 27,
+      "fragment": "\r\nimport os, re\r\nimport numpy as np\r\n\r\n\r\ndef _sd(v):\r\n    # sample stdev; returns 0 when only one run (avoids NaN)\r\n    v = np.asarray(v, dtype=float)\r\n    return float(np.std(v, ddof=1)) if v.size > 1 else 0.0\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '00_MAIN'); os.makedirs(OUT, exist_ok=True)\r\nps.apply()\r\n\r\nPAT = re.compile(r'\\[(\\w+)\\].*?goal=\\s*([\\d.]+)%.*?vColl=\\s*([\\d.]+)%.*?oColl=\\s*([\\d.]+)%'\r\n                 r'.*?fuel=\\s*([\\d.]+)\\s+headTravel=\\s*([\\d.]+)deg.*?epReward=\\s*(-?[\\d.]+)'\r\n                 r'\\s+colregs=\\s*([\\d.]+)\\s+colregsOK=\\s*([\\d.]+)%')\r\n\r\nDIMS",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_h2_dimension.py",
+        "start": 8,
+        "end": 34,
+        "startLoc": {
+          "line": 8,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 34,
+          "column": 5,
+          "position": 272
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 6,
+        "end": 33,
+        "startLoc": {
+          "line": 6,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 33,
+          "column": 5,
+          "position": 272
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "\r\n\r\n\r\ndef load():\r\n    d = {}\r\n    for ln in open(os.path.join(SCR, 'metrics_v2.txt'), encoding='utf-8', errors='ignore'):\r\n        m = PAT.search(ln)\r\n        if m:\r\n            d",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_h2_dimension.py",
+        "start": 42,
+        "end": 50,
+        "startLoc": {
+          "line": 42,
+          "column": 2,
+          "position": 413
+        },
+        "endLoc": {
+          "line": 50,
+          "column": 2,
+          "position": 491
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_nqi.py",
+        "start": 36,
+        "end": 44,
+        "startLoc": {
+          "line": 36,
+          "column": 48,
+          "position": 405
+        },
+        "endLoc": {
+          "line": 44,
+          "column": 2,
+          "position": 483
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 21,
+      "fragment": "\r\nimport os, re\r\nimport numpy as np\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '00_MAIN'); os.makedirs(OUT, exist_ok=True)\r\nps.apply()\r\n\r\nPAT = re.compile(r'\\[(\\w+)\\].*?goal=\\s*([\\d.]+)%.*?vColl=\\s*([\\d.]+)%.*?oColl=\\s*([\\d.]+)%'\r\n                 r'.*?fuel=\\s*([\\d.]+)\\s+headTravel=\\s*([\\d.]+)deg.*?epReward=\\s*(-?[\\d.]+)'\r\n                 r'\\s+colregs=\\s*([\\d.]+)\\s+colregsOK=\\s*([\\d.]+)%')\r\nSEEDS = ['s42', 's43', 's44']\r\nSEED_C",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_h1_paired.py",
+        "start": 6,
+        "end": 26,
+        "startLoc": {
+          "line": 6,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 26,
+          "column": 7,
+          "position": 217
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_nqi.py",
+        "start": 7,
+        "end": 27,
+        "startLoc": {
+          "line": 7,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 27,
+          "column": 5,
+          "position": 217
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "\r\n    for ln in open(p, encoding='utf-8', errors='ignore'):\r\n        m = PAT.search(ln)\r\n        if m:\r\n            g = float(m.group(2)); c = float(m.group(3)) + float(m.group(4))\r\n            to = max(0.0, 100.0 - g - c)\r\n            d[m.group(1)] = dict(goal=g, coll=c, tr=1.5 * g - 3.0 * c - 0.5 * to,\r\n                                 fuel=float(m.group(5)), head=float(m.group(6)),\r\n                                 colregs",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_h1_paired.py",
+        "start": 37,
+        "end": 45,
+        "startLoc": {
+          "line": 37,
+          "column": 2,
+          "position": 378
+        },
+        "endLoc": {
+          "line": 45,
+          "column": 8,
+          "position": 569
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_moe_axis.py",
+        "start": 47,
+        "end": 55,
+        "startLoc": {
+          "line": 47,
+          "column": 2,
+          "position": 465
+        },
+        "endLoc": {
+          "line": 55,
+          "column": 7,
+          "position": 656
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": ",\r\n                                 fuel=float(m.group(5)), head=float(m.group(6)),\r\n                                 colregs=float(m.group(9)))\r\n    return d\r\n\r\n\r\ndef main(off_pre",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_h1_paired.py",
+        "start": 43,
+        "end": 49,
+        "startLoc": {
+          "line": 43,
+          "column": 3,
+          "position": 537
+        },
+        "endLoc": {
+          "line": 49,
+          "column": 8,
+          "position": 597
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_h2_dimension.py",
+        "start": 51,
+        "end": 57,
+        "startLoc": {
+          "line": 51,
+          "column": 2,
+          "position": 543
+        },
+        "endLoc": {
+          "line": 57,
+          "column": 2,
+          "position": 603
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nfrom matplotlib import cm\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '10_CURVES'",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_all_curves.py",
+        "start": 10,
+        "end": 22,
+        "startLoc": {
+          "line": 10,
+          "column": 3,
+          "position": 21
+        },
+        "endLoc": {
+          "line": 22,
+          "column": 12,
+          "position": 165
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 14,
+        "end": 26,
+        "startLoc": {
+          "line": 14,
+          "column": 4,
+          "position": 86
+        },
+        "endLoc": {
+          "line": 26,
+          "column": 10,
+          "position": 230
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "():\r\n    d = {}\r\n    p = os.path.join(SCR, 'metrics_v2.txt')\r\n    if not os.path.exists(p):\r\n        return d\r\n    for ln in open(p, encoding='utf-8', errors='ignore'):\r\n        m = EVPAT",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_all_curves.py",
+        "start": 110,
+        "end": 116,
+        "startLoc": {
+          "line": 110,
+          "column": 11,
+          "position": 1401
+        },
+        "endLoc": {
+          "line": 116,
+          "column": 6,
+          "position": 1484
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_moe_axis.py",
+        "start": 43,
+        "end": 49,
+        "startLoc": {
+          "line": 43,
+          "column": 5,
+          "position": 413
+        },
+        "endLoc": {
+          "line": 49,
+          "column": 4,
+          "position": 496
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": ".search(ln)\r\n        if m:\r\n            d[m.group(1)] = dict(goal=float(m.group(2)),\r\n                                 coll=float(m.group(3)) + float(m.group(4)),\r\n                                 fuel=float(m.group(5)), head=float(m.group(6)),\r\n                                 epr",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/plot_all_curves.py",
+        "start": 116,
+        "end": 121,
+        "startLoc": {
+          "line": 116,
+          "column": 6,
+          "position": 1485
+        },
+        "endLoc": {
+          "line": 121,
+          "column": 4,
+          "position": 1584
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_h2_dimension.py",
+        "start": 48,
+        "end": 53,
+        "startLoc": {
+          "line": 48,
+          "column": 4,
+          "position": 476
+        },
+        "endLoc": {
+          "line": 53,
+          "column": 8,
+          "position": 575
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 21,
+      "fragment": "\r\nimport os, re\r\nimport numpy as np\r\n\r\n\r\ndef _sd(v):\r\n    # sample stdev; returns 0 when only one run (avoids NaN)\r\n    v = np.asarray(v, dtype=float)\r\n    return float(np.std(v, ddof=1)) if v.size > 1 else 0.0\r\nimport matplotlib\r\nmatplotlib.use('Agg')\r\nimport matplotlib.pyplot as plt\r\nfrom matplotlib import cm\r\nimport paper_style as ps\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    os.path.join(FIG, 'logs'))\r\nOUT = os.path.join(FIG, '20_REWARD'",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 8,
+        "end": 28,
+        "startLoc": {
+          "line": 8,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 28,
+          "column": 12,
+          "position": 230
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 6,
+        "end": 26,
+        "startLoc": {
+          "line": 6,
+          "column": 4,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 26,
+          "column": 10,
+          "position": 230
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": " [], []\r\n    for ln in open(p, encoding='utf-8', errors='ignore'):\r\n        m = LINE.search(ln)\r\n        if not m:\r\n            continue\r\n        e",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 68,
+        "end": 73,
+        "startLoc": {
+          "line": 68,
+          "column": 2,
+          "position": 720
+        },
+        "endLoc": {
+          "line": 73,
+          "column": 2,
+          "position": 780
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 58,
+        "end": 63,
+        "startLoc": {
+          "line": 58,
+          "column": 2,
+          "position": 649
+        },
+        "endLoc": {
+          "line": 63,
+          "column": 4,
+          "position": 709
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "():\r\n    d = {}\r\n    p = os.path.join(SCR, 'metrics_v2.txt')\r\n    if not os.path.exists(p):\r\n        return d\r\n    for ln in open(p, encoding='utf-8', errors='ignore'):\r\n        m = EVPAT.search(ln)\r\n        if m:\r\n            g",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 114,
+        "end": 122,
+        "startLoc": {
+          "line": 114,
+          "column": 6,
+          "position": 1506
+        },
+        "endLoc": {
+          "line": 122,
+          "column": 2,
+          "position": 1605
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_moe_axis.py",
+        "start": 43,
+        "end": 118,
+        "startLoc": {
+          "line": 43,
+          "column": 5,
+          "position": 413
+        },
+        "endLoc": {
+          "line": 118,
+          "column": 2,
+          "position": 1500
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "\r\n\r\nFIG = os.path.dirname(os.path.abspath(__file__))\r\n# 데이터 경로: 프로젝트 내 _data(고정 사본)를 우선 사용 → 임시폴더가 지워져도 재생성 가능\r\n_LOCAL = os.path.join(FIG, '_data')\r\nSCR = os.environ.get('VESSEL_LOG_DIR', _LOCAL if os.path.isdir(_LOCAL) else\r\n    r",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_ablation_rewards.py",
+        "start": 23,
+        "end": 29,
+        "startLoc": {
+          "line": 23,
+          "column": 2,
+          "position": 145
+        },
+        "endLoc": {
+          "line": 29,
+          "column": 2,
+          "position": 220
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_task_return.py",
+        "start": 19,
+        "end": 25,
+        "startLoc": {
+          "line": 19,
+          "column": 3,
+          "position": 128
+        },
+        "endLoc": {
+          "line": 25,
+          "column": 3,
+          "position": 203
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\r\n    p = os.path.join(SCR, stem + '.log')\r\n    if not os.path.exists(p):\r\n        return None\r\n    x, n, g, c, t = [], [], [], [], []\r\n    for ln in open(p, encoding='utf-8', errors='ignore'):\r\n        m = LINE.search(ln)\r\n        if not m:\r\n            continue\r\n        e = int(m.group(2))\r\n        if e < MIN_EP:\r\n            continue\r\n        x.append(float(m.group(1)))",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_ablation_rewards.py",
+        "start": 55,
+        "end": 67,
+        "startLoc": {
+          "line": 55,
+          "column": 2,
+          "position": 559
+        },
+        "endLoc": {
+          "line": 67,
+          "column": 2,
+          "position": 737
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 64,
+        "end": 76,
+        "startLoc": {
+          "line": 64,
+          "column": 42,
+          "position": 646
+        },
+        "endLoc": {
+          "line": 76,
+          "column": 2,
+          "position": 824
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "); n.append(e)\r\n        g.append(float(m.group(3)) * e / 100.0)\r\n        c.append((float(m.group(4)) + float(m.group(5))) * e / 100.0)\r\n        t.append(float(m.group(6)) * e / 100.0)\r\n    if len(x) <= 20:\r\n        return None\r\n    return [",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_ablation_rewards.py",
+        "start": 67,
+        "end": 73,
+        "startLoc": {
+          "line": 67,
+          "column": 2,
+          "position": 737
+        },
+        "endLoc": {
+          "line": 73,
+          "column": 2,
+          "position": 860
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 76,
+        "end": 82,
+        "startLoc": {
+          "line": 76,
+          "column": 4,
+          "position": 828
+        },
+        "endLoc": {
+          "line": 82,
+          "column": 6,
+          "position": 951
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": " / BIN))\r\n    n, g, c, t = (np.zeros(nb) for _ in range(4))\r\n    for r in runs:\r\n        idx = np.clip(np.round(r[0] / BIN).astype(int), 0, nb - 1)\r\n        for arr, dst in zip(r[1:], (n, g, c, t)):\r\n            np.add.at(dst, idx, arr)\r\n    keep = n > 0\r\n    x = np",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/make_ablation_rewards.py",
+        "start": 84,
+        "end": 91,
+        "startLoc": {
+          "line": 84,
+          "column": 5,
+          "position": 990
+        },
+        "endLoc": {
+          "line": 91,
+          "column": 3,
+          "position": 1153
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/make_reward_folder.py",
+        "start": 90,
+        "end": 97,
+        "startLoc": {
+          "line": 90,
+          "column": 7,
+          "position": 1069
+        },
+        "endLoc": {
+          "line": 97,
+          "column": 2,
+          "position": 1232
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "\r\n\r\n\r\ndef load():\r\n    d = {}\r\n    for ln in open(os.path.join(SCR, 'metrics_v2.txt'), encoding='utf-8', errors='ignore'):\r\n        m = PAT.search(ln)\r\n        if m:\r\n            g,",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/build_final.py",
+        "start": 75,
+        "end": 83,
+        "startLoc": {
+          "line": 75,
+          "column": 2,
+          "position": 1077
+        },
+        "endLoc": {
+          "line": 83,
+          "column": 2,
+          "position": 1156
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/plot_nqi.py",
+        "start": 36,
+        "end": 44,
+        "startLoc": {
+          "line": 36,
+          "column": 48,
+          "position": 405
+        },
+        "endLoc": {
+          "line": 44,
+          "column": 2,
+          "position": 484
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": ")\r\n    fig.tight_layout()\r\n    for e in ('png', 'pdf'):\r\n        fig.savefig(f'{path}.{e}', bbox_inches='tight')\r\n    plt.close(fig)\r\n\r\n\r\ndef main",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/plotting/build_final.py",
+        "start": 158,
+        "end": 165,
+        "startLoc": {
+          "line": 158,
+          "column": 5,
+          "position": 2343
+        },
+        "endLoc": {
+          "line": 165,
+          "column": 5,
+          "position": 2400
+        }
+      },
+      "secondFile": {
+        "name": "Python/plotting/build_final.py",
+        "start": 71,
+        "end": 78,
+        "startLoc": {
+          "line": 71,
+          "column": 5,
+          "position": 1028
+        },
+        "endLoc": {
+          "line": 78,
+          "column": 5,
+          "position": 1085
+        }
+      }
+    },
+    {
+      "format": "markdown",
+      "lines": 201,
+      "fragment": "\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\nNullReferenceException: Object reference not set to an instance of an object\n\n[FixedUpdate]",
+      "tokens": 0,
+      "firstFile": {
+        "name": "개발 로그/0114.md",
+        "start": 5,
+        "end": 205,
+        "startLoc": {
+          "line": 5,
+          "column": 7,
+          "position": 61
+        },
+        "endLoc": {
+          "line": 205,
+          "column": 14,
+          "position": 2340
+        }
+      },
+      "secondFile": {
+        "name": "개발 로그/0114.md",
+        "start": 3,
+        "end": 11,
+        "startLoc": {
+          "line": 3,
+          "column": 9,
+          "position": 38
+        },
+        "endLoc": {
+          "line": 11,
+          "column": 24,
+          "position": 109
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": ":\n        tfid = go2tf.get(gfid)\n        if tfid is None:\n            continue\n        x, z, yaw, sx, sz = world(tfid, tf)\n        out",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/worldmap_extract.py",
+        "start": 144,
+        "end": 149,
+        "startLoc": {
+          "line": 144,
+          "column": 2,
+          "position": 1933
+        },
+        "endLoc": {
+          "line": 149,
+          "column": 4,
+          "position": 1986
+        }
+      },
+      "secondFile": {
+        "name": "Python/worldmap_extract.py",
+        "start": 124,
+        "end": 129,
+        "startLoc": {
+          "line": 124,
+          "column": 5,
+          "position": 1493
+        },
+        "endLoc": {
+          "line": 129,
+          "column": 3,
+          "position": 1546
+        }
+      }
+    },
+    {
+      "format": "powershell",
+      "lines": 7,
+      "fragment": "\r\nparam(\r\n  [string]$Exe = \"\"\r\n)\r\n# 상대경로화: 이 스크립트 위치(Assets\\Scripts\\Python) 기준 프로젝트 루트 = $PSScriptRoot\\..\\..\\..\r\nif (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\\..\\..\\Build\\Vessel_MLAgent.exe' }\r\nif (-not (Test-Path $Exe)) { Write-Host \"[ERROR] exe 없음: $Exe (먼저 Unity 재빌드)\"",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/run_sweep.ps1",
+        "start": 8,
+        "end": 14,
+        "startLoc": {
+          "line": 8,
+          "column": 3,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 14,
+          "column": 17,
+          "position": 63
+        }
+      },
+      "secondFile": {
+        "name": "Python/run_sweep_rushfix.ps1",
+        "start": 22,
+        "end": 28,
+        "startLoc": {
+          "line": 22,
+          "column": 3,
+          "position": 1
+        },
+        "endLoc": {
+          "line": 28,
+          "column": 37,
+          "position": 63
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": ")\n    channel = EngineConfigurationChannel()\n    env = UnityEnvironment(file_name=env_path, side_channels=[channel], worker_id=0,\n                           base_port=base_port, timeout_wait=60,\n                           additional_args=[\"-batchmode\", \"-nographics\"])\n    try:\n        channel.set_configuration_parameters(time_scale=20.0",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/radar_fidelity_compare.py",
+        "start": 59,
+        "end": 65,
+        "startLoc": {
+          "line": 59,
+          "column": 18,
+          "position": 294
+        },
+        "endLoc": {
+          "line": 65,
+          "column": 5,
+          "position": 362
+        }
+      },
+      "secondFile": {
+        "name": "Python/unity_fidelity_compare.py",
+        "start": 83,
+        "end": 89,
+        "startLoc": {
+          "line": 83,
+          "column": 2,
+          "position": 806
+        },
+        "endLoc": {
+          "line": 89,
+          "column": 6,
+          "position": 874
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": ")\n\n    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,\n                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)\n                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일\n                            perpair_coef=-0.15, perpair_exp=3.0)\n    # ★2026-09-10: 복원은 ckpt_io.restore_policy 단일 구현으로. 예전 인라인 블록은 radar_head/radar_act/token_gain",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 117,
+        "end": 123,
+        "startLoc": {
+          "line": 117,
+          "column": 5,
+          "position": 1267
+        },
+        "endLoc": {
+          "line": 123,
+          "column": 94,
+          "position": 1366
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 64,
+        "end": 70,
+        "startLoc": {
+          "line": 64,
+          "column": 5,
+          "position": 459
+        },
+        "endLoc": {
+          "line": 70,
+          "column": 109,
+          "position": 558
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": "\n\n    fs = FrameStack(E, N, dev)\n    obs = env.reset()\n    radar, goal, self_s, sit = parse_obs(obs)\n    fs.reset_all(radar)\n\n    def",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 132,
+        "end": 139,
+        "startLoc": {
+          "line": 132,
+          "column": 13,
+          "position": 1464
+        },
+        "endLoc": {
+          "line": 139,
+          "column": 4,
+          "position": 1522
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 77,
+        "end": 84,
+        "startLoc": {
+          "line": 77,
+          "column": 7,
+          "position": 623
+        },
+        "endLoc": {
+          "line": 84,
+          "column": 4,
+          "position": 681
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "):\n        a = act(fs.get(), goal, self_s, sit)\n        obs, _, done, _ = env.step(a)\n        radar, goal, self_s, sit = parse_obs(obs)\n        fs.push(radar, done)\n        ",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 173,
+        "end": 178,
+        "startLoc": {
+          "line": 173,
+          "column": 7,
+          "position": 2066
+        },
+        "endLoc": {
+          "line": 178,
+          "column": 9,
+          "position": 2143
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 114,
+        "end": 120,
+        "startLoc": {
+          "line": 114,
+          "column": 7,
+          "position": 1170
+        },
+        "endLoc": {
+          "line": 120,
+          "column": 1,
+          "position": 1247
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": ")\n        radar, goal, self_s, sit = parse_obs(obs)\n        fs.push(radar, done)\n        prev_head = torch.where(done, env.heading, prev_head)\n\n",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 262,
+        "end": 267,
+        "startLoc": {
+          "line": 262,
+          "column": 10,
+          "position": 3617
+        },
+        "endLoc": {
+          "line": 267,
+          "column": 1,
+          "position": 3669
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 175,
+        "end": 179,
+        "startLoc": {
+          "line": 175,
+          "column": 2,
+          "position": 2111
+        },
+        "endLoc": {
+          "line": 179,
+          "column": 9,
+          "position": 2163
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": "\n    BIG = 1e9\n    eye = torch.eye(N, device=dev).unsqueeze(0) * BIG\n\n    def wrap180(x):\n        return (x + 180.0) % 360.0 - 180.0\n\n    def",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_ckpt.py",
+        "start": 101,
+        "end": 108,
+        "startLoc": {
+          "line": 101,
+          "column": 4,
+          "position": 1009
+        },
+        "endLoc": {
+          "line": 108,
+          "column": 4,
+          "position": 1074
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 145,
+        "end": 152,
+        "startLoc": {
+          "line": 145,
+          "column": 1,
+          "position": 1631
+        },
+        "endLoc": {
+          "line": 152,
+          "column": 8,
+          "position": 1696
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "\n            ep_fuel = torch.where(term, torch.zeros_like(ep_fuel), ep_fuel)\n            ep_head = torch.where(term, torch.zeros_like(ep_head), ep_head)\n            ep_len = torch.where(term, torch.zeros_like(ep_len), ep_len)\n            ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)\n            ep_reward",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_ckpt.py",
+        "start": 480,
+        "end": 485,
+        "startLoc": {
+          "line": 480,
+          "column": 2,
+          "position": 6996
+        },
+        "endLoc": {
+          "line": 485,
+          "column": 10,
+          "position": 7093
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 256,
+        "end": 261,
+        "startLoc": {
+          "line": 256,
+          "column": 24,
+          "position": 3477
+        },
+        "endLoc": {
+          "line": 261,
+          "column": 11,
+          "position": 3574
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\nimport os\nimport time\n\nimport torch\n\nimport config as cfg\nimport vessel_gym as vg\nfrom networks import CNNPolicy\nfrom vessel_gym_train import comm_gather, parse_obs, FrameStack, make_others_msg\n\n\n# ─────────────────────────── A* (격자, CPU) ───────────────────────────",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 36,
+        "end": 48,
+        "startLoc": {
+          "line": 36,
+          "column": 5,
+          "position": 13
+        },
+        "endLoc": {
+          "line": 48,
+          "column": 71,
+          "position": 71
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 29,
+        "end": 41,
+        "startLoc": {
+          "line": 29,
+          "column": 5,
+          "position": 9
+        },
+        "endLoc": {
+          "line": 41,
+          "column": 4,
+          "position": 67
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "\n            for dj in range(-r, r + 1):\n                for di in range(-r, r + 1):\n                    if max(abs(di), abs(dj)) != r:\n                        continue\n                    a, b = i + di, j + dj\n                    if 0 <= a < self",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 99,
+        "end": 105,
+        "startLoc": {
+          "line": 99,
+          "column": 5,
+          "position": 753
+        },
+        "endLoc": {
+          "line": 105,
+          "column": 5,
+          "position": 853
+        }
+      },
+      "secondFile": {
+        "name": "Python/astar_fig9/route_astar_real.py",
+        "start": 83,
+        "end": 89,
+        "startLoc": {
+          "line": 83,
+          "column": 2,
+          "position": 927
+        },
+        "endLoc": {
+          "line": 89,
+          "column": 3,
+          "position": 1027
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": ")\n    args = ap.parse_args()\n\n    dev = 'cuda' if torch.cuda.is_available() else 'cpu'\n    E, N = args.envs, args.vessels\n    torch.manual_seed(args.seed)\n    scr = os.path.dirname(os.path.abspath(__file__))\n    ckpt_dir",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 401,
+        "end": 408,
+        "startLoc": {
+          "line": 401,
+          "column": 16,
+          "position": 4924
+        },
+        "endLoc": {
+          "line": 408,
+          "column": 9,
+          "position": 5008
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 56,
+        "end": 63,
+        "startLoc": {
+          "line": 56,
+          "column": 33,
+          "position": 313
+        },
+        "endLoc": {
+          "line": 63,
+          "column": 7,
+          "position": 397
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\n    total = 0\n\n    def act(x, goal, self_s, sit):\n        with torch.no_grad():\n            if args.arm == 'ON':\n                om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners)\n            else:\n                om = make_others_msg(env, args.arm, E, N, dev)\n            action, _, _, _ = policy.ctr_actor(x, goal, self_s, om, sit)\n        return action\n\n    t0",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 434,
+        "end": 446,
+        "startLoc": {
+          "line": 434,
+          "column": 2,
+          "position": 5384
+        },
+        "endLoc": {
+          "line": 446,
+          "column": 3,
+          "position": 5534
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_ckpt.py",
+        "start": 87,
+        "end": 99,
+        "startLoc": {
+          "line": 87,
+          "column": 30,
+          "position": 833
+        },
+        "endLoc": {
+          "line": 99,
+          "column": 7,
+          "position": 983
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "\n    BIG = 1e9\n    eye = torch.eye(N, device=dev).unsqueeze(0) * BIG\n\n    def wrap180(x):\n        return (x + 180.0) % 360.0 - 180.0\n\n    def nearest_sep():\n        d",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 446,
+        "end": 454,
+        "startLoc": {
+          "line": 446,
+          "column": 2,
+          "position": 5543
+        },
+        "endLoc": {
+          "line": 454,
+          "column": 2,
+          "position": 5616
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 145,
+        "end": 109,
+        "startLoc": {
+          "line": 145,
+          "column": 1,
+          "position": 1631
+        },
+        "endLoc": {
+          "line": 109,
+          "column": 55,
+          "position": 1082
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "\n    ep_fuel = torch.zeros(E, N, device=dev)\n    ep_head = torch.zeros(E, N, device=dev)\n    ep_len = torch.zeros(E, N, device=dev)\n    ep_minsep = torch.full((E, N), BIG, device=dev)\n    ep_reward",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 489,
+        "end": 494,
+        "startLoc": {
+          "line": 489,
+          "column": 35,
+          "position": 6066
+        },
+        "endLoc": {
+          "line": 494,
+          "column": 10,
+          "position": 6153
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 151,
+        "end": 156,
+        "startLoc": {
+          "line": 151,
+          "column": 1,
+          "position": 1694
+        },
+        "endLoc": {
+          "line": 156,
+          "column": 11,
+          "position": 1781
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": " > 0.3) & (_sit > 0)\n            if bool(_gate.any()):\n                _star = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(ep_fuel.dtype)\n                _hold = (_sit == 2).to(ep_fuel.dtype)\n                _viol = _star * torch.clamp(-_rud, min=0.0) + _hold * _rud.abs()\n                _comp",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 529,
+        "end": 534,
+        "startLoc": {
+          "line": 529,
+          "column": 7,
+          "position": 6718
+        },
+        "endLoc": {
+          "line": 534,
+          "column": 6,
+          "position": 6844
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_mixed.py",
+        "start": 198,
+        "end": 203,
+        "startLoc": {
+          "line": 198,
+          "column": 7,
+          "position": 2483
+        },
+        "endLoc": {
+          "line": 203,
+          "column": 4,
+          "position": 2609
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 11,
+      "fragment": "\n                comp_sum += float(_comp[_gate].sum())\n                comp_bin += float((_viol[_gate] < 0.1).float().sum())\n                comp_n += int(_gate.sum())\n                for _k in (1, 2, 3, 4):\n                    _m = _gate & (_sit == _k)\n                    if bool(_m.any()):\n                        sit_ok[_k] += float((_viol[_m] < 0.1).float().sum())\n                        sit_n[_k] += int(_m.sum())\n\n",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 534,
+        "end": 544,
+        "startLoc": {
+          "line": 534,
+          "column": 2,
+          "position": 6863
+        },
+        "endLoc": {
+          "line": 544,
+          "column": 1,
+          "position": 7020
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_ckpt.py",
+        "start": 346,
+        "end": 355,
+        "startLoc": {
+          "line": 346,
+          "column": 9,
+          "position": 4323
+        },
+        "endLoc": {
+          "line": 355,
+          "column": 9,
+          "position": 4480
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "total += c\n                msum[oc]['fuel'] += float(ep_fuel[mask].sum())\n                msum[oc]['head'] += float(ep_head[mask].sum())\n                msum[oc]['minsep'] += float(ep_minsep[mask].clamp(max=vg.RADAR_RANGE * 4).sum())\n                msum[oc]['length'] += float(ep_len[mask].sum())\n                msum[oc]['reward'] += float(ep_reward[mask].sum())\n                msum[oc]['travel'",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/eval_astar_global.py",
+        "start": 559,
+        "end": 565,
+        "startLoc": {
+          "line": 559,
+          "column": 17,
+          "position": 7179
+        },
+        "endLoc": {
+          "line": 565,
+          "column": 9,
+          "position": 7319
+        }
+      },
+      "secondFile": {
+        "name": "Python/eval_ckpt.py",
+        "start": 468,
+        "end": 474,
+        "startLoc": {
+          "line": 468,
+          "column": 2,
+          "position": 6749
+        },
+        "endLoc": {
+          "line": 474,
+          "column": 4,
+          "position": 6889
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 10,
+      "fragment": "\n\n    fs = FrameStack(E, N, dev)\n    obs = env.reset()\n    radar, goal, self_s, sit = parse_obs(obs)\n    fs.reset_all(radar)\n\n    def act(x, goal, self_s, sit):\n        with torch.no_grad():\n            if",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/diag_ckpt.py",
+        "start": 94,
+        "end": 103,
+        "startLoc": {
+          "line": 94,
+          "column": 32,
+          "position": 887
+        },
+        "endLoc": {
+          "line": 103,
+          "column": 3,
+          "position": 973
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 77,
+        "end": 141,
+        "startLoc": {
+          "line": 77,
+          "column": 7,
+          "position": 623
+        },
+        "endLoc": {
+          "line": 141,
+          "column": 3,
+          "position": 1550
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": ")\n    # ★2026-09-10: 복원은 ckpt_io.restore_policy 로. 예전엔 msg_ln 만 스니핑하고 attention/pos_ground/radar_head/token_gain 은\n    #   복원하지 않아, 그런 ckpt 는 학습과 다른 집계·인코더로 굴렀다(에러 없이). 이제 스냅샷을 전부 적용하고 헤더로 찍는다.\n    #   ⚠️과거 이 스크립트가 낸 숫자가 불일치 상태였다면 재실행 시 값이 달라진다 — 그 경우 과거 값이 틀린 것.\n    #   comm_range 가 ckpt 와 다르면 중단함. 의도한 것이면 VESSEL_ALLOW_COMM_RANGE_MISMATCH=1.\n    from ckpt_io import restore_policy\n    policy = restore_policy(ck, dev, arm=None,\n                            allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',\n                            tag='[corridor_run]'",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/corridor_run.py",
+        "start": 85,
+        "end": 93,
+        "startLoc": {
+          "line": 85,
+          "column": 5,
+          "position": 970
+        },
+        "endLoc": {
+          "line": 93,
+          "column": 17,
+          "position": 1034
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 69,
+        "end": 77,
+        "startLoc": {
+          "line": 69,
+          "column": 4,
+          "position": 555
+        },
+        "endLoc": {
+          "line": 77,
+          "column": 20,
+          "position": 619
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": ").policy\n\n    fs = FrameStack(E, N, dev)\n    obs = env.reset()\n    radar, goal, self_s, sit = parse_obs(obs)\n    fs.reset_all(radar)\n\n    # ★이 맥은 numpy2 x torch 조합에서 tensor.numpy() 가 막혀 있어 torch 텐서로 모은다.",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/corridor_run.py",
+        "start": 93,
+        "end": 100,
+        "startLoc": {
+          "line": 93,
+          "column": 17,
+          "position": 1035
+        },
+        "endLoc": {
+          "line": 100,
+          "column": 66,
+          "position": 1096
+        }
+      },
+      "secondFile": {
+        "name": "Python/measure_regimes.py",
+        "start": 77,
+        "end": 84,
+        "startLoc": {
+          "line": 77,
+          "column": 20,
+          "position": 620
+        },
+        "endLoc": {
+          "line": 84,
+          "column": 4,
+          "position": 681
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 10,
+      "fragment": "\n\nRUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), \"..\", \"..\", \"..\", \"run_logs\"))\nFILES = {\n    \"OFF_s42\": \"base_off_mt.csv\", \"OFF_s43\": \"off_s43_mt.csv\", \"OFF_s44\": \"off_s44_mt.csv\",\n    \"ON_s42\": \"on_s42_mt.csv\", \"ON_s43\": \"on_s43_mt.csv\", \"ON_s44\": \"on_s44_mt.csv\",\n}\nNCHUNK = 5\n\n",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_trajectory.py",
+        "start": 9,
+        "end": 18,
+        "startLoc": {
+          "line": 9,
+          "column": 9,
+          "position": 20
+        },
+        "endLoc": {
+          "line": 18,
+          "column": 1,
+          "position": 120
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 27,
+        "end": 35,
+        "startLoc": {
+          "line": 27,
+          "column": 5,
+          "position": 62
+        },
+        "endLoc": {
+          "line": 35,
+          "column": 10,
+          "position": 162
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 9,
+      "fragment": "\n\n\ndef sub(m, lo, hi):\n    \"\"\"행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric.\"\"\"\n    return Metric({k: v[lo:hi] for k, v in m.items()})\n\n\ndef main",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_trajectory.py",
+        "start": 16,
+        "end": 24,
+        "startLoc": {
+          "line": 16,
+          "column": 2,
+          "position": 119
+        },
+        "endLoc": {
+          "line": 24,
+          "column": 5,
+          "position": 176
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 47,
+        "end": 55,
+        "startLoc": {
+          "line": 47,
+          "column": 2,
+          "position": 249
+        },
+        "endLoc": {
+          "line": 55,
+          "column": 15,
+          "position": 306
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "\n\n\ndef nrows(m):\n    return len(m[\"outcome\"]) if \"outcome\" in m else 0\n\n\ndef sub(m, lo, hi):\n    \"\"\"행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric.\"\"\"\n    return Metric({k: v[lo:hi] for k, v in m.items()})\n\n\ndef concat",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_timeout_safety.py",
+        "start": 24,
+        "end": 36,
+        "startLoc": {
+          "line": 24,
+          "column": 2,
+          "position": 118
+        },
+        "endLoc": {
+          "line": 36,
+          "column": 7,
+          "position": 208
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 43,
+        "end": 55,
+        "startLoc": {
+          "line": 43,
+          "column": 2,
+          "position": 216
+        },
+        "endLoc": {
+          "line": 55,
+          "column": 15,
+          "position": 306
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 12,
+      "fragment": "\n\nfrom metric_io import read_metric, Metric, OUTCOMES\n\n# Windows 콘솔(cp949)에서 em-dash·한글 출력 시 UnicodeEncodeError 방지 — UTF-8 강제\ntry:\n    sys.stdout.reconfigure(encoding=\"utf-8\")\n    sys.stderr.reconfigure(encoding=\"utf-8\")\nexcept Exception:\n    pass\n\nTAIL_FRAC",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_run.py",
+        "start": 19,
+        "end": 30,
+        "startLoc": {
+          "line": 19,
+          "column": 5,
+          "position": 17
+        },
+        "endLoc": {
+          "line": 30,
+          "column": 10,
+          "position": 72
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 18,
+        "end": 29,
+        "startLoc": {
+          "line": 18,
+          "column": 4,
+          "position": 9
+        },
+        "endLoc": {
+          "line": 29,
+          "column": 8,
+          "position": 64
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 20,
+      "fragment": "\n\n\ndef nrows(m):\n    return len(m[\"outcome\"]) if \"outcome\" in m else 0\n\n\ndef sub(m, lo, hi):\n    \"\"\"행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric.\"\"\"\n    return Metric({k: v[lo:hi] for k, v in m.items()})\n\n\ndef outcome_counts(m):\n    c = {k: 0 for k in OUTCOMES}\n    for o in m[\"outcome\"].tolist():\n        c[o] = c.get(o, 0) + 1\n    return c\n\n\ndef pct",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_run.py",
+        "start": 48,
+        "end": 67,
+        "startLoc": {
+          "line": 48,
+          "column": 5,
+          "position": 243
+        },
+        "endLoc": {
+          "line": 67,
+          "column": 4,
+          "position": 407
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 43,
+        "end": 62,
+        "startLoc": {
+          "line": 43,
+          "column": 2,
+          "position": 216
+        },
+        "endLoc": {
+          "line": 62,
+          "column": 12,
+          "position": 380
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": " = []\n    for i in range(NCHUNK):\n        lo = i * csz\n        hi = (i + 1) * csz if i < NCHUNK - 1 else n\n        ch = sub(m, lo, hi)\n        mm",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_run.py",
+        "start": 109,
+        "end": 114,
+        "startLoc": {
+          "line": 109,
+          "column": 7,
+          "position": 976
+        },
+        "endLoc": {
+          "line": 114,
+          "column": 3,
+          "position": 1056
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 87,
+        "end": 98,
+        "startLoc": {
+          "line": 87,
+          "column": 11,
+          "position": 681
+        },
+        "endLoc": {
+          "line": 98,
+          "column": 5,
+          "position": 822
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 11,
+      "fragment": "\n\n# Windows 콘솔(cp949)에서 em-dash·한글 출력 시 UnicodeEncodeError 방지 — UTF-8 강제\ntry:\n    sys.stdout.reconfigure(encoding=\"utf-8\")\n    sys.stderr.reconfigure(encoding=\"utf-8\")\nexcept Exception:\n    pass\n\nRUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), \"..\", \"..\", \"..\", \"run_logs\"))\nRUNS",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_circling_safety.py",
+        "start": 23,
+        "end": 33,
+        "startLoc": {
+          "line": 23,
+          "column": 7,
+          "position": 30
+        },
+        "endLoc": {
+          "line": 33,
+          "column": 5,
+          "position": 116
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 20,
+        "end": 30,
+        "startLoc": {
+          "line": 20,
+          "column": 9,
+          "position": 24
+        },
+        "endLoc": {
+          "line": 30,
+          "column": 6,
+          "position": 110
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": ")\n\n\ndef nrows(m):\n    return len(m[\"outcome\"]) if \"outcome\" in m else 0\n\n\ndef sub(m, lo, hi):\n    \"\"\"행 구간 [lo:hi) — 열이름 그대로 유지한 부분 Metric.\"\"\"\n    return Metric({k: v[lo:hi] for k, v in m.items()})\n\n\ndef select",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_circling_safety.py",
+        "start": 38,
+        "end": 50,
+        "startLoc": {
+          "line": 38,
+          "column": 16,
+          "position": 175
+        },
+        "endLoc": {
+          "line": 50,
+          "column": 7,
+          "position": 266
+        }
+      },
+      "secondFile": {
+        "name": "Python/convergence_gate.py",
+        "start": 43,
+        "end": 55,
+        "startLoc": {
+          "line": 43,
+          "column": 5,
+          "position": 215
+        },
+        "endLoc": {
+          "line": 55,
+          "column": 15,
+          "position": 306
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": ")\n\n\ndef select(m, mask):\n    return Metric({k: v[mask] for k, v in m.items()})\n\n\ndef concat",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_circling_safety.py",
+        "start": 47,
+        "end": 54,
+        "startLoc": {
+          "line": 47,
+          "column": 2,
+          "position": 260
+        },
+        "endLoc": {
+          "line": 54,
+          "column": 7,
+          "position": 310
+        }
+      },
+      "secondFile": {
+        "name": "Python/analyze_timeout_safety.py",
+        "start": 51,
+        "end": 58,
+        "startLoc": {
+          "line": 51,
+          "column": 2,
+          "position": 419
+        },
+        "endLoc": {
+          "line": 58,
+          "column": 5,
+          "position": 469
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 13,
+      "fragment": "] for k, v in m.items()})\n\n\ndef concat(ms):\n    \"\"\"여러 Metric 을 행 방향으로 합침(공통 열만 — 세대가 다른 파일 pooled 허용).\"\"\"\n    ms = [m for m in ms if m is not None and nrows(m)]\n    if not ms:\n        return Metric()\n    keys = set(ms[0]).intersection(*ms[1:])\n    return Metric({k: np.concatenate([m[k] for m in ms]) for k in keys})\n\n\ndef load_window(path",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/analyze_circling_safety.py",
+        "start": 51,
+        "end": 63,
+        "startLoc": {
+          "line": 51,
+          "column": 5,
+          "position": 287
+        },
+        "endLoc": {
+          "line": 63,
+          "column": 5,
+          "position": 436
+        }
+      },
+      "secondFile": {
+        "name": "Python/analyze_timeout_safety.py",
+        "start": 33,
+        "end": 45,
+        "startLoc": {
+          "line": 33,
+          "column": 3,
+          "position": 185
+        },
+        "endLoc": {
+          "line": 45,
+          "column": 3,
+          "position": 334
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "\n    cfg, networks = _reload(use_comm=True, use_attention=use_attention, use_moe=use_moe)\n    pol = _build_policy(cfg, networks)\n    sc = _make_scene(cfg)\n\n    x = torch.as_tensor(sc['states'], dtype=torch.float32, device=DEV).unsqueeze(0)\n",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 181,
+        "end": 187,
+        "startLoc": {
+          "line": 181,
+          "column": 75,
+          "position": 2269
+        },
+        "endLoc": {
+          "line": 187,
+          "column": 1,
+          "position": 2350
+        }
+      },
+      "secondFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 139,
+        "end": 144,
+        "startLoc": {
+          "line": 139,
+          "column": 78,
+          "position": 1566
+        },
+        "endLoc": {
+          "line": 144,
+          "column": 9,
+          "position": 1647
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": ")\n    sc = _make_scene(cfg)\n    x = torch.as_tensor(sc['states'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    goal = torch.as_tensor(sc['goals'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    self_s = torch.as_tensor(sc['selfs'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    with torch.no_grad():\n        value_r",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 251,
+        "end": 257,
+        "startLoc": {
+          "line": 251,
+          "column": 4,
+          "position": 3374
+        },
+        "endLoc": {
+          "line": 257,
+          "column": 8,
+          "position": 3493
+        }
+      },
+      "secondFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 227,
+        "end": 233,
+        "startLoc": {
+          "line": 227,
+          "column": 9,
+          "position": 3069
+        },
+        "endLoc": {
+          "line": 233,
+          "column": 4,
+          "position": 3188
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "\n    with torch.no_grad():\n        value_r, action, logprob_r, mean, msg, others_msg, action_raw = pol.forward(\n            x, goal, self_s, return_msg=True,\n            comm_partners=sc['comm_partners'], agent_id_list=sc['agent_id_list'],\n            comm_relpos=sc['comm_relpos'], return_raw",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 255,
+        "end": 260,
+        "startLoc": {
+          "line": 255,
+          "column": 2,
+          "position": 3481
+        },
+        "endLoc": {
+          "line": 260,
+          "column": 11,
+          "position": 3561
+        }
+      },
+      "secondFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 190,
+        "end": 195,
+        "startLoc": {
+          "line": 190,
+          "column": 1,
+          "position": 2455
+        },
+        "endLoc": {
+          "line": 195,
+          "column": 10,
+          "position": 2535
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "\n    px = torch.as_tensor(sc['p_states'], dtype=torch.float32, device=DEV)\n    pg = torch.as_tensor(sc['p_goals'], dtype=torch.float32, device=DEV)\n    ps = torch.as_tensor(sc['p_selfs'], dtype=torch.float32, device=DEV)\n    pm = torch.as_tensor(sc['p_mask'], dtype=torch.float32, device=DEV).unsqueeze(-1)\n    prp = torch.as_tensor(sc['p_relpos'], dtype=torch.float32, device=DEV)\n    with",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 262,
+        "end": 268,
+        "startLoc": {
+          "line": 262,
+          "column": 2,
+          "position": 3641
+        },
+        "endLoc": {
+          "line": 268,
+          "column": 5,
+          "position": 3784
+        }
+      },
+      "secondFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 204,
+        "end": 210,
+        "startLoc": {
+          "line": 204,
+          "column": 1,
+          "position": 2662
+        },
+        "endLoc": {
+          "line": 210,
+          "column": 5,
+          "position": 2805
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "\n    sc = _make_scene(cfg)\n    x = torch.as_tensor(sc['states'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    goal = torch.as_tensor(sc['goals'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    self_s = torch.as_tensor(sc['selfs'], dtype=torch.float32, device=DEV).unsqueeze(0)\n    from",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 313,
+        "end": 318,
+        "startLoc": {
+          "line": 313,
+          "column": 29,
+          "position": 4509
+        },
+        "endLoc": {
+          "line": 318,
+          "column": 5,
+          "position": 4617
+        }
+      },
+      "secondFile": {
+        "name": "Python/_verify_ppo_mirror.py",
+        "start": 227,
+        "end": 189,
+        "startLoc": {
+          "line": 227,
+          "column": 2,
+          "position": 3070
+        },
+        "endLoc": {
+          "line": 189,
+          "column": 4,
+          "position": 2416
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 6,
+      "fragment": "():\r\n    res = {}\r\n    for moe in (False, True):\r\n        cfg, nn_ = _reload(use_moe=moe)\r\n        pol = _policy(cfg, nn_)\r\n        sc",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 155,
+        "end": 160,
+        "startLoc": {
+          "line": 155,
+          "column": 13,
+          "position": 2057
+        },
+        "endLoc": {
+          "line": 160,
+          "column": 3,
+          "position": 2118
+        }
+      },
+      "secondFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 137,
+        "end": 142,
+        "startLoc": {
+          "line": 137,
+          "column": 15,
+          "position": 1765
+        },
+        "endLoc": {
+          "line": 142,
+          "column": 4,
+          "position": 1826
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 7,
+      "fragment": "\r\n    cfg, nn_ = _reload(use_comm=True, use_attention=use_attention, use_moe=use_moe)\r\n    pol = _policy(cfg, nn_)\r\n    sc = _make_scene(cfg)\r\n    x, goal, self_s = _tens(sc)\r\n    sit = torch.as_tensor(sc['situations'], dtype=torch.long).unsqueeze(0) if use_moe else None\r\n    ",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 212,
+        "end": 218,
+        "startLoc": {
+          "line": 212,
+          "column": 65,
+          "position": 3098
+        },
+        "endLoc": {
+          "line": 218,
+          "column": 5,
+          "position": 3204
+        }
+      },
+      "secondFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 178,
+        "end": 184,
+        "startLoc": {
+          "line": 178,
+          "column": 2,
+          "position": 2444
+        },
+        "endLoc": {
+          "line": 184,
+          "column": 2,
+          "position": 2550
+        }
+      }
+    },
+    {
+      "format": "python",
+      "lines": 8,
+      "fragment": "\r\n    px = torch.as_tensor(sc['p_states'], dtype=torch.float32)\r\n    pg = torch.as_tensor(sc['p_goals'], dtype=torch.float32)\r\n    ps = torch.as_tensor(sc['p_selfs'], dtype=torch.float32)\r\n    pm = torch.as_tensor(sc['p_mask'], dtype=torch.float32).unsqueeze(-1)\r\n    prp = torch.as_tensor(sc['p_relpos'], dtype=torch.float32)\r\n    p_sits = torch.as_tensor(sc['p_sits'], dtype=torch.long) if use_moe else None\r\n    ",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 221,
+        "end": 228,
+        "startLoc": {
+          "line": 221,
+          "column": 2,
+          "position": 3278
+        },
+        "endLoc": {
+          "line": 228,
+          "column": 5,
+          "position": 3432
+        }
+      },
+      "secondFile": {
+        "name": "Python/_smoke_fullmoe.py",
+        "start": 193,
+        "end": 200,
+        "startLoc": {
+          "line": 193,
+          "column": 5,
+          "position": 2750
+        },
+        "endLoc": {
+          "line": 200,
+          "column": 2,
+          "position": 2904
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 10,
+      "fragment": "(\r\n        Vector3 myPosition, Vector3 myVelocity,\r\n        Vector3 otherPosition, Vector3 otherVelocity)\r\n    {\r\n        Vector3 relativePosition = otherPosition - myPosition;\r\n        Vector3 relativeVelocity = otherVelocity - myVelocity;\r\n\r\n        float relativeSpeed = relativeVelocity.magnitude;\r\n\r\n        // 상대 속도가 0이면 현재 거리가 DCPA",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 378,
+        "end": 387,
+        "startLoc": {
+          "line": 378,
+          "column": 14,
+          "position": 3002
+        },
+        "endLoc": {
+          "line": 387,
+          "column": 26,
+          "position": 3081
+        }
+      },
+      "secondFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 343,
+        "end": 352,
+        "startLoc": {
+          "line": 343,
+          "column": 17,
+          "position": 2730
+        },
+        "endLoc": {
+          "line": 352,
+          "column": 50,
+          "position": 2809
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 8,
+      "fragment": "(\r\n        Vector3 myPosition, Vector3 myForward, float mySpeed,\r\n        Vector3 otherPosition, Vector3 otherForward, float otherSpeed)\r\n    {\r\n        Vector3 toOther = otherPosition - myPosition;\r\n        float distance = toOther.magnitude;\r\n\r\n        if",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 400,
+        "end": 407,
+        "startLoc": {
+          "line": 400,
+          "column": 27,
+          "position": 3197
+        },
+        "endLoc": {
+          "line": 407,
+          "column": 3,
+          "position": 3269
+        }
+      },
+      "secondFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 39,
+        "end": 46,
+        "startLoc": {
+          "line": 39,
+          "column": 17,
+          "position": 340
+        },
+        "endLoc": {
+          "line": 46,
+          "column": 16,
+          "position": 412
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 7,
+      "fragment": ";\r\n\r\n        Vector3 myVelocity = myForward.normalized * mySpeed;\r\n        Vector3 otherVelocity = otherForward.normalized * otherSpeed;\r\n\r\n        float rawTCPA = CalculateRawTCPA(myPosition, myVelocity, otherPosition, otherVelocity);\r\n        if (rawTCPA < 0f) return 0f",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 457,
+        "end": 463,
+        "startLoc": {
+          "line": 457,
+          "column": 3,
+          "position": 3837
+        },
+        "endLoc": {
+          "line": 463,
+          "column": 3,
+          "position": 3914
+        }
+      },
+      "secondFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 407,
+        "end": 413,
+        "startLoc": {
+          "line": 407,
+          "column": 2,
+          "position": 3289
+        },
+        "endLoc": {
+          "line": 413,
+          "column": 2,
+          "position": 3366
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 6,
+      "fragment": "\r\n\r\n        float tcpa = Mathf.Max(0f, rawTCPA);\r\n        float dcpa = CalculateDCPA(myPosition, myVelocity, otherPosition, otherVelocity);\r\n\r\n        float distanceRisk = 1.0f - Mathf",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 463,
+        "end": 468,
+        "startLoc": {
+          "line": 463,
+          "column": 17,
+          "position": 3918
+        },
+        "endLoc": {
+          "line": 468,
+          "column": 6,
+          "position": 3977
+        }
+      },
+      "secondFile": {
+        "name": "Navigation/COLREGsHandler.cs",
+        "start": 413,
+        "end": 418,
+        "startLoc": {
+          "line": 413,
+          "column": 2,
+          "position": 3375
+        },
+        "endLoc": {
+          "line": 418,
+          "column": 2,
+          "position": 3434
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 11,
+      "fragment": "\r\n        vessels.Clear();\r\n        vesselAgents.Clear();\r\n        usedSpawnIndices.Clear();\r\n        vesselGoals.Clear();\r\n        vesselSpawnIndices.Clear();\r\n\r\n        if (spawnPoints.Count == 0)\r\n        {\r\n            Debug.LogWarning(\"[VesselManager] No spawn points configured!\");\r\n            return",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 221,
+        "end": 231,
+        "startLoc": {
+          "line": 221,
+          "column": 1,
+          "position": 2053
+        },
+        "endLoc": {
+          "line": 231,
+          "column": 7,
+          "position": 2131
+        }
+      },
+      "secondFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 166,
+        "end": 176,
+        "startLoc": {
+          "line": 166,
+          "column": 2,
+          "position": 1602
+        },
+        "endLoc": {
+          "line": 176,
+          "column": 6,
+          "position": 1680
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 7,
+      "fragment": ";\r\n            string sName = spawnPoint.name;\r\n            for (int i = 0; i < availableGoals.Count; i++)\r\n            {\r\n                Transform p = availableGoals[i];\r\n                if (p == spawnPoint || p.name == sName) continue;\r\n                float d = Vector3.Distance(spawnPoint",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 445,
+        "end": 451,
+        "startLoc": {
+          "line": 445,
+          "column": 3,
+          "position": 4116
+        },
+        "endLoc": {
+          "line": 451,
+          "column": 11,
+          "position": 4213
+        }
+      },
+      "secondFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 430,
+        "end": 436,
+        "startLoc": {
+          "line": 430,
+          "column": 9,
+          "position": 3921
+        },
+        "endLoc": {
+          "line": 436,
+          "column": 9,
+          "position": 4018
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 9,
+      "fragment": "\r\n\r\n        Transform spawnPoint = spawnPoints[spawnIndex];\r\n        SpawnZone zone = spawnPoint.GetComponent<SpawnZone>();\r\n\r\n        Vector3 spawnPos;\r\n        if (zone != null)\r\n        {\r\n            // Zone 모드: 재사용 버퍼 (1000대 respawn 시 GC spike 제거)",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 612,
+        "end": 620,
+        "startLoc": {
+          "line": 612,
+          "column": 2,
+          "position": 5689
+        },
+        "endLoc": {
+          "line": 620,
+          "column": 49,
+          "position": 5751
+        }
+      },
+      "secondFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 283,
+        "end": 291,
+        "startLoc": {
+          "line": 283,
+          "column": 2,
+          "position": 2570
+        },
+        "endLoc": {
+          "line": 291,
+          "column": 61,
+          "position": 2632
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 19,
+      "fragment": ";\r\n            }\r\n        }\r\n        else\r\n        {\r\n            // 점 모드: ring scale 적용(기본 1.0=원좌표) → NavMesh 스냅\r\n            Vector3 basePos = ApplyRingScale(spawnPoint.position);\r\n            if (useNavMeshPathfinding && TrySnapToNavMesh(basePos, out spawnPos))\r\n            {\r\n                // NavMesh 스냅 성공\r\n            }\r\n            else\r\n            {\r\n                spawnPos = basePos;\r\n            }\r\n            usedSpawnIndices.Add(spawnIndex);\r\n        }\r\n\r\n        vesselSpawnIndices",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 631,
+        "end": 649,
+        "startLoc": {
+          "line": 631,
+          "column": 9,
+          "position": 5890
+        },
+        "endLoc": {
+          "line": 649,
+          "column": 19,
+          "position": 5999
+        }
+      },
+      "secondFile": {
+        "name": "Management/VesselManager.cs",
+        "start": 303,
+        "end": 321,
+        "startLoc": {
+          "line": 303,
+          "column": 5,
+          "position": 2759
+        },
+        "endLoc": {
+          "line": 321,
+          "column": 41,
+          "position": 2868
+        }
+      }
+    },
+    {
+      "format": "csharp",
+      "lines": 6,
+      "fragment": "; i++)\r\n        {\r\n            if (rayHitFlags[i] && radarHits[i].distance < minDist)\r\n                minDist = radarHits[i].distance;\r\n        }\r\n        return",
+      "tokens": 0,
+      "firstFile": {
+        "name": "Agent/VesselRadar.cs",
+        "start": 112,
+        "end": 117,
+        "startLoc": {
+          "line": 112,
+          "column": 9,
+          "position": 950
+        },
+        "endLoc": {
+          "line": 117,
+          "column": 7,
+          "position": 1004
+        }
+      },
+      "secondFile": {
+        "name": "Agent/VesselRadar.cs",
+        "start": 106,
+        "end": 111,
+        "startLoc": {
+          "line": 106,
+          "column": 9,
+          "position": 871
+        },
+        "endLoc": {
+          "line": 111,
+          "column": 52,
+          "position": 925
+        }
+      }
+    }
+  ]
+}

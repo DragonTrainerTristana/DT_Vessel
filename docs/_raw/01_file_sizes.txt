@@ -1,0 +1,263 @@
+# 01. 파일별 규모 (라인 수)
+# 도구: cloc 2.11.0 (npx 일회성 실행, 전역 설치 없음)
+# 제외: docs/ .git/ .claude/ *.meta
+# 생성: 2026-09-14T05:36:14Z   root=/Users/seunghyun/Dropbox/Private_Paper_Project/0702_NewVessel/Assets/Scripts
+# 주의: Python/_archive/2026-09 (구버전 사본 60개) 포함 — 경로로 식별할 것
+
+==============================================================================
+## A. 언어별 합계
+==============================================================================
+github.com/AlDanial/cloc v 1.96  T=0.34 s (644.2 files/s, 155243.5 lines/s)
+-------------------------------------------------------------------------------
+Language                     files          blank        comment           code
+-------------------------------------------------------------------------------
+Python                         111           4227           4712          23192
+JSON                            14              0              0           8069
+Markdown                        17            847              0           2705
+CSV                             17              0              0           2434
+C#                              10            485            655           2355
+Text                            31             19              0            792
+HTML                             1            100              9            582
+PowerShell                      10             63            251            428
+Bourne Shell                     4             48            118            347
+TeX                              1             13              0             42
+DOS Batch                        1              6              5             18
+INI                              1              0              0             11
+-------------------------------------------------------------------------------
+SUM:                           218           5808           5750          40975
+-------------------------------------------------------------------------------
+
+==============================================================================
+## B. 디렉터리별 롤업 (code 내림차순)
+==============================================================================
+      code    comment      blank   files  디렉터리
+     40975       5808          0     218  (root)
+
+==============================================================================
+## C. 파일별 상세 (cloc --by-file, code 내림차순)
+==============================================================================
+github.com/AlDanial/cloc v 1.96  T=0.35 s (623.3 files/s, 150199.0 lines/s)
+--------------------------------------------------------------------------------------------------------------
+File                                                                       blank        comment           code
+--------------------------------------------------------------------------------------------------------------
+./Python/_archive/2026-09/test.py                                            385            229           1743
+./Python/_archive/2026-09/plot_analysis.py                                   178            134           1136
+./Python/worldmap_geometry.json                                                0              0           1068
+./Python/golden/2026-09-10_default_ON.win32.json                               0              0            963
+./Python/golden/2026-09-10_default_ON.json                                     0              0            851
+./Python/networks.py                                                         145            427            832
+./Python/main.py                                                             133            130            808
+./Python/golden/2026-09-10_default_OFF.win32.json                              0              0            793
+./Agent/VesselAgent.cs                                                       144            264            744
+./Python/vessel_gym_train.py                                                  72            291            720
+./Python/golden/2026-09-10_default_OFF.json                                    0              0            715
+./Python/_repro_out/STATUS.md                                                100              0            690
+./Python/golden/2026-09-10_batch_2026_09_04_ON.win32.json                      0              0            683
+./Python/vessel_gym.py                                                        74            317            682
+./Python/golden/2026-09-10_batch_shared_actor_ON.win32.json                    0              0            643
+./Python/_archive/2026-09/gen_5graphs_final.py                               152            121            631
+./Python/_archive/2026-09/analyze_efficiency.py                              132            133            609
+./Python/_archive/2026-09/plot_comparison.py                                 116             78            604
+./Python/golden/2026-09-10_batch_shared_all_ON.win32.json                      0              0            603
+./Python/golden/2026-09-10_batch_2026_09_04_ON.json                            0              0            602
+./Python/golden/2026-09-10_batch_shared_actor_ON.json                          0              0            588
+./Python/relu_explain.html                                                   100              9            582
+./Python/_archive/2026-09/plot_narrow_analysis.py                             90             74            581
+./Python/golden/2026-09-10_batch_shared_all_ON.json                            0              0            556
+./Management/VesselManager.cs                                                 96             99            548
+./Python/_archive/2026-09/plot_trajectory_analysis.py                        132             64            509
+./Python/eval_ckpt.py                                                         29            144            506
+./Python/_archive/2026-09/plot_all_figures.py                                148            113            504
+./개발 로그/0114.md                                       203              0            503
+./Python/_archive/2026-09/gen_mixed_graphs.py                                115            122            497
+./Python/eval_astar_global.py                                                 64             83            476
+./Python/_archive/2026-09/analyze_mixed.py                                   110            132            418
+./Python/_verify_ppo_mirror.py                                                53             61            334
+./Python/ckpt_io.py                                                           42             84            326
+./Navigation/COLREGsHandler.cs                                                71             96            308
+./Python/_smoke_fullmoe.py                                                    54             31            296
+./Python/_archive/2026-09/plot_new_performance.py                             58             26            289
+./Python/eval_mixed.py                                                        31             39            280
+./Python/_archive/2026-09/plot_detailed_performance.py                        63             31            273
+./README.md                                                                  102              0            265
+./Python/_repro_out/off_s43.csv                                                0              0            246
+./Python/_repro_out/off_s44.csv                                                0              0            246
+./Python/_repro_out/off_s45.csv                                                0              0            246
+./Python/_repro_out/on6_s43.csv                                                0              0            246
+./Python/_repro_out/on6_s44.csv                                                0              0            246
+./Python/_repro_out/on6_s45.csv                                                0              0            246
+./Python/_repro_out_canary/on6cn_s43.csv                                       0              0            246
+./Python/_repro_out_canary/on6cn_s43_aux.csv                                   0              0            246
+./Python/_archive/2026-09/plot_trajectory_clean.py                            58             29            229
+./Python/_archive/2026-09/plot_phase23.py                                     39             30            225
+./Navigation/VesselAutoPilot.cs                                               62             41            223
+./Python/_archive/2026-09/gen_5graphs_v2.py                                   23             14            223
+./Python/config.py                                                            43            256            223
+./Python/_archive/2026-09/plot_mixed_trend.py                                 52             44            219
+./Python/plotting/make_reward_folder.py                                       24             15            211
+./Python/plotting/RUNS.md                                                     82              0            207
+./Python/run_repro.sh                                                         15             64            205
+./개발 로그/0122.md                                        66              0            201
+./Python/_archive/2026-09/plot_latentNEW_compare.py                           34             31            199
+./Python/_archive/2026-09/plot_performance.py                                 43             26            199
+./Python/_archive/2026-09/plot_fig7_phase23.py                                23             28            192
+./Python/analyze_run.py                                                       37             19            192
+./Python/astar_fig9/make_fig9_paper.py                                        22             14            191
+./Python/plotting/plot_all_curves.py                                          14             21            191
+./Python/memory.py                                                            23             35            190
+./Python/_archive/2026-09/analyze_existing_time_fuel.py                       48             35            185
+./Python/astar_fig9/route_astar_real.py                                       31             10            185
+./Python/diag_ckpt.py                                                         25             31            185
+./Python/_archive/2026-09/plot_fuzzy_compliance.py                            40             24            184
+./Python/plotting/build_final.py                                              22             16            177
+./Python/plotting/STATUS.md                                                   82              0            176
+./Python/_archive/2026-09/plot_sum4_vs_nn1_v2.py                              34             28            171
+./Python/plotting/make_ablation_rewards.py                                    23             20            170
+./Python/test_golden.py                                                       40             42            166
+./Python/_archive/2026-09/mock_longhaul_estimate.py                           36             24            164
+./Python/test_vessel_gym_fidelity.py                                          19             31            161
+./Python/_archive/2026-09/analyze_longhaul.py                                 44             27            160
+./Python/_archive/2026-09/plot_pkg_commcompare.py                             38             30            159
+./Python/_archive/2026-09/plot_pkg_commcompare_dens.py                        38             30            159
+./Python/_archive/2026-09/plot_training_curve.py                              48             39            152
+./Python/_archive/2026-09/plot_aggregation_diagnostics.py                     28             18            148
+./Python/plotting/plot_task_return.py                                         16             14            147
+./Python/worldmap_extract.py                                                  24             11            146
+./Python/_archive/2026-09/plot_colregs_vs_comm.py                             38             26            144
+./Python/_archive/2026-09/plot_overall_compliance_avg.py                      20             12            144
+./Python/_archive/2026-09/plot_comm_aggregation_compare.py                    27             22            141
+./Python/_archive/2026-09/plot_aggregation_efficiency.py                      25             21            139
+./Python/plotting/write_fig_code.py                                           74            105            136
+./Python/radar_fidelity_compare.py                                            21             28            136
+./Python/_archive/2026-09/eval_slew_exp.py                                    17             12            135
+./Python/measure_regimes.py                                                   27             31            133
+./Python/_archive/2026-09/_density_regime_check.py                            21             24            130
+./Python/COLLAPSE_ROOTCAUSE.md                                                53              0            129
+./Agent/VesselDynamics.cs                                                     27             25            122
+./Python/unity_fidelity_compare.py                                            18             20            118
+./Python/_archive/2026-09/plot_sum4_vs_nn1.py                                 23              9            116
+./Python/astar_fig9/make_fig9_from_eval.py                                    23             19            116
+./Python/plotting/make_mixed_fleet.py                                         25             22            115
+./Python/EXPERIMENT_STATUS.md                                                 29              0            114
+./Python/_archive/2026-09/plot_5metrics_commcompare.py                        26             18            114
+./Agent/VesselRadar.cs                                                        25             31            113
+./Python/_archive/2026-09/plot_aggregation_full.py                            14             14            112
+./Python/_repro_out/on6_s43_aux.csv                                            0              0            108
+./Python/_repro_out/on6_s44_aux.csv                                            0              0            108
+./Python/_repro_out/on6_s45_aux.csv                                            0              0            108
+./Python/corridor_run.py                                                      18             16            103
+./Python/_verify_comm_mirror.py                                               15             24            102
+./Python/plotting/plot_nqi.py                                                  9             11            102
+./Python/EVAL_ASTAR_README.md                                                 36              0             97
+./GlobalScale.cs                                                              22             54             96
+./Python/_archive/2026-09/_diag_msg_channel.py                                18             16             92
+./Python/_archive/2026-09/_smoke_c5c.py                                       10             17             90
+./Python/SIM2SIM_HANDOFF.md                                                   24              0             89
+./Python/convergence_gate.py                                                  24             21             88
+./Python/_archive/2026-09/plot_aggregation_corrected.py                       13             14             84
+./Python/analyze_circling_safety.py                                           24             19             83
+./Python/_archive/2026-09/plot_aggregation_open_ocean.py                      12              9             82
+./Python/plotting/plot_moe_axis.py                                            11             10             82
+./WINDOWS_RUN.md                                                              26              0             80
+./Python/_archive/2026-09/_diag_msg_ablate.py                                 13             12             77
+./Python/export_onnx.py                                                       18              6             75
+./Python/test_ckpt_compat.py                                                  15             14             75
+./Python/_archive/2026-09/_losL1_analysis.py                                   9              5             73
+./Python/_archive/2026-09/_mt10_analysis.py                                    9              5             73
+./Python/run_sweep_commgate.ps1                                                8             39             72
+./Python/_archive/2026-09/_smoke_unfreeze.py                                  11              6             71
+./Management/SpawnZone.cs                                                     12             17             70
+./Python/plotting/plot_h1_paired.py                                            8              7             70
+./Python/plotting/plot_h2_dimension.py                                        11             11             70
+./Navigation/WaypointPathFinder.cs                                            16             18             68
+./Python/_archive/2026-09/plot_outcomes.py                                     7              8             65
+./Python/compose_voyage.py                                                    16             25             65
+./Python/metric_io.py                                                         15             24             65
+./Python/launch_latentNEW.sh                                                  13             26             64
+./CameraController.cs                                                         10             10             63
+./Python/analyze_timeout_safety.py                                            21             13             62
+./Python/_archive/2026-09/diag_timeout.py                                      9              7             61
+./Python/_archive/2026-09/_smooth_colregs_0613.py                             10              4             58
+./Python/_archive/2026-09/_smooth_mt10.py                                     10              4             58
+./Python/run_sweep_msgdim.ps1                                                  7             23             57
+./Python/_archive/2026-09/_analyze_h2.py                                       4              5             56
+./Python/_archive/2026-09/_smoke_telemetry.py                                  7              4             53
+./Python/run_eval_gt.ps1                                                       4             10             53
+./Python/_archive/2026-09/_threat_mt10.py                                      9              3             52
+./Python/run_sweep_c5c.ps1                                                    10             47             52
+./Python/_archive/2026-09/_midcheck_0613.py                                    7              1             50
+./Python/_repro_out_canary/on6cn_s43_comm.csv                                  0              0             50
+./Python/_archive/2026-09/_rc2_probe_ckpt.py                                   6              5             49
+./Python/_repro_out/_verify_ppo.txt                                            7              0             49
+./Python/frame_stack.py                                                       19             53             47
+./Python/plotting/paper_style.py                                              10              8             47
+./Python/_repro_out/_fidelity.txt                                              7              0             46
+./Python/launch_sweep_fromscratch.sh                                          10             19             46
+./Python/plotting/README.md                                                   20              0             46
+./Python/_archive/2026-09/_plot_h2_reward.py                                   5              4             45
+./Python/run_sweep_moe.ps1                                                    10             26             45
+./Python/_archive/2026-09/_convergence_point_0613.py                           6              6             44
+./Python/functions.py                                                         15             29             44
+./Python/_archive/2026-09/README.md                                            9              0             43
+./Python/_archive/2026-09/plot_reward_curves.py                                4              3             43
+./Python/something.md                                                          6              0             43
+./Python/colregs_compliance_metric.tex                                        13              0             42
+./Python/run_experiment.ps1                                                    6             16             42
+./Python/_archive/2026-09/plot_reward.py                                       6              3             40
+./Python/run_sweep_attention.ps1                                               7             27             40
+./Python/_archive/2026-09/_probe_0602_gatefix.py                               4              1             39
+./Python/analyze_trajectory.py                                                 8              7             39
+./Python/_archive/2026-09/plot_reward_norm.py                                  3              1             35
+./Python/inspect_channel_freeze.py                                             2              4             35
+./Python/run_sweep_rushfix.ps1                                                 5             29             34
+./Python/plotting/regenerate_all.py                                            3              6             32
+./Python/run_aggregation_diagnostics.sh                                       10              9             32
+./Python/_repro_out/diag_eval/eval_on6_s43.step9M.txt                          0              0             30
+./Python/_repro_out/diag_eval/eval_on6_s44.step9M.txt                          0              0             30
+./Python/_repro_out/diag_eval/eval_on6_s45.step9M.txt                          0              0             30
+./Python/_repro_out/_verify_comm.txt                                           0              0             29
+./Python/_repro_out/diag_eval/eval_off_s43.step15M.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_off_s43.step9M.txt                          0              0             29
+./Python/_repro_out/diag_eval/eval_off_s44.step15M.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_off_s44.step9M.txt                          0              0             29
+./Python/_repro_out/diag_eval/eval_off_s45.step15M.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_off_s45.step9M.txt                          0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s43.msgzero.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s43.step15M.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s44.msgzero.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s44.step15M.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s45.msgzero.txt                         0              0             29
+./Python/_repro_out/diag_eval/eval_on6_s45.step15M.txt                         0              0             29
+./Python/_repro_out/eval_off_s43.txt                                           0              0             29
+./Python/_repro_out/eval_off_s44.txt                                           0              0             29
+./Python/_repro_out/eval_off_s45.txt                                           0              0             29
+./Python/_repro_out/eval_on6_s43.txt                                           0              0             29
+./Python/_repro_out/eval_on6_s44.txt                                           0              0             29
+./Python/_repro_out/eval_on6_s45.txt                                           0              0             29
+./Python/run_sweep.ps1                                                         3             14             25
+./Python/_repro_out/on6_s43_comm.csv                                           0              0             23
+./Python/_repro_out/on6_s44_comm.csv                                           0              0             23
+./Python/_repro_out/on6_s45_comm.csv                                           0              0             23
+./Python/example_message_logs.csv                                              0              0             22
+./Python/obs_utils.py                                                          7             17             22
+./Python/install_mlagents.bat                                                  6              5             18
+./requirements.txt                                                             5              0             15
+./Python/_repro_out/diag_eval/_status.txt                                      0              0             13
+./Python/_repro_out/_golden.txt                                                0              0             11
+./pytest.ini                                                                   0              0             11
+./개발 로그/1230.md                                         4              0             10
+./Python/astar_fig9/paper_style.py                                             2              5              8
+./Python/launch_editor_dim6.ps1                                                3             20              8
+./개발 로그/0330.md                                         4              0              7
+./Python/_repro_out/_status_eval.txt                                           0              0              6
+./Python/_repro_out/_status_train.txt                                          0              0              6
+./Python/astar_fig9/README.md                                                  1              0              5
+./Python/_repro_out/diag_eval/_status_msgzero.txt                              0              0              4
+./Python/channel_A4.jsonl                                                      0              0              2
+./Python/_repro_out/off_s45_aux.csv                                            0              0              1
+./Python/_repro_out_canary/_status_train.txt                                   0              0              1
+./Python/astar_fig9/data/coast_ea.json                                         0              0              1
+./Python/astar_fig9/data/route_astar.json                                      0              0              1
+--------------------------------------------------------------------------------------------------------------
+SUM:                                                                        5808           5750          40975
+--------------------------------------------------------------------------------------------------------------

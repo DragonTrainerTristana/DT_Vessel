@@ -1,0 +1,454 @@
+# 03. 중복 코드 블록
+# 도구: jscpd 4.0.5 (npx 일회성). --min-lines 5 --min-tokens 50 --mode strict
+# 포맷: python, csharp, bash, markdown, powershell
+# 제외: _archive/ __pycache__/ _repro_out*/ docs/ logs/ models/ checkpoints/ trajectory_data/ golden/ *.meta
+#  └ _archive/2026-09 는 현행 파일의 구버전 사본이라 제외함(포함 시 중복률이 의미 없이 부풀음)
+# 원시 JSON: docs/_raw/03_duplicate_code.json
+# 생성: 2026-09-14T05:36:41Z   root=/Users/seunghyun/Dropbox/Private_Paper_Project/0702_NewVessel/Assets/Scripts
+
+==============================================================================
+## A. 포맷별 요약
+format         files     lines    tokens    clones    dup_lines
+python            47      9450    117385        58       502 (5.31%)
+markdown          22      3229     38926         1       200 (6.19%)
+powershell        10       742      5830         1         6 (0.81%)
+bash               4       513      3095         0         0 (0.00%)
+csharp             9      2342     21076         9        74 (3.16%)
+TOTAL             92     16276    186312        69       782 (4.80%)
+
+## B. 클론 블록 — 라인 수 내림차순 (전체 69건)
+ lines  tokens  위치 A  <->  위치 B
+   201       0  개발 로그/0114.md:5-205  <->  개발 로그/0114.md:3-11
+    27       0  Python/plotting/plot_h2_dimension.py:8-34  <->  Python/plotting/plot_task_return.py:6-33
+    21       0  Python/plotting/plot_h1_paired.py:6-26  <->  Python/plotting/plot_nqi.py:7-27
+    21       0  Python/plotting/make_reward_folder.py:8-28  <->  Python/plotting/plot_task_return.py:6-26
+    20       0  Python/analyze_run.py:48-67  <->  Python/convergence_gate.py:43-62
+    19       0  Management/VesselManager.cs:631-649  <->  Management/VesselManager.cs:303-321
+    18       0  Python/plotting/plot_moe_axis.py:15-32  <->  Python/plotting/plot_nqi.py:9-26
+    13       0  Python/plotting/plot_moe_axis.py:7-19  <->  Python/plotting/plot_task_return.py:6-18
+    13       0  Python/plotting/plot_all_curves.py:10-22  <->  Python/plotting/plot_task_return.py:14-26
+    13       0  Python/plotting/make_ablation_rewards.py:55-67  <->  Python/plotting/make_reward_folder.py:64-76
+    13       0  Python/eval_astar_global.py:36-48  <->  Python/measure_regimes.py:29-41
+    13       0  Python/eval_astar_global.py:434-446  <->  Python/eval_ckpt.py:87-99
+    13       0  Python/analyze_timeout_safety.py:24-36  <->  Python/convergence_gate.py:43-55
+    13       0  Python/analyze_circling_safety.py:38-50  <->  Python/convergence_gate.py:43-55
+    13       0  Python/analyze_circling_safety.py:51-63  <->  Python/analyze_timeout_safety.py:33-45
+    12       0  Python/plotting/plot_nqi.py:12-23  <->  Python/plotting/plot_task_return.py:18-29
+    12       0  Python/analyze_run.py:19-30  <->  Python/convergence_gate.py:18-29
+    11       0  Python/eval_astar_global.py:534-544  <->  Python/eval_ckpt.py:346-355
+    11       0  Python/analyze_circling_safety.py:23-33  <->  Python/convergence_gate.py:20-30
+    11       0  Management/VesselManager.cs:221-231  <->  Management/VesselManager.cs:166-176
+    10       0  Python/diag_ckpt.py:94-103  <->  Python/measure_regimes.py:77-141
+    10       0  Python/analyze_trajectory.py:9-18  <->  Python/convergence_gate.py:27-35
+    10       0  Navigation/COLREGsHandler.cs:378-387  <->  Navigation/COLREGsHandler.cs:343-352
+     9       0  Python/plotting/plot_h2_dimension.py:42-50  <->  Python/plotting/plot_nqi.py:36-44
+     9       0  Python/plotting/plot_h1_paired.py:37-45  <->  Python/plotting/plot_moe_axis.py:47-55
+     9       0  Python/plotting/make_reward_folder.py:114-122  <->  Python/plotting/plot_moe_axis.py:43-118
+     9       0  Python/plotting/build_final.py:75-83  <->  Python/plotting/plot_nqi.py:36-44
+     9       0  Python/eval_astar_global.py:446-454  <->  Python/eval_mixed.py:145-109
+     9       0  Python/corridor_run.py:85-93  <->  Python/measure_regimes.py:69-77
+     9       0  Python/analyze_trajectory.py:16-24  <->  Python/convergence_gate.py:47-55
+     9       0  Management/VesselManager.cs:612-620  <->  Management/VesselManager.cs:283-291
+     8       0  Python/plotting/make_ablation_rewards.py:84-91  <->  Python/plotting/make_reward_folder.py:90-97
+     8       0  Python/plotting/build_final.py:158-165  <->  Python/plotting/build_final.py:71-78
+     8       0  Python/eval_mixed.py:132-139  <->  Python/measure_regimes.py:77-84
+     8       0  Python/eval_ckpt.py:101-108  <->  Python/eval_mixed.py:145-152
+     8       0  Python/eval_astar_global.py:401-408  <->  Python/measure_regimes.py:56-63
+     8       0  Python/corridor_run.py:93-100  <->  Python/measure_regimes.py:77-84
+     8       0  Python/analyze_circling_safety.py:47-54  <->  Python/analyze_timeout_safety.py:51-58
+     8       0  Python/_smoke_fullmoe.py:221-228  <->  Python/_smoke_fullmoe.py:193-200
+     8       0  Navigation/COLREGsHandler.cs:400-407  <->  Navigation/COLREGsHandler.cs:39-46
+     7       0  Python/plotting/plot_h1_paired.py:43-49  <->  Python/plotting/plot_h2_dimension.py:51-57
+     7       0  Python/plotting/plot_all_curves.py:110-116  <->  Python/plotting/plot_moe_axis.py:43-49
+     7       0  Python/plotting/make_ablation_rewards.py:23-29  <->  Python/plotting/plot_task_return.py:19-25
+     7       0  Python/plotting/make_ablation_rewards.py:67-73  <->  Python/plotting/make_reward_folder.py:76-82
+     7       0  Python/run_sweep.ps1:8-14  <->  Python/run_sweep_rushfix.ps1:22-28
+     7       0  Python/radar_fidelity_compare.py:59-65  <->  Python/unity_fidelity_compare.py:83-89
+     7       0  Python/eval_mixed.py:117-123  <->  Python/measure_regimes.py:64-70
+     7       0  Python/eval_astar_global.py:99-105  <->  Python/astar_fig9/route_astar_real.py:83-89
+     7       0  Python/eval_astar_global.py:559-565  <->  Python/eval_ckpt.py:468-474
+     7       0  Python/_verify_ppo_mirror.py:181-187  <->  Python/_verify_ppo_mirror.py:139-144
+     7       0  Python/_verify_ppo_mirror.py:251-257  <->  Python/_verify_ppo_mirror.py:227-233
+     7       0  Python/_verify_ppo_mirror.py:262-268  <->  Python/_verify_ppo_mirror.py:204-210
+     7       0  Python/_smoke_fullmoe.py:212-218  <->  Python/_smoke_fullmoe.py:178-184
+     7       0  Navigation/COLREGsHandler.cs:457-463  <->  Navigation/COLREGsHandler.cs:407-413
+     7       0  Management/VesselManager.cs:445-451  <->  Management/VesselManager.cs:430-436
+     6       0  Python/plotting/plot_all_curves.py:116-121  <->  Python/plotting/plot_h2_dimension.py:48-53
+     6       0  Python/plotting/make_reward_folder.py:68-73  <->  Python/plotting/plot_task_return.py:58-63
+     6       0  Python/worldmap_extract.py:144-149  <->  Python/worldmap_extract.py:124-129
+     6       0  Python/eval_mixed.py:173-178  <->  Python/measure_regimes.py:114-120
+     6       0  Python/eval_mixed.py:262-267  <->  Python/eval_mixed.py:175-179
+     6       0  Python/eval_ckpt.py:480-485  <->  Python/eval_mixed.py:256-261
+     6       0  Python/eval_astar_global.py:489-494  <->  Python/eval_mixed.py:151-156
+     6       0  Python/eval_astar_global.py:529-534  <->  Python/eval_mixed.py:198-203
+     6       0  Python/analyze_run.py:109-114  <->  Python/convergence_gate.py:87-98
+     6       0  Python/_verify_ppo_mirror.py:255-260  <->  Python/_verify_ppo_mirror.py:190-195
+     6       0  Python/_verify_ppo_mirror.py:313-318  <->  Python/_verify_ppo_mirror.py:227-189
+     6       0  Python/_smoke_fullmoe.py:155-160  <->  Python/_smoke_fullmoe.py:137-142
+     6       0  Navigation/COLREGsHandler.cs:463-468  <->  Navigation/COLREGsHandler.cs:413-418
+     6       0  Agent/VesselRadar.cs:112-117  <->  Agent/VesselRadar.cs:106-111
+
+## C. 파일별 중복 관여 횟수 (자기 자신 내부 중복 포함)
+   10  Python/eval_mixed.py
+   10  Python/_verify_ppo_mirror.py
+    9  Python/eval_astar_global.py
+    8  Python/measure_regimes.py
+    8  Python/convergence_gate.py
+    8  Navigation/COLREGsHandler.cs
+    8  Management/VesselManager.cs
+    7  Python/plotting/plot_task_return.py
+    6  Python/plotting/make_reward_folder.py
+    6  Python/_smoke_fullmoe.py
+    5  Python/plotting/plot_nqi.py
+    5  Python/plotting/plot_moe_axis.py
+    5  Python/eval_ckpt.py
+    4  Python/plotting/plot_h2_dimension.py
+    4  Python/plotting/make_ablation_rewards.py
+    4  Python/analyze_circling_safety.py
+    3  Python/plotting/plot_h1_paired.py
+    3  Python/plotting/plot_all_curves.py
+    3  Python/plotting/build_final.py
+    3  Python/analyze_timeout_safety.py
+    3  Python/analyze_run.py
+    2  개발 로그/0114.md
+    2  Python/worldmap_extract.py
+    2  Python/corridor_run.py
+    2  Python/analyze_trajectory.py
+    2  Agent/VesselRadar.cs
+    1  Python/run_sweep.ps1
+    1  Python/run_sweep_rushfix.ps1
+    1  Python/radar_fidelity_compare.py
+    1  Python/unity_fidelity_compare.py
+    1  Python/astar_fig9/route_astar_real.py
+    1  Python/diag_ckpt.py
+
+## D. 파일쌍별 중복 (교차 파일만, 라인 합 내림차순)
+   38라인   3블록  Python/analyze_run.py <-> Python/convergence_gate.py
+   31라인   3블록  Python/eval_astar_global.py <-> Python/eval_ckpt.py
+   28라인   3블록  Python/plotting/make_ablation_rewards.py <-> Python/plotting/make_reward_folder.py
+   27라인   1블록  Python/plotting/plot_h2_dimension.py <-> Python/plotting/plot_task_return.py
+   27라인   2블록  Python/plotting/make_reward_folder.py <-> Python/plotting/plot_task_return.py
+   24라인   2블록  Python/analyze_circling_safety.py <-> Python/convergence_gate.py
+   21라인   1블록  Python/plotting/plot_h1_paired.py <-> Python/plotting/plot_nqi.py
+   21라인   3블록  Python/eval_mixed.py <-> Python/measure_regimes.py
+   21라인   2블록  Python/eval_astar_global.py <-> Python/measure_regimes.py
+   21라인   3블록  Python/eval_astar_global.py <-> Python/eval_mixed.py
+   21라인   2블록  Python/analyze_circling_safety.py <-> Python/analyze_timeout_safety.py
+   19라인   2블록  Python/analyze_trajectory.py <-> Python/convergence_gate.py
+   18라인   1블록  Python/plotting/plot_moe_axis.py <-> Python/plotting/plot_nqi.py
+   17라인   2블록  Python/corridor_run.py <-> Python/measure_regimes.py
+   14라인   2블록  Python/eval_ckpt.py <-> Python/eval_mixed.py
+   13라인   1블록  Python/plotting/plot_moe_axis.py <-> Python/plotting/plot_task_return.py
+   13라인   1블록  Python/plotting/plot_all_curves.py <-> Python/plotting/plot_task_return.py
+   13라인   1블록  Python/analyze_timeout_safety.py <-> Python/convergence_gate.py
+   12라인   1블록  Python/plotting/plot_nqi.py <-> Python/plotting/plot_task_return.py
+   10라인   1블록  Python/diag_ckpt.py <-> Python/measure_regimes.py
+    9라인   1블록  Python/plotting/plot_h2_dimension.py <-> Python/plotting/plot_nqi.py
+    9라인   1블록  Python/plotting/plot_h1_paired.py <-> Python/plotting/plot_moe_axis.py
+    9라인   1블록  Python/plotting/make_reward_folder.py <-> Python/plotting/plot_moe_axis.py
+    9라인   1블록  Python/plotting/build_final.py <-> Python/plotting/plot_nqi.py
+    7라인   1블록  Python/plotting/plot_h1_paired.py <-> Python/plotting/plot_h2_dimension.py
+    7라인   1블록  Python/plotting/plot_all_curves.py <-> Python/plotting/plot_moe_axis.py
+    7라인   1블록  Python/plotting/make_ablation_rewards.py <-> Python/plotting/plot_task_return.py
+    7라인   1블록  Python/run_sweep.ps1 <-> Python/run_sweep_rushfix.ps1
+    7라인   1블록  Python/radar_fidelity_compare.py <-> Python/unity_fidelity_compare.py
+    7라인   1블록  Python/astar_fig9/route_astar_real.py <-> Python/eval_astar_global.py
+    6라인   1블록  Python/plotting/plot_all_curves.py <-> Python/plotting/plot_h2_dimension.py
+
+==============================================================================
+## E. jscpd 원본 콘솔 출력 (클론별 상세, ANSI 제거)
+==============================================================================
+Clone found (python):
+ - Python/plotting/plot_nqi.py [12:4 - 23:4] (11 lines, 137 tokens)
+   Python/plotting/plot_task_return.py [18:3 - 29:5]
+
+Clone found (python):
+ - Python/plotting/plot_moe_axis.py [7:4 - 19:7] (12 lines, 111 tokens)
+   Python/plotting/plot_task_return.py [6:4 - 18:5]
+
+Clone found (python):
+ - Python/plotting/plot_moe_axis.py [15:4 - 32:2] (17 lines, 184 tokens)
+   Python/plotting/plot_nqi.py [9:3 - 26:6]
+
+Clone found (python):
+ - Python/plotting/plot_h2_dimension.py [8:4 - 34:5] (26 lines, 271 tokens)
+   Python/plotting/plot_task_return.py [6:4 - 33:5]
+
+Clone found (python):
+ - Python/plotting/plot_h2_dimension.py [42:2 - 50:2] (8 lines, 78 tokens)
+   Python/plotting/plot_nqi.py [36:48 - 44:2]
+
+Clone found (python):
+ - Python/plotting/plot_h1_paired.py [6:4 - 26:7] (20 lines, 216 tokens)
+   Python/plotting/plot_nqi.py [7:4 - 27:5]
+
+Clone found (python):
+ - Python/plotting/plot_h1_paired.py [37:2 - 45:8] (8 lines, 191 tokens)
+   Python/plotting/plot_moe_axis.py [47:2 - 55:7]
+
+Clone found (python):
+ - Python/plotting/plot_h1_paired.py [43:3 - 49:8] (6 lines, 60 tokens)
+   Python/plotting/plot_h2_dimension.py [51:2 - 57:2]
+
+Clone found (python):
+ - Python/plotting/plot_all_curves.py [10:3 - 22:12] (12 lines, 144 tokens)
+   Python/plotting/plot_task_return.py [14:4 - 26:10]
+
+Clone found (python):
+ - Python/plotting/plot_all_curves.py [110:11 - 116:6] (6 lines, 83 tokens)
+   Python/plotting/plot_moe_axis.py [43:5 - 49:4]
+
+Clone found (python):
+ - Python/plotting/plot_all_curves.py [116:6 - 121:4] (5 lines, 99 tokens)
+   Python/plotting/plot_h2_dimension.py [48:4 - 53:8]
+
+Clone found (python):
+ - Python/plotting/make_reward_folder.py [8:4 - 28:12] (20 lines, 229 tokens)
+   Python/plotting/plot_task_return.py [6:4 - 26:10]
+
+Clone found (python):
+ - Python/plotting/make_reward_folder.py [68:2 - 73:2] (5 lines, 60 tokens)
+   Python/plotting/plot_task_return.py [58:2 - 63:4]
+
+Clone found (python):
+ - Python/plotting/make_reward_folder.py [114:6 - 122:2] (8 lines, 99 tokens)
+   Python/plotting/plot_moe_axis.py [43:5 - 118:2]
+
+Clone found (python):
+ - Python/plotting/make_ablation_rewards.py [23:2 - 29:2] (6 lines, 75 tokens)
+   Python/plotting/plot_task_return.py [19:3 - 25:3]
+
+Clone found (python):
+ - Python/plotting/make_ablation_rewards.py [55:2 - 67:2] (12 lines, 178 tokens)
+   Python/plotting/make_reward_folder.py [64:42 - 76:2]
+
+Clone found (python):
+ - Python/plotting/make_ablation_rewards.py [67:2 - 73:2] (6 lines, 123 tokens)
+   Python/plotting/make_reward_folder.py [76:4 - 82:6]
+
+Clone found (python):
+ - Python/plotting/make_ablation_rewards.py [84:5 - 91:3] (7 lines, 163 tokens)
+   Python/plotting/make_reward_folder.py [90:7 - 97:2]
+
+Clone found (python):
+ - Python/plotting/build_final.py [75:2 - 83:2] (8 lines, 79 tokens)
+   Python/plotting/plot_nqi.py [36:48 - 44:2]
+
+Clone found (python):
+ - Python/plotting/build_final.py [158:5 - 165:5] (7 lines, 57 tokens)
+   Python/plotting/build_final.py [71:5 - 78:5]
+
+Clone found (markdown):
+ - 개발 로그/0114.md [5:7 - 205:14] (200 lines, 2279 tokens)
+   개발 로그/0114.md [3:9 - 11:24]
+
+Clone found (python):
+ - Python/worldmap_extract.py [144:2 - 149:4] (5 lines, 53 tokens)
+   Python/worldmap_extract.py [124:5 - 129:3]
+
+Clone found (powershell):
+ - Python/run_sweep.ps1 [8:3 - 14:17] (6 lines, 62 tokens)
+   Python/run_sweep_rushfix.ps1 [22:3 - 28:37]
+
+Clone found (python):
+ - Python/radar_fidelity_compare.py [59:18 - 65:5] (6 lines, 68 tokens)
+   Python/unity_fidelity_compare.py [83:2 - 89:6]
+
+Clone found (python):
+ - Python/eval_mixed.py [117:5 - 123:94] (6 lines, 99 tokens)
+   Python/measure_regimes.py [64:5 - 70:109]
+
+Clone found (python):
+ - Python/eval_mixed.py [132:13 - 139:4] (7 lines, 58 tokens)
+   Python/measure_regimes.py [77:7 - 84:4]
+
+Clone found (python):
+ - Python/eval_mixed.py [173:7 - 178:9] (5 lines, 77 tokens)
+   Python/measure_regimes.py [114:7 - 120:1]
+
+Clone found (python):
+ - Python/eval_mixed.py [262:10 - 267:1] (5 lines, 52 tokens)
+   Python/eval_mixed.py [175:2 - 179:9]
+
+Clone found (python):
+ - Python/eval_ckpt.py [101:4 - 108:4] (7 lines, 65 tokens)
+   Python/eval_mixed.py [145:1 - 152:8]
+
+Clone found (python):
+ - Python/eval_ckpt.py [480:2 - 485:10] (5 lines, 97 tokens)
+   Python/eval_mixed.py [256:24 - 261:11]
+
+Clone found (python):
+ - Python/eval_astar_global.py [36:5 - 48:71] (12 lines, 58 tokens)
+   Python/measure_regimes.py [29:5 - 41:4]
+
+Clone found (python):
+ - Python/eval_astar_global.py [99:5 - 105:5] (6 lines, 100 tokens)
+   Python/astar_fig9/route_astar_real.py [83:2 - 89:3]
+
+Clone found (python):
+ - Python/eval_astar_global.py [401:16 - 408:9] (7 lines, 84 tokens)
+   Python/measure_regimes.py [56:33 - 63:7]
+
+Clone found (python):
+ - Python/eval_astar_global.py [434:2 - 446:3] (12 lines, 150 tokens)
+   Python/eval_ckpt.py [87:30 - 99:7]
+
+Clone found (python):
+ - Python/eval_astar_global.py [446:2 - 454:2] (8 lines, 73 tokens)
+   Python/eval_mixed.py [145:1 - 109:55]
+
+Clone found (python):
+ - Python/eval_astar_global.py [489:35 - 494:10] (5 lines, 87 tokens)
+   Python/eval_mixed.py [151:1 - 156:11]
+
+Clone found (python):
+ - Python/eval_astar_global.py [529:7 - 534:6] (5 lines, 126 tokens)
+   Python/eval_mixed.py [198:7 - 203:4]
+
+Clone found (python):
+ - Python/eval_astar_global.py [534:2 - 544:1] (10 lines, 157 tokens)
+   Python/eval_ckpt.py [346:9 - 355:9]
+
+Clone found (python):
+ - Python/eval_astar_global.py [559:17 - 565:9] (6 lines, 140 tokens)
+   Python/eval_ckpt.py [468:2 - 474:4]
+
+Clone found (python):
+ - Python/diag_ckpt.py [94:32 - 103:3] (9 lines, 86 tokens)
+   Python/measure_regimes.py [77:7 - 141:3]
+
+Clone found (python):
+ - Python/corridor_run.py [85:5 - 93:17] (8 lines, 64 tokens)
+   Python/measure_regimes.py [69:4 - 77:20]
+
+Clone found (python):
+ - Python/corridor_run.py [93:17 - 100:66] (7 lines, 61 tokens)
+   Python/measure_regimes.py [77:20 - 84:4]
+
+Clone found (python):
+ - Python/analyze_trajectory.py [9:9 - 18:1] (9 lines, 100 tokens)
+   Python/convergence_gate.py [27:5 - 35:10]
+
+Clone found (python):
+ - Python/analyze_trajectory.py [16:2 - 24:5] (8 lines, 57 tokens)
+   Python/convergence_gate.py [47:2 - 55:15]
+
+Clone found (python):
+ - Python/analyze_timeout_safety.py [24:2 - 36:7] (12 lines, 90 tokens)
+   Python/convergence_gate.py [43:2 - 55:15]
+
+Clone found (python):
+ - Python/analyze_run.py [19:5 - 30:10] (11 lines, 55 tokens)
+   Python/convergence_gate.py [18:4 - 29:8]
+
+Clone found (python):
+ - Python/analyze_run.py [48:5 - 67:4] (19 lines, 164 tokens)
+   Python/convergence_gate.py [43:2 - 62:12]
+
+Clone found (python):
+ - Python/analyze_run.py [109:7 - 114:3] (5 lines, 80 tokens)
+   Python/convergence_gate.py [87:11 - 98:5]
+
+Clone found (python):
+ - Python/analyze_circling_safety.py [23:7 - 33:5] (10 lines, 86 tokens)
+   Python/convergence_gate.py [20:9 - 30:6]
+
+Clone found (python):
+ - Python/analyze_circling_safety.py [38:16 - 50:7] (12 lines, 91 tokens)
+   Python/convergence_gate.py [43:5 - 55:15]
+
+Clone found (python):
+ - Python/analyze_circling_safety.py [47:2 - 54:7] (7 lines, 50 tokens)
+   Python/analyze_timeout_safety.py [51:2 - 58:5]
+
+Clone found (python):
+ - Python/analyze_circling_safety.py [51:5 - 63:5] (12 lines, 149 tokens)
+   Python/analyze_timeout_safety.py [33:3 - 45:3]
+
+Clone found (python):
+ - Python/_verify_ppo_mirror.py [181:75 - 187:1] (6 lines, 81 tokens)
+   Python/_verify_ppo_mirror.py [139:78 - 144:9]
+
+Clone found (python):
+ - Python/_verify_ppo_mirror.py [251:4 - 257:8] (6 lines, 119 tokens)
+   Python/_verify_ppo_mirror.py [227:9 - 233:4]
+
+Clone found (python):
+ - Python/_verify_ppo_mirror.py [255:2 - 260:11] (5 lines, 80 tokens)
+   Python/_verify_ppo_mirror.py [190:1 - 195:10]
+
+Clone found (python):
+ - Python/_verify_ppo_mirror.py [262:2 - 268:5] (6 lines, 143 tokens)
+   Python/_verify_ppo_mirror.py [204:1 - 210:5]
+
+Clone found (python):
+ - Python/_verify_ppo_mirror.py [313:29 - 318:5] (5 lines, 108 tokens)
+   Python/_verify_ppo_mirror.py [227:2 - 189:4]
+
+Clone found (python):
+ - Python/_smoke_fullmoe.py [155:13 - 160:3] (5 lines, 61 tokens)
+   Python/_smoke_fullmoe.py [137:15 - 142:4]
+
+Clone found (python):
+ - Python/_smoke_fullmoe.py [212:65 - 218:5] (6 lines, 106 tokens)
+   Python/_smoke_fullmoe.py [178:2 - 184:2]
+
+Clone found (python):
+ - Python/_smoke_fullmoe.py [221:2 - 228:5] (7 lines, 154 tokens)
+   Python/_smoke_fullmoe.py [193:5 - 200:2]
+
+Clone found (csharp):
+ - Navigation/COLREGsHandler.cs [378:14 - 387:26] (9 lines, 79 tokens)
+   Navigation/COLREGsHandler.cs [343:17 - 352:50]
+
+Clone found (csharp):
+ - Navigation/COLREGsHandler.cs [400:27 - 407:3] (7 lines, 72 tokens)
+   Navigation/COLREGsHandler.cs [39:17 - 46:16]
+
+Clone found (csharp):
+ - Navigation/COLREGsHandler.cs [457:3 - 463:3] (6 lines, 77 tokens)
+   Navigation/COLREGsHandler.cs [407:2 - 413:2]
+
+Clone found (csharp):
+ - Navigation/COLREGsHandler.cs [463:17 - 468:6] (5 lines, 59 tokens)
+   Navigation/COLREGsHandler.cs [413:2 - 418:2]
+
+Clone found (csharp):
+ - Management/VesselManager.cs [221:1 - 231:7] (10 lines, 78 tokens)
+   Management/VesselManager.cs [166:2 - 176:6]
+
+Clone found (csharp):
+ - Management/VesselManager.cs [445:3 - 451:11] (6 lines, 97 tokens)
+   Management/VesselManager.cs [430:9 - 436:9]
+
+Clone found (csharp):
+ - Management/VesselManager.cs [612:2 - 620:49] (8 lines, 62 tokens)
+   Management/VesselManager.cs [283:2 - 291:61]
+
+Clone found (csharp):
+ - Management/VesselManager.cs [631:9 - 649:19] (18 lines, 109 tokens)
+   Management/VesselManager.cs [303:5 - 321:41]
+
+Clone found (csharp):
+ - Agent/VesselRadar.cs [112:9 - 117:7] (5 lines, 54 tokens)
+   Agent/VesselRadar.cs [106:9 - 111:52]
+
+┌────────────┬────────────────┬─────────────┬──────────────┬──────────────┬──────────────────┬───────────────────┐
+│ Format     │ Files analyzed │ Total lines │ Total tokens │ Clones found │ Duplicated lines │ Duplicated tokens │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ python     │ 47             │ 9450        │ 117385       │ 58           │ 502 (5.31%)      │ 6166 (5.25%)      │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ markdown   │ 22             │ 3229        │ 38926        │ 1            │ 200 (6.19%)      │ 2279 (5.85%)      │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ powershell │ 10             │ 742         │ 5830         │ 1            │ 6 (0.81%)        │ 62 (1.06%)        │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ bash       │ 4              │ 513         │ 3095         │ 0            │ 0 (0%)           │ 0 (0%)            │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ csharp     │ 9              │ 2342        │ 21076        │ 9            │ 74 (3.16%)       │ 687 (3.26%)       │
+├────────────┼────────────────┼─────────────┼──────────────┼──────────────┼──────────────────┼───────────────────┤
+│ Total:     │ 92             │ 16276       │ 186312       │ 69           │ 782 (4.8%)       │ 9194 (4.93%)      │
+└────────────┴────────────────┴─────────────┴──────────────┴──────────────┴──────────────────┴───────────────────┘
+Found 69 clones.
+JSON report saved to docs/_raw/.jscpd/jscpd-report.json
+Detection time:: 1.717s
