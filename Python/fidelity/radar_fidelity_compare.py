@@ -23,6 +23,10 @@ radar_fidelity_compare.py — Unity obs[0:360] vs vessel_gym 레이더 3종 분�
 실행: python radar_fidelity_compare.py   (PYTHONUTF8=1 권장)
 """
 import os
+# fidelity/ 로 내려온 뒤에도 Python/ 루트의 vessel_gym 을 찾으려면 sys.path 에 넣어야 함
+# (__init__.py 없음, PLAN.md 5단계 — unity-island 1단계와 동일 패턴).
+import sys
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import json
 import numpy as np
 import torch
@@ -165,7 +169,7 @@ def compare_scenario(name, snaps, acx, acz, sample_every=1):
 
 if __name__ == '__main__':
     os.environ.setdefault('VESSEL_ENV_PATH',
-                          os.path.abspath(os.path.join(_here, '..', '..', '..', 'Build', '0703', 'Vessel_MLAgent.exe')))
+                          os.path.abspath(os.path.join(_here, '..', '..', '..', '..', 'Build', '0703', 'Vessel_MLAgent.exe')))
     acx, acz, src = arena_center()
     print("=== Unity vs vessel_gym 레이더 3종 대조 ===")
     print(f"arena center = ({acx:.2f}, {acz:.2f})  [{src}]")

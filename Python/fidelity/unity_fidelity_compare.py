@@ -13,6 +13,10 @@ unity_fidelity_compare.py — vessel_gym vs Unity 궤적 대조 (Windows 전용,
   python unity_fidelity_compare.py
 """
 import os
+# fidelity/ 로 내려온 뒤에도 Python/ 루트의 vessel_gym 을 찾으려면 sys.path 에 넣어야 함
+# (__init__.py 없음, PLAN.md 5단계 — unity-island 1단계와 동일 패턴).
+import sys
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import numpy as np
 import torch
 import vessel_gym as vg
@@ -141,7 +145,7 @@ if __name__ == '__main__':
     # 미설정 시 기본값 (문서 §3.1 결정성 확보 조건)
     _here = os.path.dirname(os.path.abspath(__file__))
     os.environ.setdefault('VESSEL_ENV_PATH',
-                          os.path.abspath(os.path.join(_here, '..', '..', '..', 'Build', '0703', 'Vessel_MLAgent.exe')))
+                          os.path.abspath(os.path.join(_here, '..', '..', '..', '..', 'Build', '0703', 'Vessel_MLAgent.exe')))
     os.environ.setdefault('VESSEL_SPEED_MULT_MIN', '1.0')
     os.environ.setdefault('VESSEL_SPEED_MULT_MAX', '1.0')
     os.environ.setdefault('VESSEL_USE_COMM', '0')
