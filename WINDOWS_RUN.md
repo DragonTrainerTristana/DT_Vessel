@@ -59,8 +59,8 @@ tensorboard --logdir <models 경로>
 ## 4. 판정 (다음 날 아침)
 
 ```powershell
-python Python\analyze_run.py "results\<폴더>"
-python Python\convergence_gate.py results\...gate1_OFF_s42\metric.csv results\...gate1_OFF_s43\metric.csv ...
+python Python\analysis\analyze_run.py "results\<폴더>"
+python Python\analysis\convergence_gate.py results\...gate1_OFF_s42\metric.csv results\...gate1_OFF_s43\metric.csv ...
 ```
 
 - 판정은 **수렴 꼬리(마지막 30%)만**, seed-paired 비교. 중간 구간 성적으로 결정 금지

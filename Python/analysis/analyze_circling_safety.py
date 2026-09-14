@@ -29,7 +29,8 @@ try:
 except Exception:
     pass
 
-RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
+# 2026-09-14 analysis/ 격리로 Python/ 루트에서 한 단계 내려옴 — repo 루트까지 .. 하나 추가(PLAN.md 4단계 [MOVE-RISK]).
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "run_logs"))
 RUNS = {
     "OFF": ["base_off_mt.csv", "off_s43_mt.csv", "off_s44_mt.csv"],
     "ON":  ["on_s42_mt.csv", "on_s43_mt.csv", "on_s44_mt.csv"],

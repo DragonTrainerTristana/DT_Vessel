@@ -8,7 +8,8 @@ import os
 
 from metric_io import read_metric, Metric, OUTCOMES
 
-RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "run_logs"))
+# 2026-09-14 analysis/ 격리로 Python/ 루트에서 한 단계 내려옴 — repo 루트까지 .. 하나 추가(PLAN.md 4단계 [MOVE-RISK]).
+RUN_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "run_logs"))
 FILES = {
     "OFF_s42": "base_off_mt.csv", "OFF_s43": "off_s43_mt.csv", "OFF_s44": "off_s44_mt.csv",
     "ON_s42": "on_s42_mt.csv", "ON_s43": "on_s43_mt.csv", "ON_s44": "on_s44_mt.csv",
