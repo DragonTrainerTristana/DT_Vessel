@@ -164,6 +164,7 @@ smoke 는 preflight 를 포함하므로 **드리프트 검사 + 미러 2종 + �
 - `config.py:29` PROJECT_ROOT = `../../..`. config 가 한 칸이라도 내려가면 `models/` `trajectory_data/` `figures/` 경로가 전부 어긋남 → 이동 금지 근거.
 - [CYCLE] `ckpt_io.py:145,183` ↔ `vessel_gym_train.py:676` 지연 import. 둘 다 루트 유지라 이번엔 안 터지지만, 어느 한쪽만 옮기면 지연 import 가 새 경로를 못 찾음.
 - 드리프트 검사 = 31/31 전부 대조(2026-09-14 확장, 확장 시점 PASS). 이전엔 15/31 만 봐서 나머지 16개가 어긋나도 못 잡았으나 지금은 해소됨.
+- [DUP] `Python/smoke_mac.sh`(2026-09-14 신규)의 `common_env()` 가 `run_repro.sh:70-102` 를 그대로 복사한 사본임. bash 3.2(macOS 기본)에서 `source <(...)` 로 함수를 재사용하는 방식이 정의를 조용히 누락시켜(실측) 어쩔 수 없이 복사함 — 지금은 두 파일 모두 손대는 사람이 smoke_mac.sh 헤더의 diff 커맨드로 직접 동기화를 확인해야 함. **shared 를 손댈 때 이 복사를 해소할 후보**(예: 진짜 공용 소스로 뽑아내거나 다른 재사용 방식을 다시 찾는 것).
 
 **2. unity-island → _archive**
 - `main.py:20` `from config import *` 와일드카드 — 이름 출처 추적 불가. 격리 자체는 안전하나, **Unity 경로가 CLAUDE.md 상 ground-truth 판정관**이라 되돌릴 수 있게 `_archive` 안에 README(사유·복구법)를 남길 것(export_onnx/worldmap 선례와 동일).

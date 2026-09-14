@@ -3,6 +3,11 @@ import os
 os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF',
                        'max_split_size_mb:128,expandable_segments:True')
 
+# 2026-09-14 unity-island 격리로 Python/ 루트에서 두 단계 내려옴 — config/networks 를
+# 찾으려면 Python/ 을 sys.path 에 넣어야 함(__init__.py 없음, PLAN.md 1단계).
+import sys
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
+
 import random
 import torch
 import numpy as np
