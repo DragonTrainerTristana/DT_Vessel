@@ -109,7 +109,10 @@ import os, json, subprocess, sys
 env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
 code = "import json, config as c; print(json.dumps({k: str(getattr(c, k)) for k in %r}))"
 names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARED_ENCODER','RADAR_ACT','RADAR_HEAD',
-         'MSG_TOKEN_GAIN','CLIP_PER_MODULE','MSG_L2_COEF','COMM_RANGE','MSG_LN','POS_GROUND','MOE_WIDTH','USE_MOE']
+         'MSG_TOKEN_GAIN','CLIP_PER_MODULE','MSG_L2_COEF','COMM_RANGE','MSG_LN','POS_GROUND','MOE_WIDTH','USE_MOE',
+         'RADAR_BOTTLENECK_CH','MAX_COMM_PARTNERS','RADAR_RANGE','COLREGS_MODE','COLREGS_SIM_COEF','INTENT_K',
+         'THREAT_COEF','GOAL_COMM_COEF','INTENT_COEF','ROLE_COMM_COEF','COMM_CONSUMER_COEF','RECON_EMA_FLOOR',
+         'AGG_MODE','MSG_GAIN','TIMEOUT_BOOTSTRAP','MSG_GATE_APPLY']
 a = json.loads(subprocess.run([sys.executable, '-c', code % names], env=env, capture_output=True, text=True).stdout.strip().splitlines()[-1])
 b = json.loads(subprocess.run([sys.executable, '-c', code % names], capture_output=True, text=True).stdout.strip().splitlines()[-1])
 bad = [k for k in names if a[k] != b[k]]
