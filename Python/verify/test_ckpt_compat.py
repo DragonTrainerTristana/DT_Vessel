@@ -28,6 +28,9 @@ warnings.filterwarnings('ignore')
 import torch  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# verify/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·ckpt_io·vessel_gym_train 을
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 8단계 — analysis/fidelity/eval 와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..")))
 GOLDEN = os.path.join(HERE, 'golden', '2026-09-10_ckpt.json')
 
 _FMT = {'torch.float32': 'f', 'torch.float64': 'd', 'torch.int64': 'q', 'torch.int32': 'i', 'torch.bool': 'B'}

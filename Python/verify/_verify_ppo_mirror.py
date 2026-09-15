@@ -16,6 +16,9 @@ config/networks를 importlib.reload로 재적재한다.)
 """
 import os
 import sys
+# verify/ 로 내려온 뒤에도 Python/ 루트의 config·networks 를 찾으려면 sys.path 에 넣어야 함
+# (__init__.py 없음, PLAN.md 8단계 — analysis/fidelity/eval 와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import importlib
 import numpy as np
 import torch

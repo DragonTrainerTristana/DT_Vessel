@@ -28,7 +28,7 @@ Windows에서 할 것: ① Unity 충실도 대조(핵심) ② GPU 100배 실측 
 
 ```powershell
 cd <Dropbox>\Private_Paper_Project\0702_NewVessel\Assets\Scripts\Python
-python test_vessel_gym_fidelity.py       # 6종 전부 PASS + GPU면 처리량에 cuda 표시
+python verify\test_vessel_gym_fidelity.py       # 6종 전부 PASS + GPU면 처리량에 cuda 표시
 ```
 Windows는 torch가 최신이라 `meshgrid` 경고가 뜰 수 있으나 무해(기본 'ij'). NaN/에러 없으면 통과.
 GPU 처리량이 [6]에 찍힘 — 1024환경에서 초당 decision × Unity(~400) 대비 배율 확인.

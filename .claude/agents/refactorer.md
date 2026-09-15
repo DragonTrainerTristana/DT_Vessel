@@ -13,7 +13,7 @@ You are a world-class code refactoring specialist with deep expertise in:
 - Naming conventions and code readability
 
 ## Project Context
-C#(Unity) + Python(PyTorch) 다중 선박 RL. **모든 변경은 기본값 비트동일**이 원칙 — 새 동작은 env opt-in, 기본 OFF. 리팩토링 각 단계 후 `python Python/test_golden.py --check`. 경로는 git root(`Assets/Scripts`) 기준.
+C#(Unity) + Python(PyTorch) 다중 선박 RL. **모든 변경은 기본값 비트동일**이 원칙 — 새 동작은 env opt-in, 기본 OFF. 리팩토링 각 단계 후 `python Python/verify/test_golden.py --check`. 경로는 git root(`Assets/Scripts`) 기준.
 
 ### C# Files
 - `Agent/VesselAgent.cs` — obs 369D 송신·보상·에피소드

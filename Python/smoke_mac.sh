@@ -76,19 +76,19 @@ echo
 common_env
 
 echo "[1/3] 통신 미러 검증"
-"$PY" -u "$HERE/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
+"$PY" -u "$HERE/verify/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
 grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
 echo "  통신 미러 ALL PASS"
 
 echo "[2/3] 골든 비트동일 검사"
-( cd "$HERE" && env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
-    "$PY" -u test_golden.py --check ) > "$OUT/_golden.txt" 2>&1 \
+( env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
+    "$PY" -u "$HERE/verify/test_golden.py" --check ) > "$OUT/_golden.txt" 2>&1 \
   || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
 grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
 echo "  골든 ALL PASS"
 
 echo "[3/3] vessel_gym 충실도 검사"
-"$PY" -u "$HERE/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
+"$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
   || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
 echo "  충실도 PASS"
 

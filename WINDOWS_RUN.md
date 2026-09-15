@@ -28,7 +28,7 @@ git log --oneline -1
 
 ```powershell
 # (1) PPO 미러 검증 (전부 PASS여야 함)
-python Python\_verify_ppo_mirror.py
+python Python\verify\_verify_ppo_mirror.py
 
 # (2) 20k 스텝 미니런 (OFF+ORACLE × seed 42 = 2런, ~15분)
 powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 1 -RunStep 20000 -Seeds 42
@@ -92,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 2
 | RuntimeError: obs 크기 ≠ 369 | 옛 빌드가 연결됨 → 1번 재빌드 |
 | "Not enough spawn points — clamping" 경고 | 씬 스폰 포인트 부족 → 씬에 추가 후 재빌드 |
 | Unity 연결 실패 / 포트 에러 | 잔여 프로세스 확인: `Get-Process Vessel_MLAgent,python` 종료 후 재시도 (commgate는 5600~5615 사용) |
-| `_verify_ppo_mirror.py` FAIL | 돌리지 말고 FAIL 항목을 기록해 둘 것 (Mac 세션에서 원인 추적) |
+| `verify\_verify_ppo_mirror.py` FAIL | 돌리지 말고 FAIL 항목을 기록해 둘 것 (Mac 세션에서 원인 추적) |
 | 학습이 비정상적으로 느림 (<10 steps/s) | attention/pos_ground 경로 문제 가능성 — comm_stats와 함께 기록 |
 
 ## 참고

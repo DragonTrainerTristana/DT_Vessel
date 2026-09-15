@@ -21,7 +21,7 @@
 주의
   - 학습기 코드는 손대지 않는다. subprocess 로 있는 그대로 돌린다.
   - OMP/MKL 스레드 1개로 고정 (부동소수 합산 순서 비결정성 차단).
-  - 골든 파일 Python/golden/*.json 은 git 추적. --regen 은 diff 로 드러난다.
+  - 골든 파일 Python/verify/golden/*.json 은 git 추적. --regen 은 diff 로 드러난다.
 """
 import argparse
 import hashlib
@@ -36,8 +36,11 @@ warnings.filterwarnings('ignore')
 import torch  # noqa: E402  (torch/numpy 경고는 위에서 차단)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# verify/ 로 내려온 뒤에도 학습기(vessel_gym_train.py)는 core-train 그룹이라 Python/ 루트에 그대로 있음
+# (PLAN.md 8단계 risk: "test_golden 이 verify/ 로 내려가면 HERE 가 학습기를 못 찾음" — PYROOT 로 분리해 해소).
+PYROOT = os.path.dirname(HERE)
 GOLDEN_DIR = os.path.join(HERE, 'golden')
-TRAIN = os.path.join(HERE, 'vessel_gym_train.py')
+TRAIN = os.path.join(PYROOT, 'vessel_gym_train.py')
 STAMP = '2026-09-10'
 
 # 2026-09-04 배치 설정(구 run_repro.sh common_env). 골든 생성 당시엔 아래 6개가 config 기본값이라 안 적었는데
@@ -92,7 +95,7 @@ def run_case(name, spec):
         save = os.path.join(td, 'g.pt')
         csv = os.path.join(td, 'g_curve.csv')
         cmd = [sys.executable, '-u', TRAIN, '--arm', spec['arm'], '--save', save, '--csv', csv] + TRAIN_ARGS
-        r = subprocess.run(cmd, env=env, cwd=HERE, capture_output=True, text=True, encoding='utf-8', errors='replace')
+        r = subprocess.run(cmd, env=env, cwd=PYROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
         if r.returncode != 0:
             raise RuntimeError(f"[{name}] 학습기 실패 rc={r.returncode}\n{r.stdout[-3000:]}\n{r.stderr[-3000:]}")
         ck = torch.load(save, map_location='cpu')
@@ -195,7 +198,7 @@ def _config_dump(extra_env):
     env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
     env.update(extra_env); env['PYTHONWARNINGS'] = 'ignore'
     code = ("import json, config as c; print(json.dumps({n: getattr(c, n) for n in %r}))" % _YUGIOH_CONSTS)
-    r = subprocess.run([sys.executable, '-c', code], env=env, cwd=HERE, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    r = subprocess.run([sys.executable, '-c', code], env=env, cwd=PYROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     assert r.returncode == 0, r.stderr[-800:]
     return json.loads(r.stdout.strip().splitlines()[-1])
 
@@ -203,7 +206,7 @@ def _config_dump(extra_env):
 def check_defaults_equal_yugioh():
     """config 기본값(env 없음) == config.YUGIOH 를 전부 export 한 것. 다르면 그 키 목록."""
     code = "import json, config as c; print(json.dumps(c.YUGIOH))"
-    r = subprocess.run([sys.executable, '-c', code], cwd=HERE, capture_output=True, text=True, encoding='utf-8', errors='replace',
+    r = subprocess.run([sys.executable, '-c', code], cwd=PYROOT, capture_output=True, text=True, encoding='utf-8', errors='replace',
                        env={**{k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}, 'PYTHONWARNINGS': 'ignore'})
     yug = json.loads(r.stdout.strip().splitlines()[-1])
     a, b = _config_dump({}), _config_dump(yug)

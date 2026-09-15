@@ -9,6 +9,11 @@ vessel_gym 충실도 테스트.
 Unity 대조(같은 action 시퀀스 궤적 비교)는 Windows에서 별도 수행 — 이 테스트 통과는 "전사·배칭이 맞다"까지.
 """
 import math
+import os
+import sys
+# verify/ 로 내려온 뒤에도 Python/ 루트의 vessel_gym 을 찾으려면 sys.path 에 넣어야 함
+# (__init__.py 없음, PLAN.md 8단계 — analysis/fidelity/eval 와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import torch
 import vessel_gym as vg
 

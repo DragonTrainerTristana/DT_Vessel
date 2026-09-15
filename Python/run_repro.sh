@@ -122,20 +122,20 @@ PYCHK
   ) || { echo "preflight 실패: common_env 와 config.py 기본값이 다름 — config.py 끝 YUGIOH 표를 볼 것"; exit 1; }
   echo "[preflight] PPO·통신 미러 검증"
   common_env
-  "$PY" -u "$HERE/_verify_ppo_mirror.py"  > "$OUT/_verify_ppo.txt"  2>&1 || { echo "  PPO 미러 FAIL — $OUT/_verify_ppo.txt 확인"; exit 1; }
-  "$PY" -u "$HERE/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
+  "$PY" -u "$HERE/verify/_verify_ppo_mirror.py"  > "$OUT/_verify_ppo.txt"  2>&1 || { echo "  PPO 미러 FAIL — $OUT/_verify_ppo.txt 확인"; exit 1; }
+  "$PY" -u "$HERE/verify/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
   grep -q "ALL PASS" "$OUT/_verify_ppo.txt"  || { echo "  PPO 미러가 ALL PASS 가 아님"; exit 1; }
   grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
   echo "  둘 다 ALL PASS"
   # ★2026-09-10: 기본값 비트동일 골든 + vessel_gym 충실도. VESSEL_SKIP_GOLDEN=1 로 건너뜀(수 분 걸림).
   if [ "${VESSEL_SKIP_GOLDEN:-0}" != "1" ]; then
     echo "[preflight] 골든 비트동일 검사"
-    ( cd "$HERE" && env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
-        "$PY" -u test_golden.py --check ) > "$OUT/_golden.txt" 2>&1 \
+    ( env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
+        "$PY" -u "$HERE/verify/test_golden.py" --check ) > "$OUT/_golden.txt" 2>&1 \
       || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
     grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
     echo "  골든 ALL PASS"
-    "$PY" -u "$HERE/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
+    "$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
       || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
     echo "  충실도 PASS"
   fi

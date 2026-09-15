@@ -31,9 +31,9 @@ C#(Unity) ↔ Python(PyTorch) 다중 선박 RL. 두 학습 경로(Unity `main.py
 ### 검증기 3종 — 학습기 코드 변경 후 반드시
 | 명령 | 검사 대상 |
 |---|---|
-| `python Python/test_golden.py --check` | `vessel_gym_train`을 고정 시드·CPU로 2 update 돌려 state_dict 텐서별 SHA256·학습곡선·cfg_snapshot·Adam 상태가 `Python/golden/*.json`과 비트동일인지. 케이스 default_ON / default_OFF / batch_2026_09_04_ON. `--regen`은 승인 후에만 |
-| `python Python/_verify_ppo_mirror.py` | Unity 경로: `networks._get_others_msg`(rollout) vs `evaluate_actions`(update)의 others_msg·logprob 정합 (attention/sum, MoE 경로) |
-| `python Python/_verify_comm_mirror.py` | GPU 경로: `vessel_gym_train.comm_gather`(rollout) vs `evaluate_actions`(update) 정합 (혼합 함대 마스크 포함) |
+| `python Python/verify/test_golden.py --check` | `vessel_gym_train`을 고정 시드·CPU로 2 update 돌려 state_dict 텐서별 SHA256·학습곡선·cfg_snapshot·Adam 상태가 `Python/verify/golden/*.json`과 비트동일인지. 케이스 default_ON / default_OFF / batch_2026_09_04_ON. `--regen`은 승인 후에만 |
+| `python Python/verify/_verify_ppo_mirror.py` | Unity 경로: `networks._get_others_msg`(rollout) vs `evaluate_actions`(update)의 others_msg·logprob 정합 (attention/sum, MoE 경로) |
+| `python Python/verify/_verify_comm_mirror.py` | GPU 경로: `vessel_gym_train.comm_gather`(rollout) vs `evaluate_actions`(update) 정합 (혼합 함대 마스크 포함) |
 
 미러가 깨지면 PPO ratio가 에러 없이 어긋나 학습이 조용히 망가짐 — 가장 잡기 어려운 버그 계열.
 
@@ -52,6 +52,6 @@ C#(Unity) ↔ Python(PyTorch) 다중 선박 RL. 두 학습 경로(Unity `main.py
 8. 알려진 버그 재발: 빈 LayerMask 레이더 장님, pos_ground/attention 분기 누락(2026-09-04/05), 모르는 arm이 zeros로 조용히 학습
 
 ## Test Execution
-- `cd Python && python test_golden.py --check` (CPU 2~3분) 또는 `pytest test_golden.py`
-- `cd Python && python _verify_ppo_mirror.py && python _verify_comm_mirror.py`
+- `cd Python/verify && python test_golden.py --check` (CPU 2~3분) 또는 `pytest test_golden.py`
+- `cd Python/verify && python _verify_ppo_mirror.py && python _verify_comm_mirror.py`
 - `Python/test.py`·`export_onnx.py`는 stale(구 obs 시절) — 기준으로 쓰지 않음
