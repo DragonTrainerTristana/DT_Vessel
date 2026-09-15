@@ -73,6 +73,15 @@ echo "  python : $PY"
 echo "  출력   : $OUT"
 echo
 
+# ★2026-09-15: 인터프리터 sanity (run_repro.sh preflight 와 같은 취지). torch 없는 python 을
+#   잡으면 아래 3단계가 전부 "미러 FAIL" 처럼 원인과 무관한 메시지로 끝난다.
+"$PY" -c "import torch" >/dev/null 2>&1 || {
+  echo "smoke_mac 실패: '$PY' 에서 torch 를 import 하지 못함."
+  echo "  → VESSEL_PY 로 torch 가 설치된 인터프리터를 지정할 것."
+  "$PY" -c "import torch" 2>&1 | tail -3 | sed 's/^/  /'
+  exit 1
+}
+
 common_env
 
 echo "[1/3] 통신 미러 검증"

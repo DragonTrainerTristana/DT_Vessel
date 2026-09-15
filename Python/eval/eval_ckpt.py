@@ -179,6 +179,20 @@ def main():
                     ok = stb > 0.3
                 enc_ok[src][k] += int(ok.sum())
 
+    # ★2026-09-15: 진행 표시. 기존엔 burn-in 200 에서 ETA 한 줄만 찍고 끝까지 무출력이라
+    #   몇 분짜리인지 몇 십 분짜리인지 알 수 없었다(실측: 그 ETA 25분 → 실제 38분).
+    #   그 ETA 는 burn-in 첫 창 처리율로 한 번 계산한 값이라 뒤로 갈수록 낙관적이다.
+    #   아래는 경과시간으로 매번 다시 추정한다. 순수 출력이므로 계산·난수·상태에 영향 없음.
+    _prog_total = args.burnin + args.eval_decisions
+    _prog_every = max(1, _prog_total // 20)
+
+    def _progress(step_done, tag):
+        el = time.time() - t0
+        eta = el * (_prog_total - step_done) / max(step_done, 1)
+        print(f"  [{os.path.basename(ckpt_path)}] {tag} {step_done}/{_prog_total} 결정 "
+              f"({100.0 * step_done / _prog_total:.0f}%) 경과 {el / 60:.1f}분 ETA ~{eta / 60:.1f}분",
+              flush=True)
+
     # burn-in: 집계 없이 위상 dephase
     for i in range(args.burnin):
         a = act(fs.get(), goal, self_s, sit)
@@ -189,6 +203,8 @@ def main():
             dps = 201 * E * N / (time.time() - t0)
             eta = (args.burnin + args.eval_decisions) * E * N / dps
             print(f"  [{os.path.basename(ckpt_path)}] {dps:.0f} dec/s, ETA ~{eta:.0f}s", flush=True)
+        if (i + 1) % _prog_every == 0:
+            _progress(i + 1, 'burn-in')
 
     # ★2026-08-27 fix — burn-in 누적기 미리셋 버그.
     #   기존엔 ep_* 누적기를 burn-in *전에* 초기화하고 burn-in 중엔 누적도 리셋도 안 했다.
@@ -316,6 +332,9 @@ def main():
     _dstep = -1
     while True:
         _dstep += 1
+        # ★2026-09-15: 진행 표시만. 루프 제어·집계에 관여하지 않음.
+        if 0 < _dstep < args.eval_decisions and (args.burnin + _dstep) % _prog_every == 0:
+            _progress(args.burnin + _dstep, '평가   ')
         if _dstep >= args.eval_decisions:
             if args.drain <= 0:
                 break

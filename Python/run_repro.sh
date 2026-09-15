@@ -103,6 +103,14 @@ common_env() {
 
 # ── 사전 검증: 미러가 깨졌으면 돌리지 말 것 ─────────────────────────────────
 preflight() {
+  # ★2026-09-15: 인터프리터 sanity. torch 없는 python 을 잡으면 아래 검사가 전부 엉뚱한 이유로
+  #   실패한다. 특히 드리프트 검사는 자식 stdout 이 비어 "config 기본값이 다름" 으로 오보했었다.
+  "$PY" -c "import torch" >/dev/null 2>&1 || {
+    echo "preflight 실패: '$PY' 에서 torch 를 import 하지 못함."
+    echo "  → VESSEL_PY 로 torch 가 설치된 인터프리터를 지정할 것."
+    "$PY" -c "import torch" 2>&1 | tail -3 | sed 's/^/  /'
+    exit 1
+  }
   # ★YUGIOH 드리프트 검사: common_env 의 export 값 == config.py 기본값 (누가 config 기본값만 바꾸면 여기서 잡힘)
   ( common_env; "$PY" - <<'PYCHK'
 import os, json, subprocess, sys
@@ -113,13 +121,33 @@ names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARE
          'RADAR_BOTTLENECK_CH','MAX_COMM_PARTNERS','RADAR_RANGE','COLREGS_MODE','COLREGS_SIM_COEF','INTENT_K',
          'THREAT_COEF','GOAL_COMM_COEF','INTENT_COEF','ROLE_COMM_COEF','COMM_CONSUMER_COEF','RECON_EMA_FLOOR',
          'AGG_MODE','MSG_GAIN','TIMEOUT_BOOTSTRAP','MSG_GATE_APPLY']
-a = json.loads(subprocess.run([sys.executable, '-c', code % names], env=env, capture_output=True, text=True).stdout.strip().splitlines()[-1])
-b = json.loads(subprocess.run([sys.executable, '-c', code % names], capture_output=True, text=True).stdout.strip().splitlines()[-1])
+def _dump(e=None):
+    # ★2026-09-15: returncode/stderr 를 안 보면 환경 문제(torch 없음·config import 에러)가
+    #   빈 stdout -> IndexError 로 터져 "드리프트" 로 오보된다. exit 2 = 환경 문제(드리프트 아님).
+    r = subprocess.run([sys.executable, '-c', code % names], env=e, capture_output=True,
+                       text=True, encoding='utf-8', errors='replace')
+    out = (r.stdout or '').strip()
+    if r.returncode != 0 or not out:
+        print('  YUGIOH 드리프트: ★검사불가 — config import 실패 (rc=%d)' % r.returncode)
+        for ln in ((r.stderr or '').strip().splitlines() or ['(stderr 없음)'])[-3:]:
+            print('   ', ln)
+        sys.exit(2)
+    return json.loads(out.splitlines()[-1])
+a = _dump(env)
+b = _dump()
 bad = [k for k in names if a[k] != b[k]]
 print('  YUGIOH 드리프트:', 'PASS (common_env == config 기본값)' if not bad else f'★FAIL {bad}')
 sys.exit(1 if bad else 0)
 PYCHK
-  ) || { echo "preflight 실패: common_env 와 config.py 기본값이 다름 — config.py 끝 YUGIOH 표를 볼 것"; exit 1; }
+  ); _drift_rc=$?
+  if [ "$_drift_rc" -eq 2 ]; then
+    echo "preflight 실패: 파이썬 환경 문제 — 드리프트 검사가 config 를 import 하지 못함(위 stderr 참고)."
+    echo "  → 드리프트 판정이 아님. VESSEL_PY 확인: $PY"
+    exit 1
+  elif [ "$_drift_rc" -ne 0 ]; then
+    echo "preflight 실패: common_env 와 config.py 기본값이 다름 — config.py 끝 YUGIOH 표를 볼 것"
+    exit 1
+  fi
   echo "[preflight] PPO·통신 미러 검증"
   common_env
   "$PY" -u "$HERE/verify/_verify_ppo_mirror.py"  > "$OUT/_verify_ppo.txt"  2>&1 || { echo "  PPO 미러 FAIL — $OUT/_verify_ppo.txt 확인"; exit 1; }
@@ -144,6 +172,9 @@ PYCHK
 
 # 동시 실행 수 제한 (GPU 라운드로빈)
 GPU_I=0
+# ★2026-09-15: eval 모드가 체크포인트를 전부 건너뛰고도 exit 0 "평가 완료" 로 보고했었다.
+EVAL_N=0        # 실제로 띄운 평가 수
+EVAL_MISS=""    # 못 찾은 체크포인트 이름
 throttle() { while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || sleep 2; done; }
 
 # ── 학습 한 런 ──────────────────────────────────────────────────────────────
@@ -174,8 +205,9 @@ train_one() {
 eval_one() {
   local nm=$1 arm=$2 dim=$3 s=$4
   local gpu=$(( GPU_I % NGPU )); GPU_I=$(( GPU_I + 1 ))
-  [ -f "$CK/${nm}_s$s.pt" ] || { echo "  건너뜀(체크포인트 없음): ${nm}_s$s"; return; }
+  [ -f "$CK/${nm}_s$s.pt" ] || { echo "  건너뜀(체크포인트 없음): ${nm}_s$s"; EVAL_MISS="$EVAL_MISS ${nm}_s$s.pt"; return; }
   throttle
+  EVAL_N=$(( EVAL_N + 1 ))
   (
     common_env
     export CUDA_VISIBLE_DEVICES=$gpu
@@ -234,7 +266,24 @@ case "$MODE" in
       eval_one on12 ON  12 "$s"
     done
     wait
-    echo "평가 완료 — 결과는 $OUT/eval_*.txt"
+    # ★2026-09-15: 0건이면 실패. 전에는 9건 전부 건너뛰고도 exit 0 "평가 완료" 였다.
+    if [ "$EVAL_N" -eq 0 ]; then
+      echo
+      echo "평가 실패: 체크포인트를 한 건도 못 찾아 0건 평가됨."
+      echo "  찾은 곳    : $CK"
+      echo "  기대한 이름: {off,on6,on12}_s{$(echo $SEEDS | tr ' ' ',')}.pt"
+      echo "  못 찾은 것 :$EVAL_MISS"
+      echo "  실제 내용  :"
+      if [ -d "$CK" ]; then
+        ls -1 "$CK" | sed 's/^/    /'
+        [ -n "$(ls -A "$CK" 2>/dev/null)" ] || echo "    (비어 있음)"
+      else
+        echo "    (디렉터리 없음)"
+      fi
+      exit 1
+    fi
+    [ -z "$EVAL_MISS" ] || echo "  ⚠️건너뛴 체크포인트:$EVAL_MISS"
+    echo "평가 완료 — $EVAL_N건, 결과는 $OUT/eval_*.txt"
     cat "$OUT/_status_eval.txt"
     ;;
 

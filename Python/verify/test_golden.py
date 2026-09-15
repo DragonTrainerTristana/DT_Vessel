@@ -208,6 +208,7 @@ def check_defaults_equal_yugioh():
     code = "import json, config as c; print(json.dumps(c.YUGIOH))"
     r = subprocess.run([sys.executable, '-c', code], cwd=PYROOT, capture_output=True, text=True, encoding='utf-8', errors='replace',
                        env={**{k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}, 'PYTHONWARNINGS': 'ignore'})
+    assert r.returncode == 0, r.stderr[-800:]   # ★2026-09-15: 없으면 환경 문제가 빈 stdout -> IndexError 로 둔갑 (:202 와 동일)
     yug = json.loads(r.stdout.strip().splitlines()[-1])
     a, b = _config_dump({}), _config_dump(yug)
     return [k for k in _YUGIOH_CONSTS if a[k] != b[k]]
