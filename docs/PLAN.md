@@ -236,3 +236,18 @@ smoke 는 preflight 를 포함하므로 **드리프트 검사 + 미러 2종 + �
 - 산출물·부산물 : `vessel_gym_{OFF_s1,ON_s1,ON_s42}.pt` · `channel_A4.jsonl` · `debug.log` · `relu_explain.html` · `example_message_logs.csv`
 - 문서 : `EXPERIMENT_STATUS.md`(루트 규약상 **인용 금지** 낡은 문서) · `something.md` · `colregs_compliance_metric.tex`
 → 전부 본 안의 8단계에 **포함하지 않음**. 처분은 별도로 물어볼 것.
+
+---
+
+## 미해결 항목
+
+리팩토링 8단계 범위 밖으로 남긴 것. 현재 상태 / 미룬 이유.
+
+| 항목 | 현재 상태 | 미룬 이유 |
+|---|---|---|
+| orphan `.meta` 70개+ | `Python/` 직속에 원본 없는 `.meta` 만 남아 있음 | Unity GUID 영향 확인이 필요함 |
+| `run_sweep_*.ps1` 7개 | `run_experiment.ps1` 격리로 체인이 끊김 | 이동 전부터 죽어 있었음 |
+| `smoke_mac.sh` 의 `common_env` 사본 | `run_repro.sh:70-101` 의 복사본으로 유지 중 | bash 3.2 제약으로 복사함. `run_repro.sh:70-101` 수정 시 동기화 필요 |
+| `relu_explain.html` · `colregs_compliance_metric.tex` | 처분 보류 | 용도가 불명확함 |
+| `make_ablation_rewards.py:29` 데이터 소스 폴백 | 폴백 경로가 남아 있음 | 정상 경로에서는 안 탐 |
+| shared · core-train | 동결(이동 없음) | `config.py:29` PROJECT_ROOT, `ckpt_io`↔`vessel_gym_train` 순환. 해소하려면 별도 리팩토링이 필요하다는 판단 |
