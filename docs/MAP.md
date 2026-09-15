@@ -199,7 +199,7 @@ fan-in / 인접리스트(02 §2·§5)로 묶음. 이름이 아니라 엣지를 �
 - `Python/astar_fig9/make_fig9_from_eval.py:32-34` : `sys.path.insert(0, HERE)` 후 `import paper_style` → `astar_fig9/paper_style.py`(shim)가 잡힘
 - `Python/astar_fig9/paper_style.py:7-11` : `importlib.spec_from_file_location` 으로 `../plotting/paper_style.py` 를 파일 경로로 직접 로드. sys.path 방식이면 자기 자신이 잡혀 순환하기 때문 — **`plotting/` 과 이 파일의 상대 위치가 고정 전제**
 - **이름 충돌은 실행 경로상 발생 불가**: shim 이 정본을 `spec_from_file_location('_plotting_paper_style', ...)` 로 **다른 모듈명**으로 올리고, `sys.path` 를 건드리는 파일은 `make_fig9_from_eval.py` 하나뿐이라 한 프로세스에 `plotting/` 과 `astar_fig9/` 가 동시에 올라가지 않음 (02 의존그래프가 astar_fig9 쪽을 드롭한 건 정적 분석 도구의 모듈명 중복 처리이고, 런타임 충돌과는 별개)
-- **실제 위험 [MOVE-RISK]**: `astar_fig9/paper_style.py:10` 이 `../plotting/paper_style.py` 를 상대경로로 참조 — **두 디렉터리의 상대 위치가 고정 전제**. analysis 그룹 이동 시 반드시 함께 수정할 것
+- **실제 위험 [MOVE-RISK]**: `astar_fig9/paper_style.py:10` 이 `../plotting/paper_style.py` 를 상대경로로 참조 — **두 디렉터리의 상대 위치가 고정 전제**. plotting 또는 astar_fig9 이동 시 반드시 함께 수정할 것
 - `Python/_archive/deprecated_2026-09/export_onnx.py:9` : `sys.path.insert(0, 자기 디렉터리)`
 - `Python/main.py:20` : `from config import *` — 이름이 어디서 왔는지 추적 불가. config에 상수 추가 시 main의 지역명과 조용히 충돌 가능
 - `Python/_smoke_fullmoe.py:46-48` · `Python/_verify_ppo_mirror.py:47-49` : `importlib.reload(config)` / `reload(networks)` 로 프로세스 내 재적재. 모듈 전역을 갈아끼우므로 같은 프로세스의 다른 코드가 영향받음
