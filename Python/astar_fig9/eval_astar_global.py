@@ -35,6 +35,10 @@ import argparse
 import heapq
 import math
 import os
+# astar_fig9/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·networks·vessel_gym_train·ckpt_io 를
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 6단계 — unity-island/fidelity와 동일 패턴).
+import sys
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import time
 
 import torch
@@ -404,7 +408,8 @@ def main():
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     E, N = args.envs, args.vessels
     torch.manual_seed(args.seed)
-    scr = os.path.dirname(os.path.abspath(__file__))
+    # astar_fig9/ 로 내려온 뒤에도 기본 체크포인트 위치는 Python/checkpoints 그대로(깊이 +1 보정).
+    scr = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
     ckpt_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ckpt_path = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ckpt_dir, args.ckpt)
 

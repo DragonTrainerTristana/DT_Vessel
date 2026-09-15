@@ -27,7 +27,7 @@ export VESSEL_MSG_DIM=6 VESSEL_USE_MOE=1 VESSEL_MOE_SHARED=1 VESSEL_MOE_WIDTH=1.
 export VESSEL_USE_COMM=1 VESSEL_RADAR_RANGE=56 VESSEL_THREAT_COEF=0.5
 export VESSEL_SIM_COLREGS_COEF=0.45 VESSEL_POS_GROUND=1 VESSEL_USE_ATTENTION=0
 
-python eval_astar_global.py --ckpt ql_SE_START_s42.pt --arm ON --path astar \
+python astar_fig9/eval_astar_global.py --ckpt ql_SE_START_s42.pt --arm ON --path astar \
     --envs 96 --vessels 16 --max_partners 4 --burnin 1200 --eval_decisions 10000
 ```
 

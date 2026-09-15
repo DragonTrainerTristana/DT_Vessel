@@ -10,7 +10,10 @@ import os, shutil
 
 FIG = os.path.dirname(os.path.abspath(__file__))
 DST = os.path.join(FIG, '99_FINAL')
-PY = os.path.abspath(os.path.join(FIG, '..', 'Assets', 'Scripts', 'Python'))
+# FIG = Python/plotting → 소스 파일(vessel_gym_train.py 등)은 한 단계 위 Python/ 에 있음.
+# 기존 'Assets/Scripts/Python' 추가 경로는 여기서 두 번 내려가 Python/Assets/Scripts/Python 을
+# 가리켜 존재하지 않는 경로였음(os.path.exists 가드로 조용히 전부 건너뜀).
+PY = os.path.abspath(os.path.join(FIG, '..'))
 
 # 전 그림 공통 학습 설정. 팔마다 바뀌는 값은 REPL 로 치환해 팔별 실제 명령을 찍는다
 # (예: Fig3의 최근접-1 팔에 --max_partners 4 가 찍히면 틀린 문서가 된다).
