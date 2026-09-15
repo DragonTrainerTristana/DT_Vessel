@@ -183,7 +183,7 @@ eval_one() {
     export VESSEL_MSG_DIM=$dim
     # 집계 방식·중앙critic 등은 eval_ckpt 가 체크포인트의 cfg_snapshot 에서 복원한다(2026-09-05).
     # 그래도 학습과 같은 env 를 주는 편이 안전하다 — 구 체크포인트엔 스냅샷이 없다.
-    "$PY" -u "$HERE/eval_ckpt.py" \
+    "$PY" -u "$HERE/eval/eval_ckpt.py" \
       --ckpt "$CK/${nm}_s$s.pt" --arm "$arm" \
       --envs 256 --eval_decisions 10000 --burnin 2400 \
       > "$OUT/eval_${nm}_s$s.txt" 2>&1
@@ -269,7 +269,7 @@ case "$MODE" in
       n="$(basename "$c" .pt)"
       (
         set +e
-        VESSEL_CKPT_DIR="$CK" "$PY" -u "$HERE/diag_ckpt.py" --ckpt "$c" --device "cuda:$(( GPU_I % NGPU ))" \
+        VESSEL_CKPT_DIR="$CK" "$PY" -u "$HERE/eval/diag_ckpt.py" --ckpt "$c" --device "cuda:$(( GPU_I % NGPU ))" \
           --out "$OUT/diag_${n}.json" ${VESSEL_DIAG_ARGS:-} > "$OUT/diag_${n}.txt" 2>&1
         echo "$n rc=$?" >> "$OUT/_status_diag.txt"
       ) &

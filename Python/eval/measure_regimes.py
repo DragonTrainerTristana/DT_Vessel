@@ -28,7 +28,12 @@ max_speed 는 에피소드 상수, step_count 는 timeout 판정에만 쓰임, �
 import argparse
 import json
 import os
+import sys
 import time
+
+# eval/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·networks·vessel_gym_train 을
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 7단계 — unity-island/fidelity/astar_fig9와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 
 import torch
 
@@ -59,7 +64,8 @@ def main():
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     E, N = args.envs, args.vessels
     torch.manual_seed(args.seed)
-    scr = os.path.dirname(os.path.abspath(__file__))
+    # eval/ 로 내려온 뒤에도 기본 체크포인트 위치는 Python/checkpoints 그대로(깊이 +1 보정).
+    scr = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
     ck_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ck = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ck_dir, args.ckpt)
 

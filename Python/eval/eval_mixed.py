@@ -19,7 +19,10 @@
   VESSEL_MSG_DIM=6 VESSEL_USE_MOE=1 VESSEL_MOE_SHARED=1 \
   python eval_mixed.py --ckpt qd_MOE_SE_s42.pt --mode radar --csv mixed_s42.csv
 """
-import os, argparse, time, csv
+import os, sys, argparse, time, csv
+# eval/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·networks·vessel_gym_train 을
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 7단계 — unity-island/fidelity/astar_fig9와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import torch
 import config as cfg
 import vessel_gym as vg
@@ -28,8 +31,9 @@ from networks import CNNPolicy
 from vessel_gym_train import comm_gather, parse_obs, FrameStack
 
 # 상대 경로로 넘긴 체크포인트/CSV를 찾을 곳. 절대 경로를 주면 그대로 쓴다.
+# eval/ 로 내려온 뒤에도 기본값은 Python/checkpoints 그대로(깊이 +1 보정).
 SCRATCH = os.environ.get('VESSEL_CKPT_DIR',
-                         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'checkpoints'))
+                         os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'checkpoints')))
 
 
 def spread_indices(n_total, k):

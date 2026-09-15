@@ -10,6 +10,9 @@ aliasing으로 요동하는 문제를 우회. 체크포인트를 로드해 다�
      GPU 지정: --device cuda:1  (독립 프로세스 병렬로 여러 개 돌릴 땐 프로세스마다 다르게 줄 것)
 """
 import os, sys, argparse
+# eval/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·networks·vessel_gym_train 을
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 7단계 — unity-island/fidelity/astar_fig9와 동일 패턴).
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 import numpy as _np
 import torch
 import config as cfg
@@ -62,8 +65,9 @@ def main():
     dev = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
     E, N = args.envs, args.vessels
     torch.manual_seed(args.seed)
-    scr = os.path.dirname(os.path.abspath(__file__))
-    # 상대 경로로 넘기면 VESSEL_CKPT_DIR(기본: 이 파일 옆 checkpoints/)에서 찾는다.
+    # eval/ 로 내려온 뒤에도 기본 체크포인트 위치는 Python/checkpoints 그대로(깊이 +1 보정).
+    scr = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+    # 상대 경로로 넘기면 VESSEL_CKPT_DIR(기본: Python/checkpoints/)에서 찾는다.
     ckpt_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ckpt_path = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ckpt_dir, args.ckpt)
 

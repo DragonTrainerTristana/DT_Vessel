@@ -12,7 +12,13 @@ WorldMap.unity 실측: 부산(-82066,-24438), 대만(-79863,-18304) → 직선 6
 import argparse
 import math
 import os
+import sys
 import time
+
+# eval/ 로 내려온 뒤에도 Python/ 루트의 config·vessel_gym·networks·vessel_gym_train·ckpt_io 를
+# 찾으려면 sys.path 에 넣어야 함 (__init__.py 없음, PLAN.md 7단계 — unity-island/fidelity/astar_fig9와 동일 패턴).
+# 아래 vessel_gym 등은 main() 안에서 지연 import 되지만, sys.path 는 그 전에(모듈 로드 시) 확보해야 함.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 
 import numpy as np
 import torch
@@ -42,7 +48,9 @@ def main():
     ap.add_argument('--out', default='corridor_traj.npz')
     args = ap.parse_args()
 
-    scr = os.path.dirname(os.path.abspath(__file__))
+    # eval/ 로 내려온 뒤에도 기본 체크포인트 위치·출력(--out) 위치는 Python/ 그대로(깊이 +1 보정).
+    # scr 는 아래 ck_dir 뿐 아니라 dst(출력 .pt) 에도 쓰임 — 한 곳만 고치면 됨.
+    scr = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
     os.environ.setdefault('VESSEL_MSG_DIM', '6')
     os.environ.setdefault('VESSEL_USE_MOE', '1')
     os.environ.setdefault('VESSEL_MOE_SHARED', '1')
