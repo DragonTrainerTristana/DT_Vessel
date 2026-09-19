@@ -14,14 +14,17 @@
 #     per-module clip·msg_l2 2e-4·comm 300·state_recon 0.05) + 레이더 인코더 망 간 공유 09-10.
 #   common_env 는 그 표를 *명시* export 하고 preflight 가 config 기본값과 대조한다(드리프트 시 중단).
 #   팔:   OFF(통신 없음) / ON dim6 / ON dim12   × 시드 43·44·45
+#   ★2026-09-15 분기 규약 (사용자 지시): 모든 팔은 시드×dim 마다 OFF 로 9,043,968 결정까지 *한 번* 학습한
+#     trunk 파일에서 갈라진다 → ON/OFF 가 통신 켜기 전까지 같은 모델임을 구조로 보장.
+#     (09-10 배치처럼 시드만 맞춰 따로 처음부터 돌리면 GPU 비결정성으로 2번째 update 부터 갈라짐)
 #   ⚠️그 배치에서 off_s45 는 학습에 실패해 결과에서 제외됐다(최종보상 1.06 vs 형제 1.53·1.59).
 #     제외는 통신에 *불리한* 방향이라 보수적 선택이다. 자세한 건 runs/m2_ablation/COMM_PLAN.md §4-B.
 #
 # 쓰는 법:
-#   bash run_repro.sh smoke     # 4만 스텝 짜리 확인용 (몇 분)
-#   bash run_repro.sh train     # 본 배치 16.06M × 9런
-#   bash run_repro.sh eval      # 학습된 체크포인트 평가
-#   bash run_repro.sh random    # 난수 메시지 대조군 (기본 팔에 없음 — 아래 설명)
+#   bash run_repro.sh smoke     # trunk 1 update → 갈래 1 update → 분기 검사 (몇 분)
+#   bash run_repro.sh train     # 본 배치: trunk(9,043,968) → 갈래 16.06M, 팔 = VESSEL_TRAIN_ARMS
+#   bash run_repro.sh eval      # 분기 검사 통과한 체크포인트 평가
+#   bash run_repro.sh random    # 난수 메시지 대조군 (같은 trunk 에서 분기, 기본 팔에 없음 — 아래 설명)
 #
 # 환경변수로 바꿀 수 있는 것 (전부 기본값 있음):
 #   VESSEL_CKPT_DIR  체크포인트 저장 위치. 기본 $HOME/VESSEL_checkpoints/<날짜>_repro
@@ -31,6 +34,9 @@
 #   VESSEL_SEEDS     시드 목록. 기본 "43 44 45"
 #   VESSEL_NGPU      쓸 GPU 수. 기본은 torch 로 자동 감지(0장이면 1로 두고 CPU)
 #   VESSEL_JOBS      동시 실행 프로세스 수. 기본 = NGPU × 2 (VRAM 프로세스당 ~5.2GB 기준)
+#   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12)
+#   VESSEL_BRANCH_WARMUP  갈래 재개 직후 통신 OFF 로 굴리는 에이전트당 결정 수. 기본 1200 (모든 갈래 동일)
+#   VESSEL_ALLOW_UNBRANCHED=1  eval 의 분기 검사 FAIL 을 무시 — 규약 이전 옛 배치 재평가 전용, 짝 비교 금지
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 export PYTHONIOENCODING=utf-8   # ★Windows cp949 콘솔로 리다이렉트할 때 한글·기호 print 가 UnicodeEncodeError 로 죽는 것 방지 (2026-09-10)
@@ -41,6 +47,17 @@ PY="${VESSEL_PY:-python}"
 OUT="${VESSEL_OUT_DIR:-$HERE/_repro_out}"
 CK="${VESSEL_CKPT_DIR:-$HOME/VESSEL_checkpoints/$(date +%Y-%m-%d)_repro}"
 SEEDS="${VESSEL_SEEDS:-43 44 45}"
+
+# ★2026-09-15 분기 규약: ON/OFF 는 통신 켜는 지점까지 *같은 체크포인트 파일*(trunk)을 쓴다.
+#   update 당 결정 = envs 128 × vessels 16 × rollout 32 — 아래 train_one 의 인자와 같이 움직일 것.
+UPDATE_DEC=$(( 128 * 16 * 32 ))                # 65,536
+BRANCH_AT=$(( UPDATE_DEC * 138 ))              # 9,043,968 = 138 update 끝 (09-10 배치 comm_on_at 9M 과 같은 update 경계)
+TOTAL_STEPS=16056320                           # 245 update (= config.YUGIOH_ARGS --steps)
+BR_WARMUP="${VESSEL_BRANCH_WARMUP:-1200}"
+if [ -n "${VESSEL_COMM_ON_AT:-}" ]; then
+  echo "VESSEL_COMM_ON_AT 는 폐기됨 (2026-09-15 분기 규약). 분기점은 BRANCH_AT=$BRANCH_AT 고정 — 이 환경변수를 지울 것."
+  exit 2
+fi
 
 mkdir -p "$OUT" "$CK"
 
@@ -63,6 +80,7 @@ echo "  체크포인트  : $CK"
 echo "  출력        : $OUT"
 echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
+echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -178,9 +196,11 @@ EVAL_MISS=""    # 못 찾은 체크포인트 이름
 throttle() { while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || sleep 2; done; }
 
 # ── 학습 한 런 ──────────────────────────────────────────────────────────────
-# 인자: 이름 arm msg_dim seed steps
+# 인자: 이름 arm msg_dim seed steps [trunk.pt branch_at]
+#   trunk 를 주면 분기 갈래: trunk 곡선 CSV 를 복사해 이어 쓰고 --resume 으로 branch_at 부터 학습한다.
+#   ★2026-09-15: ON/OFF 비교용 런은 반드시 branch_batch(아래)를 거친다. 직접 부르는 건 trunk·옛 모드뿐.
 train_one() {
-  local nm=$1 arm=$2 dim=$3 s=$4 steps=$5
+  local nm=$1 arm=$2 dim=$3 s=$4 steps=$5 trunk=${6:-} br_at=${7:-0}
   local gpu=$(( GPU_I % NGPU )); GPU_I=$(( GPU_I + 1 ))
   throttle
   (
@@ -192,12 +212,22 @@ train_one() {
     #   동작은 어차피 --arm 이 정하지만(comm_active), 이걸 안 주면 config 덤프가 두 팔 모두
     #   use_communication=True 로 찍혀 나중에 로그만 보고 어느 런이 OFF 였는지 구분이 안 된다.
     if [ "$arm" = "OFF" ]; then export VESSEL_USE_COMM=0; else export VESSEL_USE_COMM=1; fi
+    local run="${nm}_s$s"
+    local extra=(--comm_on_at 0)
+    if [ -n "$trunk" ]; then
+      # 같은 이름의 옛 CSV 가 남아 있으면 그 뒤에 이어 붙으므로 지우고, trunk 곡선(0~branch_at)으로 시작한다.
+      local tstem="$OUT/$(basename "${trunk%.pt}")"
+      rm -f "$OUT/$run.csv" "$OUT/${run}_aux.csv" "$OUT/${run}_comm.csv"
+      [ -f "$tstem.csv" ] && cp "$tstem.csv" "$OUT/$run.csv"
+      [ -f "${tstem}_aux.csv" ] && cp "${tstem}_aux.csv" "$OUT/${run}_aux.csv"
+      extra=(--resume "$trunk" --resume_at "$br_at" --comm_on_at "$br_at" --resume_warmup "$BR_WARMUP")
+    fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
-      --arm "$arm" --comm_on_at "${VESSEL_COMM_ON_AT:-0}" --steps "$steps" \
+      --arm "$arm" --steps "$steps" "${extra[@]}" \
       --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every "${VESSEL_CKPT_EVERY:-2}" \
-      --save "$CK/${nm}_s$s.pt" --csv "$OUT/${nm}_s$s.csv" \
-      > "$OUT/${nm}_s$s.log" 2>&1
-    echo "${nm}_s$s rc=$?" >> "$OUT/_status_train.txt"
+      --save "$CK/$run.pt" --csv "$OUT/$run.csv" \
+      > "$OUT/$run.log" 2>&1
+    echo "$run rc=$?" >> "$OUT/_status_train.txt"
   ) &
 }
 
@@ -223,47 +253,145 @@ eval_one() {
   ) &
 }
 
+# ── 팔 이름 → "ARM DIM" ─────────────────────────────────────────────────────
+arm_spec() {
+  case "$1" in
+    off)   echo "OFF 6" ;;
+    on6)   echo "ON 6" ;;
+    on12)  echo "ON 12" ;;
+    off12) echo "OFF 12" ;;     # on12 의 짝 — dim12 trunk 에서 분기한 OFF
+    rand)  echo "RANDOM 6" ;;   # 난수 메시지 대조군 (random 모드)
+    *) return 1 ;;
+  esac
+}
+off_name() { if [ "$1" = 6 ]; then echo off; else echo "off$1"; fi; }
+
+# ── 분기 검사 (verify/check_branch.py) — 결과 $OUT/_branch_check.txt, ALL PASS 아니면 1 ──
+check_branch() {
+  "$PY" -u "$HERE/verify/check_branch.py" --trunk_dir "$CK" --csv_dir "$OUT" "$@" > "$OUT/_branch_check.txt" 2>&1
+  local rc=$?
+  tail -n 25 "$OUT/_branch_check.txt" | sed 's/^/  /'
+  [ "$rc" -eq 0 ] && grep -q "ALL PASS" "$OUT/_branch_check.txt"
+}
+
+# ── trunk → 갈래 배치 (★2026-09-15 분기 규약, 사용자 지시) ──────────────────
+# 인자: "팔 목록" branch_at 총결정 [이름접두]
+#   ① 짝 검사: 통신 팔(ON·RANDOM)이 있는 dim 은 같은 dim 의 OFF 갈래가 목록에 있거나 $CK 에 이미 있어야 함
+#   ② trunk  : 시드×dim 마다 OFF 로 branch_at 까지 1회 → $CK/<접두>trunk_d<dim>_s<seed>.pt (있으면 재사용)
+#   ③ 갈래   : 팔마다 그 trunk 에서 --resume (워밍업은 통신 OFF 로 굴려 모든 갈래 동일)
+#   ④ 검증   : check_branch.py — 같은 trunk SHA·seed·dim·branch_at, OFF 짝, 0~branch_at 곡선 글자 일치
+#   ⚠️trunk 재사용은 같은 $CK 안에서 같은 코드·설정으로 만든 것만. 학습기가 steps·seed·통신OFF 는 검사하지만
+#     보상 계수 같은 설정 차이는 못 잡음.
+branch_batch() {
+  local arms="$1" br_at=$2 total=$3 pre=${4:-}
+  local a spec dim s t dims=""
+  for a in $arms; do
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|rand)"; exit 1; }
+    dim=${spec#* }
+    case " $dims " in *" $dim "*) ;; *) dims="$dims $dim" ;; esac
+  done
+  for dim in $dims; do
+    local has_comm=0 has_off=0
+    for a in $arms; do
+      spec=$(arm_spec "$a"); [ "${spec#* }" = "$dim" ] || continue
+      if [ "${spec% *}" = "OFF" ]; then has_off=1; else has_comm=1; fi
+    done
+    if [ "$has_comm" = 1 ] && [ "$has_off" = 0 ]; then
+      for s in $SEEDS; do
+        [ -f "$CK/${pre}$(off_name "$dim")_s$s.pt" ] || {
+          echo "분기 규약 위반: dim $dim 통신 팔의 짝 OFF 갈래 '${pre}$(off_name "$dim")_s$s' 가 목록에도 \$CK 에도 없음."
+          echo "  → VESSEL_TRAIN_ARMS 에 $(off_name "$dim") 을 넣거나 그 통신 팔을 뺄 것. 짝 없는 통신 팔은 돌리지 않음."
+          exit 1; }
+      done
+    fi
+  done
+  echo "[branch] 분기점 $br_at · 총 $total 결정 · 워밍업 $BR_WARMUP · dim:$dims · 팔: $arms"
+  for s in $SEEDS; do
+    for dim in $dims; do
+      t="$CK/${pre}trunk_d${dim}_s$s.pt"
+      if [ -f "$t" ]; then echo "  trunk 재사용: $(basename "$t")"
+      else train_one "${pre}trunk_d$dim" OFF "$dim" "$s" "$br_at"; fi
+    done
+  done
+  wait
+  for s in $SEEDS; do
+    for dim in $dims; do
+      [ -f "$CK/${pre}trunk_d${dim}_s$s.pt" ] || {
+        echo "trunk 학습 실패: ${pre}trunk_d${dim}_s$s — $OUT/${pre}trunk_d${dim}_s$s.log 확인. 갈래 안 띄움"; exit 1; }
+    done
+  done
+  for s in $SEEDS; do
+    for a in $arms; do
+      spec=$(arm_spec "$a")
+      train_one "${pre}$a" "${spec% *}" "${spec#* }" "$s" "$total" "$CK/${pre}trunk_d${spec#* }_s$s.pt" "$br_at"
+    done
+  done
+  wait
+  local files="" o
+  for s in $SEEDS; do
+    for a in $arms; do files="$files $CK/${pre}${a}_s$s.pt"; done
+    for dim in $dims; do
+      o="$CK/${pre}$(off_name "$dim")_s$s.pt"
+      case " $files " in *" $o "*) ;; *) [ -f "$o" ] && files="$files $o" ;; esac
+    done
+  done
+  echo "[branch] 분기 검사"
+  check_branch $files || { echo "분기 검사 FAIL — $OUT/_branch_check.txt 확인"; exit 1; }
+  echo "  분기 검사 ALL PASS"
+}
+
 case "$MODE" in
   smoke)
-    # 코드가 돌아가는지만 본다. 결과 해석 금지 — 4만 스텝은 수렴이 아니다.
+    # 코드가 돌아가는지만 본다. 결과 해석 금지 — 몇 update 는 수렴이 아니다.
+    # ★2026-09-15: 분기 경로 전체(trunk 1 update → off·on6 갈래 1 update → 분기 검사)를 통과해야 PASS.
     preflight
     : > "$OUT/_status_train.txt"
-    train_one smoke_off OFF 6 43 40000
-    train_one smoke_on6 ON  6 43 40000
-    wait
+    SEEDS=43
+    BR_WARMUP=8
+    rm -f "$CK"/smoke_trunk_d*_s43.pt   # 스모크는 trunk 학습까지 매번 확인
+    branch_batch "off on6" "$UPDATE_DEC" $(( UPDATE_DEC * 2 )) smoke_
     echo "스모크 완료 — $OUT/_status_train.txt 의 rc 가 전부 0 이어야 함"
     cat "$OUT/_status_train.txt"
     ;;
 
   train)
-    # ★VESSEL_TRAIN_ARMS 로 팔 선택 (기본 "off on6 on12"). YUGIOH 6런 = VESSEL_TRAIN_ARMS="off on6".
-    #   VESSEL_COMM_ON_AT=9000000 이면 ON 팔이 9M 까지 통신 없이 돌다가 켬(커리큘럼, ABLATION_PLAN §3 B 팔).
-    #   그때 VESSEL_CKPT_EVERY=1 로 줘야 .step9M.pt(= 통신 OFF 모델, §4) 가 남는다. OFF 팔엔 comm_on_at 무의미.
-    #   학습 중 통신 텔레메트리를 보려면 VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 를 같이 줄 것(ON 팔만 *_comm.csv).
+    # ★2026-09-15 분기 규약 (사용자 지시): trunk(OFF, 9,043,968 결정) → 팔마다 갈래(--resume). branch_batch 참고.
+    #   팔 = VESSEL_TRAIN_ARMS (기본 "off on6 on12"). YUGIOH 6런 = VESSEL_TRAIN_ARMS="off on6".
+    #   통신 팔은 같은 dim 의 OFF 짝이 있어야 시작함 — on12 는 off12 가 필요(dim12 trunk 는 dim6 과 다른 모델).
+    #   9M 통신 OFF 모델 = $CK/trunk_d<dim>_s<seed>.pt (구 .step9M.pt 역할).
+    #   학습 중 통신 텔레메트리: VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 (ON 갈래만 *_comm.csv).
     preflight
     : > "$OUT/_status_train.txt"
-    for s in $SEEDS; do
-      for arm in ${VESSEL_TRAIN_ARMS:-off on6 on12}; do
-        case "$arm" in
-          off)  train_one off  OFF 6  "$s" 16056320 ;;
-          on6)  train_one on6  ON  6  "$s" 16056320 ;;
-          on12) train_one on12 ON  12 "$s" 16056320 ;;
-          *) echo "모르는 팔: $arm (off|on6|on12)"; exit 1 ;;
-        esac
-      done
-    done
-    wait
+    branch_batch "${VESSEL_TRAIN_ARMS:-off on6 on12}" "$BRANCH_AT" "$TOTAL_STEPS"
     echo "학습 완료"
     cat "$OUT/_status_train.txt"
     ;;
 
   eval)
     preflight
+    # ★2026-09-15 분기 규약: ON/OFF 짝이 같은 trunk 에서 갈라졌는지 먼저 확인. 아니면 평가 안 함(짝 비교 무효).
+    #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
+    _ev_files=""
+    for s in $SEEDS; do
+      for nm in off on6 off12 on12; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
+    done
+    if [ -n "$_ev_files" ]; then
+      echo "[eval] 분기 검사"
+      if check_branch $_ev_files; then
+        echo "  분기 검사 ALL PASS"
+      elif [ "${VESSEL_ALLOW_UNBRANCHED:-0}" = "1" ]; then
+        echo "  ⚠️분기 검사 FAIL 인데 VESSEL_ALLOW_UNBRANCHED=1 로 진행 — 이 평가는 ON/OFF 짝 비교에 쓰지 말 것"
+      else
+        echo "평가 중단: 분기 검사 FAIL — $OUT/_branch_check.txt 확인 (규약 이전 옛 배치면 VESSEL_ALLOW_UNBRANCHED=1)"
+        exit 1
+      fi
+    fi
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
       eval_one off  OFF 6  "$s"
       eval_one on6  ON  6  "$s"
       eval_one on12 ON  12 "$s"
+      [ -f "$CK/off12_s$s.pt" ] && eval_one off12 OFF 12 "$s"
     done
     wait
     # ★2026-09-15: 0건이면 실패. 전에는 9건 전부 건너뛰고도 exit 0 "평가 완료" 였다.
@@ -293,12 +421,10 @@ case "$MODE" in
     #   늘어난 파라미터·gradient 경로 때문인지 가른다.
     #   ⚠️난수 스케일을 비교 대상 팔의 실측 others_msg 표준편차에 맞춰야 공정하다.
     #     diag_ckpt.py 가 찍는 msg_sd(텔레메트리 정의)를 읽어 VESSEL_MSG_RANDOM_SD 로 줄 것. (구 _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py) 는 _archive)
+    #   ★2026-09-15: 난수 팔도 같은 trunk 에서 분기. 짝 OFF 갈래($CK/off_s<seed>.pt)가 있어야 함 → train 먼저.
     preflight
     : > "$OUT/_status_train.txt"
-    for s in $SEEDS; do
-      train_one rand RANDOM 6 "$s" 16056320
-    done
-    wait
+    branch_batch "rand" "$BRANCH_AT" "$TOTAL_STEPS"
     echo "난수 대조군 학습 완료"
     cat "$OUT/_status_train.txt"
     ;;

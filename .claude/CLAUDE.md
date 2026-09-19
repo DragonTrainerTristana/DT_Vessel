@@ -2,7 +2,8 @@
 
 2026-09-10 전면 재작성(코드에서 직접 뽑음). 이전 2026-06-02판(obs 59D·MLP·게이트 −3·MoE 없음)은 전부 폐기.
 규칙(허락·정직성·말투)은 루트 `CLAUDE.md`. **현재 상태·할 일은 여기 안 씀 → `runs/STATUS.md`만.**
-라인 번호는 2026-09-10 `refactor/2026-09-10` 기준. "(미확인)" 표시는 코드로 못 확인한 값.
+라인 번호는 2026-09-10 `refactor/2026-09-10` 기준.
+2026-09-15 리팩토링(`08c71d6`) 후 파일 경로를 새 구조로 갱신하고 **§8-1 ON/OFF 분기 규약**을 추가함 — 그 밖의 라인 번호는 안 건드림(`run_repro.sh`·`vessel_gym_train.py` 뒤쪽 라인 번호는 어긋나 있음). "(미확인)" 표시는 코드로 못 확인한 값.
 
 ---
 
@@ -13,19 +14,19 @@
 | 경로 | 파일 | 역할 |
 |---|---|---|
 | **GPU 배치 (현행 주 경로)** | `vessel_gym.py`(VesselBatchEnv) + `vessel_gym_train.py` | 탐색·절제실험 전부. `run_repro.sh`가 돌리는 것 |
-| **Unity** | `main.py` + ML-Agents(C# `Agent/`, `Navigation/`, `Management/`) | ground-truth 판정(sim2sim 판정관). `VESSEL_OUTCOME_LOG`/`VESSEL_METRIC_LOG` |
+| **Unity** | `_archive/unity_path_2026-09/main.py` + ML-Agents(C# `Agent/`, `Navigation/`, `Management/`) | ground-truth 판정(sim2sim 판정관). `VESSEL_OUTCOME_LOG`/`VESSEL_METRIC_LOG` |
 
 - **두 경로가 공유하는 것 = `config.py` + `networks.py` 뿐.** 체크포인트 shape 호환은 이 둘 때문임.
 - 나머지는 각자 구현(같은 이름이라도 다른 코드):
 
-| 기능 | GPU 배치 | Unity |
+| 기능 | GPU 배치 | Unity (`Python/_archive/unity_path_2026-09/`) |
 |---|---|---|
 | frame stack | `vessel_gym_train.FrameStack` (:43) | `frame_stack.MultiAgentFrameStack` |
 | GAE | `vessel_gym_train.batched_gae` (:95) + `ValueNorm` (:116) | `memory.Memory` (dones/truncateds 경계) |
 | PPO 루프 | `vessel_gym_train.py` :846-901 | `main.ppo_update` (:81) |
 | others_msg(rollout) | `vessel_gym_train.comm_gather` (:259) | `networks.CNNPolicy._get_others_msg` (:1032) |
 | 체크포인트 스냅샷 | `_cfg_snapshot()` (:672) | `main._unity_snapshot` (:725) → `ckpt_io.snapshot_config` |
-| 평가·진단 | `eval_ckpt.py` · `eval_mixed.py` · `diag_ckpt.py` (전부 `ckpt_io` 경유) | `VESSEL_LOAD_MODEL=1 VESSEL_TRAIN=0` |
+| 평가·진단 | `eval/eval_ckpt.py` · `eval/eval_mixed.py` · `eval/diag_ckpt.py` (전부 `ckpt_io` 경유) | `VESSEL_LOAD_MODEL=1 VESSEL_TRAIN=0` |
 
 - `vessel_gym_train.py` 헤더 docstring은 "ON arm 배치 집계는 별도 작업"이라 적혀 있으나 `comm_gather`가 이미 구현됨 — docstring이 낡음.
 
@@ -69,11 +70,11 @@
 | `Agent/VesselAgent.cs` | `CollectObservations` :958-1000 (radar :974, goal/self :981-990, pos :993-994, situation :1000), `Initialize` VectorObservationSize :333 |
 | `Python/vessel_gym.py` | `_build_obs` :674-707 (조립 :698-706) |
 | `Python/vessel_gym_train.py` | `parse_obs` :34-40 |
-| `Python/obs_utils.py` | `parse_observation` :10-33 (Unity 경로) |
+| `Python/_archive/unity_path_2026-09/obs_utils.py` | `parse_observation` :10-33 (Unity 경로) |
 | `Python/config.py` | :44-66 (RADAR_RAYS/STATE_SIZE 360, GOAL 2, SELF 4, POSITION 2, SITUATION 1, OBSERVATION_SIZE 369, FRAMES 3 :55) |
 | `Python/networks.py` | fc2 입력 :482 / :604 / :861, `SIT_INPUT_DIM` :149 |
 
-- Unity 빌드 obs 크기 ≠ 369면 연결 시 RuntimeError(build trap, `main.py`).
+- Unity 빌드 obs 크기 ≠ 369면 연결 시 RuntimeError(build trap, `_archive/unity_path_2026-09/main.py`).
 
 ---
 
@@ -154,7 +155,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 - **우선순위: attention > pos_ground > sum·mean·scale**, 끝에 `msg_gain`. 세 곳 모두 같은 순서·같은 함수형.
 - MoE 라우팅도 미러 대상: 파트너 메시지는 저장된 `partner_situations`로 재생성(:1302), 자기 행동은 저장된 `situation`으로 재라우팅.
-- **검증기 둘 다 ALL PASS 필수** — `_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`(:91-112, ALL PASS grep :96-99)가 grep으로 강제.
+- **검증기 둘 다 ALL PASS 필수** — `verify/_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `verify/_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`(:91-112, ALL PASS grep :96-99)가 grep으로 강제.
 - **"한 곳만 고치면 4번째 사고"** — 과거 3건:
 
 | # | 일자 | 사고 | 기록 |
@@ -178,7 +179,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | `config.py` 끝 "config 통합" 절 | 레이더 `RADAR_ACT/HEAD/BOTTLENECK_CH` · 집계 `MSG_LN MSG_TOKEN_GAIN AGG_MODE NEAREST_SCALE MSG_GAIN MSG_RANDOM_SD` · `RECON_EMA_FLOOR RECON_LEGACY_STAT MOE_FAST` · 학습기 전용 12(`VALNORM_BETA FARFIELD/PERPAIR_COEF TIMEOUT_BOOTSTRAP GRAD_TELEMETRY CLIP_PER_MODULE MSG_GATE_APPLY NOCOMM_* BLIND_WARN_AFTER COMM_TELEMETRY*`) · vessel_gym 시뮬·보상 27 | 이름·기본값은 통합 전과 동일 — `test_golden` 비트동일로 확인 |
 | `networks.py` 모듈 전역 `MSG_LN AGG_MODE NEAREST_SCALE MSG_GAIN _RADAR_LEAKY/_HEAD/_BOTTLENECK_CH _MSG_TOKEN_GAIN _RECON_EMA_FLOOR` | config 값으로 초기화. **rollout(`_get_others_msg`, `vessel_gym_train.comm_gather`)과 update(`evaluate_actions`)가 같은 객체를 읽음** = 미러의 근거 | `ckpt_io.restore_policy`가 체크포인트 스냅샷으로 **이 전역을** 덮어씀. import 후 `os.environ` 변경은 무효 |
 | `vessel_gym_train.MSG_RANDOM_SD` | RANDOM 팔 난수 sd | 위와 같은 규약 |
-| 남은 env 직접 읽기 | `VESSEL_CKPT_DIR`(경로, ckpt_io) · Unity `main.py` 6개(SEED·PROFILE·GRAPHICS·ALLOW_PARTIAL_LOAD·RECV_ONLY_COUNT·METRIC_LOG) · C# 34개 | 경로·실행 인자·C# 은 통합 범위 밖 |
+| 남은 env 직접 읽기 | `VESSEL_CKPT_DIR`(경로, ckpt_io) · Unity `_archive/unity_path_2026-09/main.py` 6개(SEED·PROFILE·GRAPHICS·ALLOW_PARTIAL_LOAD·RECV_ONLY_COUNT·METRIC_LOG) · C# 34개 | 경로·실행 인자·C# 은 통합 범위 밖 |
 
 **주요 토글 (`config.py`, 기본값은 코드 확인):**
 
@@ -206,12 +207,12 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | `VESSEL_USE_EDITOR` / `VESSEL_NUM_ENVS` / `VESSEL_BASE_PORT` / `VESSEL_TIME_SCALE` | — | 1 / 2 / 5004 / 100 | :314-317 | Unity 환경 |
 | PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
 
-- `run_repro.sh common_env()` = **YUGIOH 를 명시 export**(config 기본값과 동일). `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`; rollout 32 는 12런 aux.csv 245행 = update 당 65,536 결정으로 확인). 2026-09-04 배치 설정은 `test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
+- `run_repro.sh common_env()` = **YUGIOH 를 명시 export**(config 기본값과 동일). `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`; rollout 32 는 12런 aux.csv 245행 = update 당 65,536 결정으로 확인). 2026-09-04 배치 설정은 `verify/test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
 - `config.py` import 시 `models/<COMM_FOLDER>/VesselNavigation_<시각>/logs` 디렉토리 생성 부작용(:347-348) — 스크립트에서 import만 해도 빈 폴더 생김.
 
 ---
 
-## 8. 진단·평가 규약 (`ckpt_io.py`, `diag_ckpt.py`, `test_golden.py` — 전부 2026-09-10)
+## 8. 진단·평가 규약 (`ckpt_io.py`, `eval/diag_ckpt.py`, `verify/test_golden.py` — 전부 2026-09-10)
 
 배경: 체크포인트를 여는 스크립트 9개 중 스냅샷을 읽는 건 2개뿐이었고 나머지 + `runs/m2_ablation/diag/` 10개는 env를 손으로 박아 **학습과 다른 설정으로 측정 → 측정 2회 무효.**
 
@@ -220,10 +221,10 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | 체크포인트는 **`ckpt_io.restore_policy()`로만** 연다 | 순서 고정: `torch.load` → msg_ln(:127)/msg_dim/radar_head(:143) 키 스니핑 → `networks` 모듈 전역 덮어쓰기(USE_ATTENTION·POS_GROUND·CENTRAL_CRITIC·STATE_RECON_COEF·_MSG_TOKEN_GAIN·_RADAR_*) → **그 다음** `CNNPolicy()`(:208) → strict 로드. `CNNPolicy.__init__`이 전역을 그 시점에 읽으므로 순서 바꾸면 무효 |
 | 평가 env는 **`ckpt_io.make_env_from_snapshot()`으로만** | ring·crossing·vessels·farfield·perpair를 스냅샷에서. override는 전부 로그 |
 | **`VESSEL_*`를 스크립트에서 직접 세팅 금지** | 스냅샷과 어긋나는 import-시점 값(comm_range·arm)은 기본 **중단**. 의도한 교차평가만 `allow_*` |
-| 진단은 **`diag_ckpt.py`로만** | 지표 정의 = `vessel_gym_train.comm_telemetry` 하나(재구현 금지). `restore → make_env → burn → 게이트 → telemetry → JSON+CSV` |
+| 진단은 **`eval/diag_ckpt.py`로만** | 지표 정의 = `vessel_gym_train.comm_telemetry` 하나(재구현 금지). `restore → make_env → burn → 게이트 → telemetry → JSON+CSV` |
 | **게이트 3개 통과 못 하면 숫자 안 냄** | ① 조우율(sit≠0) ≥ 5% (`--min_sit_rate`) ② 설정 == 스냅샷(restore가 불일치 시 중단) ③ `--expect_vcoll` 주면 창 vColl이 평가값 ±50% 안 |
-| **검증 안 된 숫자 보고 금지** | 조우율 낮은 창·다른 설정으로 잰 숫자가 두 번 보고 후 철회됨 — 그게 `diag_ckpt.py`가 생긴 이유 |
-| **골든 테스트** `test_golden.py --check` | 학습기(`vessel_gym_train.py`·`networks.py`·`config.py`·`vessel_gym.py`) **변경마다.** 케이스 `default_ON` / `default_OFF` / `batch_2026_09_04_ON`, 고정시드 CPU 2 update → state_dict SHA256·곡선 CSV·스냅샷·Adam 비트 비교. 골든 `Python/golden/2026-09-10_*.json`(git 추적). `--regen`은 명시 승인 필요 |
+| **검증 안 된 숫자 보고 금지** | 조우율 낮은 창·다른 설정으로 잰 숫자가 두 번 보고 후 철회됨 — 그게 `eval/diag_ckpt.py`가 생긴 이유 |
+| **골든 테스트** `verify/test_golden.py --check` | 학습기(`vessel_gym_train.py`·`networks.py`·`config.py`·`vessel_gym.py`) **변경마다.** 케이스 `default_ON` / `default_OFF` / `batch_2026_09_04_ON`, 고정시드 CPU 2 update → state_dict SHA256·곡선 CSV·스냅샷·Adam 비트 비교. 골든 `Python/verify/golden/2026-09-10_*.json`(git 추적). `--regen`은 명시 승인 필요 |
 | **스냅샷 키** | `ckpt_io.snapshot_config` — 추가 자유, **삭제·의미 변경 금지** |
 | Unity ground-truth | `VESSEL_OUTCOME_LOG`(goal/collision_vessel/collision_obstacle/timeout) · `VESSEL_METRIC_LOG` **17열**(`VesselAgent.cs` :903-904: agentId,episodeIndex,outcome,steps,fuel,rudderVar,complianceMean,occlRate,commandVar,minVesselDist,nearMissSteps,straightness,headingTravel,minDCPA,dcpaBelowSteps,fuelThrust,fuelTurn). 뒤 8열 = 진단 전용, 보상 비연결 |
 
@@ -231,9 +232,25 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 - **2026-09-10 YUGIOH 에서 발견·수정**: `restore_policy` 가 `use_moe / moe_width / moe_shared` 를 복원 안 했음 → YUGIOH 기본(공유 MoE)으로 만들면 단일망·얇게는 strict 실패, 두껍게(MOE_SHARED=0)는 5벌 인코더가 한 객체에 덮여 **마지막 전문가만 남는 조용한 오염**. 지금은 스냅샷 → 없으면 키(`experts.`)·전문가 0/1 텐서 동일성·conv/fc 채널 수(폭 역산)로 스니핑. 구조 4종 × {정상/구 스냅샷/스냅샷 없음} 12건 시뮬 통과.
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
+### 8-1. ON/OFF 분기 규약 (2026-09-15, 사용자 지시 — 예외 없음)
+
+- **ON/OFF 는 통신 켜는 지점(9,043,968결정 = 138 update)까지 같은 체크포인트 파일을 씀.** OFF 로 거기까지 한 번 학습한 trunk 에서 `--resume <trunk> --resume_at 9043968 --comm_on_at 9043968` 로 OFF·ON(·RANDOM) 갈래를 뻗음
+- **금지: 같은 시드로 OFF·ON 을 따로 처음부터 학습해 짝 비교.** 근거 = 09-10 배치 실측. 첫 update 는 곡선이 같다가 2번째 update(131,072)부터 갈라져 9M 체크포인트가 s43 도착 89.1% vs 98.2%, 충돌 7.9% vs 0.8%. 결정론 설정 없음 + 런마다 다른 GPU
+- 강제하는 곳:
+
+| 어디 | 무엇 |
+|---|---|
+| `vessel_gym_train.py` | `--arm ON --comm_on_at>0` 인데 trunk 분기가 아니면 **시작 거부**(`--allow_unbranched` 로만 우회, 그 런은 짝 비교 금지). 분기점(`resume_at == comm_on_at`) 재개 시 trunk 검사 — 통신 OFF 모델·`steps == resume_at`·seed 동일 — 후 스냅샷에 `branch_from`·`branch_from_sha256`(trunk 파일)·`branch_at` 기록. 분기 뒤 크래시 재개는 이 키를 물려받음. 재개 런은 곡선 EMA 도 이어받음 |
+| `run_repro.sh` | `train`·`random`·`smoke` = `branch_batch`: 짝 검사(통신 팔마다 같은 dim 의 OFF 갈래 필수, `on12`↔`off12`) → trunk `$CK/trunk_d<dim>_s<seed>.pt`(있으면 재사용) → 갈래(trunk 곡선 CSV 복사 후 이어 씀, 워밍업 `VESSEL_BRANCH_WARMUP` 기본 1200 통신 OFF) → 분기 검사. `VESSEL_COMM_ON_AT` 폐기(주면 중단) |
+| `verify/check_branch.py` | 같은 trunk SHA 묶음 안 seed·dim·branch_at 일치, 통신 팔마다 OFF 짝, trunk 파일 SHA 재계산, 0~branch_at 곡선 CSV 글자 일치. `train` 끝·`eval` 시작에 자동. `eval` 은 FAIL 이면 중단(`VESSEL_ALLOW_UNBRANCHED=1` = 규약 이전 옛 배치 재평가 전용) |
+
+- 9M 통신 OFF 모델 = trunk 파일(구 `.step9M.pt` 역할)
+- 갈래 뒤의 GPU 흔들림은 남음(통신 효과와 섞임) → 시드 수·승패 수로 다룸
+- 09-10 배치(`_repro_out/`)는 규약 이전 — ON-OFF 팔 간 비교 근거로 안 씀. 같은 체크포인트 안 절제(msgzero)는 해당 없음
+
 ---
 
-- ⚠️ `_smoke_fullmoe.py` C절(PPO 미러 sum)은 2026-09-05 action_raw 변경 이전 작성 — 리팩토링 **전부터** FAIL(|lp diff| 1.9e-1, 리팩토링 전 코드로 재현). 낡은 검사이니 판정에 쓰지 말 것. 권위는 `_verify_ppo_mirror.py`(Windows 전용, Mac 은 torch↔numpy 비호환)·`_verify_comm_mirror.py`. D절도 Mac 에서 numpy 크래시.
+- ⚠️ `_archive/deprecated_2026-09/_smoke_fullmoe.py` C절(PPO 미러 sum)은 2026-09-05 action_raw 변경 이전 작성 — 리팩토링 **전부터** FAIL(|lp diff| 1.9e-1, 리팩토링 전 코드로 재현). 낡은 검사이니 판정에 쓰지 말 것. 권위는 `verify/_verify_ppo_mirror.py`(Windows 전용, Mac 은 torch↔numpy 비호환)·`verify/_verify_comm_mirror.py`. D절도 Mac 에서 numpy 크래시.
 
 ## 9. 권위 문서 (주제별 정본 1개)
 
@@ -265,10 +282,10 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 **코드 규칙**
 - **C#**: PascalCase(클래스/메서드), camelCase(지역). 주석 한국어. `[Header]` public 필드. `Debug.Log` 금지(`Debug.LogWarning`만, setup 에러). C# 변경 → **재빌드** 필수(Editor는 자동 반영).
 - **Python**: snake_case. 주석 한국어/docstring 영어. **모든 상수·경로·차원은 `config.py`**(§7 예외는 통합 대상). production 코드에 bare `print()` 금지(학습 진행/에러 출력만).
-- **기본값 = 비트동일 원칙**: 모든 새 기능은 토글, 끈 상태가 없는 상태와 비트동일. `test_golden.py --check`로 확인.
+- **기본값 = 비트동일 원칙**: 모든 새 기능은 토글, 끈 상태가 없는 상태와 비트동일. `verify/test_golden.py --check`로 확인.
 - **데이터 위치**: `models/`, `trajectory_data/`, `figures/`, 체크포인트는 `Assets/` *밖*(Unity 무한 import 방지). 체크포인트는 Dropbox 밖(`VESSEL_CKPT_DIR`).
 - **GitHub**: git root = `Assets/Scripts/`. C# 파일 복사 금지(Unity 중복 컴파일). 원본 직접 `git add`.
-- 학습기 본체(`vessel_gym_train.py` `vessel_gym.py` `networks.py` `main.py` `eval_ckpt.py` `eval_mixed.py` `ckpt_io.py` `diag_ckpt.py` `test_golden.py`) 수정 전 담당 확인 — 동시 작업 중인 경우 있음.
+- 학습기 본체(`vessel_gym_train.py` `vessel_gym.py` `networks.py` `_archive/unity_path_2026-09/main.py` `eval/eval_ckpt.py` `eval/eval_mixed.py` `ckpt_io.py` `eval/diag_ckpt.py` `verify/test_golden.py`) 수정 전 담당 확인 — 동시 작업 중인 경우 있음.
 
 **과학적 정직성 (제1원칙)**
 통신이 도우면 ground-truth로 입증, **안 도우면 정직하게 "안 도움"이 결론.** baseline을 불구화해 통신을 이기게 만들지 않음. H1/H2는 *달성할 목표*지 *조작으로 만들 결과*가 아님. 시드 제외는 통신에 불리한 방향으로만, 그리고 제외 전에 코드를 먼저 의심(`COLLAPSE_ROOTCAUSE.md`).

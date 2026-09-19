@@ -70,3 +70,7 @@ Python/*.jsonl
 
 # run_repro.sh 출력(로그·CSV·평가 txt). 결과는 runs/ 규약대로 git 밖에서 관리 (2026-09-11)
 Python/_repro_out*/
+
+# Understand-Anything 지식그래프 산출물 (2026-09-17, 재생성 가능)
+.ua/
+.ua.meta

@@ -197,3 +197,12 @@ git mv Python/verify/golden Python/golden
 - `WINDOWS_RUN.md`·`Python/SIM2SIM_HANDOFF.md`·`.claude/agents/qa-engineer.md`·
   `.claude/agents/refactorer.md`의 `verify/` 접두어 제거.
 - 이 README 삭제.
+
+## check_branch.py — ON/OFF 분기 규약 검사 (2026-09-15 추가)
+
+- 규약: ON/OFF 는 통신 켜는 지점(9,043,968)까지 같은 trunk 파일에서 출발. `.claude/CLAUDE.md` §8-1
+- 검사: 스냅샷 `branch_from_sha256`·`branch_at` 존재, 같은 trunk 묶음 안 seed·msg_dim·branch_at 일치,
+  통신 팔마다 같은 trunk 의 OFF 갈래, trunk 파일 SHA256 재계산(`--trunk_dir`), 0~branch_at 곡선 CSV 글자 일치(`--csv_dir`)
+- 부르는 곳: `run_repro.sh` `branch_batch` 끝(train·random·smoke), `eval` 시작(FAIL 이면 평가 중단)
+- 직접: `python verify/check_branch.py --trunk_dir $CK --csv_dir _repro_out off_s43.pt on6_s43.pt ...`
+- torch 만 씀(numpy 안 씀) → Mac 에서도 돎

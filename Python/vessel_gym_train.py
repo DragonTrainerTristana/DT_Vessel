@@ -15,7 +15,7 @@ Stage 2(학습된 통신 ON)의 배치 집계는 별도 작업(networks.py 통�
   python vessel_gym_train.py --arm OFF --steps 1000000 --envs 1024 --seed 42
   python vessel_gym_train.py --arm ORACLE --steps 1000000 --envs 1024 --seed 42
 """
-import os, sys, time, argparse
+import os, sys, time, argparse, hashlib
 import torch
 import torch.nn as nn
 
@@ -540,6 +540,10 @@ def main():
     #     *같은 환경 상태*에서 출발해 분기 비교가 성립한다.
     ap.add_argument('--resume_warmup', type=int, default=0,
                     help='재개 직후 학습·기록 없이 굴릴 에이전트당 결정 수 (권장: 수렴 에피소드 길이 ~1200)')
+    # ★분기 규약 우회 (2026-09-15): 커리큘럼 ON(--comm_on_at>0)은 trunk 에서 분기한 런만 허용한다(아래 [branch]).
+    #   이 플래그로 돌린 런은 OFF 와 9M 까지 같은 모델이 아니므로 ON/OFF 짝 비교에 쓰지 않는다.
+    ap.add_argument('--allow_unbranched', action='store_true',
+                    help='trunk 분기 없이 --comm_on_at>0 ON 을 처음부터 돌림 (탐색 전용, 짝 비교 금지)')
     ap.add_argument('--save', default=None)
     ap.add_argument('--csv', default=None)   # 조밀 학습곡선 CSV 경로(None이면 save 기반 자동)
     args = ap.parse_args()
@@ -566,8 +570,32 @@ def main():
     vnorm = ValueNorm(device)   # ★리턴 정규화 (critic 출력 = 정규화 공간)
 
     # ★재개: 가중치 + ValueNorm 통계 + (있으면) Adam 모멘트 복원
+    # ★분기 규약 (2026-09-15, 사용자 지시): ON/OFF 는 통신 켜는 지점까지 *같은 체크포인트 파일*에서 출발한다.
+    #   09-10 배치는 OFF·ON 을 같은 시드로 따로 처음부터 돌렸는데, 결정론 설정이 없어 2번째 update(131,072)부터
+    #   갈라졌고 9M 체크포인트가 이미 다른 모델이었다(s43 도착 89.1% vs 98.2%). 시드가 아니라 파일로 보장한다.
+    #   분기점 = resume_at == comm_on_at > 0 인 재개. 그 파일(trunk)의 SHA256 을 스냅샷에 남긴다.
+    #   분기 *뒤*의 크래시 재개는 이전 스냅샷의 분기 키를 물려받는다(짝 관계 유지).
+    _branch = None
     if args.resume:
         _ck = torch.load(args.resume, map_location=device)
+        _prev_snap = _ck.get('cfg_snapshot') or {}
+        if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
+            if _ck.get('comm_active'):
+                raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '
+                                 '분기점 trunk 는 통신 OFF 로 학습한 모델이어야 함')
+            if _ck.get('steps') is not None and int(_ck['steps']) != args.resume_at:
+                raise SystemExit(f"[branch] 거부: trunk steps={_ck['steps']} != --resume_at {args.resume_at}")
+            if _ck.get('seed') is not None and int(_ck['seed']) != args.seed:
+                raise SystemExit(f"[branch] 거부: trunk seed={_ck['seed']} != --seed {args.seed} "
+                                 f"- 갈래들이 같은 RNG 로 출발해야 함")
+            _h = hashlib.sha256()
+            with open(args.resume, 'rb') as _fh:
+                for _chunk in iter(lambda: _fh.read(1 << 20), b''):
+                    _h.update(_chunk)
+            _branch = {'branch_from': os.path.basename(args.resume), 'branch_from_sha256': _h.hexdigest(),
+                       'branch_at': int(args.resume_at)}
+        elif _prev_snap.get('branch_from_sha256'):
+            _branch = {k: _prev_snap.get(k) for k in ('branch_from', 'branch_from_sha256', 'branch_at')}
         policy.load_state_dict(_ck['model_state_dict'] if 'model_state_dict' in _ck else _ck)
         # ★2026-09-05 fix: ValueNorm.load 는 통계가 없으면 조용히 return 한다.
         #   그러면 debias=0 이라 _stats() 가 mean=0, std=sqrt(1e-6)=1e-3 을 돌려주고,
@@ -585,6 +613,18 @@ def main():
             _os_msg = 'Adam 없음(재축적)'
         print(f"[resume] {os.path.basename(args.resume)} 에서 이어감 | {args.resume_at/1e6:.2f}M 완료분 | "
               f"ValueNorm {_ck.get('value_norm')} | {_os_msg}", flush=True)
+
+    if _branch:
+        print(f"[branch] trunk={_branch['branch_from']} sha256={_branch['branch_from_sha256'][:12]} "
+              f"branch_at={_branch['branch_at']} arm={args.arm}", flush=True)
+    # ★분기 규약 강제 (2026-09-15): 커리큘럼 ON 은 trunk 분기 런만. 따로 처음부터 돌린 ON 은 OFF 와 짝이 아님.
+    if args.arm == 'ON' and args.comm_on_at > 0 and not (_branch and int(_branch['branch_at']) == args.comm_on_at):
+        _bmsg = (f"[branch] --arm ON --comm_on_at {args.comm_on_at} 인데 trunk 분기가 아님. "
+                 f"OFF 로 {args.comm_on_at} 결정까지 학습한 trunk 에서 --resume <trunk> --resume_at {args.comm_on_at} "
+                 f"로 분기할 것 (run_repro.sh train 이 자동으로 함).")
+        if not args.allow_unbranched:
+            raise SystemExit(_bmsg + ' 탐색 목적이면 --allow_unbranched.')
+        print(_bmsg + ' --allow_unbranched 로 진행 - 이 런은 ON/OFF 짝 비교에 쓰지 말 것', flush=True)
 
     # ★arm ON 인데 통신이 꺼져 있으면 rollout(comm_gather 는 USE_COMMUNICATION 을 안 봄)과
     #   update(networks.evaluate_actions 는 0으로 만듦)의 others_msg 가 달라져 PPO ratio 가 조용히 깨진다.
@@ -674,10 +714,13 @@ def main():
     #   (키 추가: farfield_coef·perpair_coef·perpair_exp·radar_range·trainer. 기존 키 값은 불변.)
     def _cfg_snapshot():
         from ckpt_io import snapshot_config
-        return snapshot_config(arm=args.arm, msg_dim=MSG_DIM, seed=args.seed, n_envs=E, n_vessels=N,
-                               max_partners=args.max_partners, trunc_boot=_trunc_boot,
-                               comm_on_at=args.comm_on_at, ring=args.ring, crossing=args.crossing,
-                               rollout=args.rollout, trainer='gym')
+        _snap = snapshot_config(arm=args.arm, msg_dim=MSG_DIM, seed=args.seed, n_envs=E, n_vessels=N,
+                                max_partners=args.max_partners, trunc_boot=_trunc_boot,
+                                comm_on_at=args.comm_on_at, ring=args.ring, crossing=args.crossing,
+                                rollout=args.rollout, trainer='gym')
+        if _branch:   # ★2026-09-15 분기 출처 — 분기(재개) 런에만 붙는 키. verify/check_branch.py 가 읽음
+            _snap.update(_branch)
+        return _snap
 
     # ★2026-09-05: intent/state-recon 라벨 정렬 버그를 고쳤다(pos/hdg 를 env.step *앞*에서 기록).
     #   고치기 전에는 라벨이 한 스텝 밀려 있었고 respawn 텔레포트가 마스크를 관통했다.
@@ -715,6 +758,16 @@ def main():
     if csv_f and _csv_mode == 'w':
         csv_f.write('step,raw_reward,ema_reward\n')
     ema_r = None
+    # ★2026-09-15: 분기 갈래는 trunk 곡선을 이어 쓰므로 EMA 도 마지막 값에서 잇는다.
+    #   안 그러면 EMA 가 분기점(= 통신 켜는 지점)에서 raw 값으로 튀어 통신 효과처럼 보이는 꺾임이 생긴다.
+    if csv_f and _csv_mode == 'a':
+        try:
+            with open(csv_path, encoding='utf-8') as _cf:
+                _rows = [ln for ln in _cf.read().splitlines() if ln and not ln.startswith('step')]
+            if _rows:
+                ema_r = float(_rows[-1].split(',')[2])
+        except (OSError, ValueError, IndexError):
+            ema_r = None
     # 붕괴 검출기 상태 (위 [blind] 참조)
     _blind_run = 0
     _BLIND_WARN = cfg.BLIND_WARN_AFTER

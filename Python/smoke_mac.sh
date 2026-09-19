@@ -8,12 +8,12 @@
 #   PPO 미러(`_verify_ppo_mirror.py`)에서 막혀 뒤에 있는 comm 미러·골든·fidelity 를
 #   못 본다. 이 스크립트는 그 세 개만 run_repro.sh 와 같은 방식($PY·$HERE·
 #   리다이렉트·exit 처리 그대로)으로 이어서 돌린다.
-#   아래 common_env() 블록은 `run_repro.sh:70-102` 의 복사본이다. bash 3.2(macOS
+#   아래 common_env() 블록은 `run_repro.sh:88-120` 의 복사본이다. bash 3.2(macOS
 #   기본)에서 `source <(...)` 로 다른 스크립트의 함수를 가져오는 방식이 정의를
 #   조용히 누락시켜(실측 — 뒤 검사가 그때 config 기본값과 우연히 같아 실패로도
 #   안 드러났다) source 재사용이 불가능해 통째로 복사했다.
 #   → run_repro.sh 의 common_env export 를 하나라도 고치면 이 사본도 반드시 같이 고칠 것.
-#   동기화 확인: diff <(sed -n '70,102p' run_repro.sh) <(sed -n '37,69p' smoke_mac.sh)
+#   동기화 확인: diff <(sed -n '88,120p' run_repro.sh) <(sed -n '37,69p' smoke_mac.sh)
 #   (빈 출력 = 동일. 두 파일 중 한쪽 줄이 밀리면 sed 범위를 다시 맞출 것.)
 #
 # 돌리는 것 (이 순서로, run_repro.sh preflight 와 동일한 호출):
@@ -33,7 +33,7 @@ OUT="${VESSEL_OUT_DIR:-$HERE/_repro_out}"
 
 mkdir -p "$OUT"
 
-# common_env() — run_repro.sh:70-101 을 그대로 복사한 것. 정본은 run_repro.sh.
+# common_env() — run_repro.sh:88-120 을 그대로 복사한 것. 정본은 run_repro.sh.
 common_env() {
   export VESSEL_USE_ATTENTION=1
   export VESSEL_CENTRAL_CRITIC=1
