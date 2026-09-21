@@ -15,6 +15,7 @@ Vessel Navigation ML-Agent Configuration
     VESSEL_USE_EDITOR     '1'=Unity Editor 직결 학습(기본), '0'=빌드 exe 병렬
 """
 import os
+import math
 
 # CUDA allocator 최적화 (torch import 전 반드시 설정)
 # fragmentation 50%↓, expandable segments로 OOM 회피
@@ -479,6 +480,53 @@ FARPAIR_COEF = _env_float('VESSEL_FARPAIR_COEF', 0.0)   # far-field 직접 비�
 FARPAIR_EXP = _env_float('VESSEL_FARPAIR_EXP', 2.0)
 REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → VesselBatchEnv 가 DETECTION_RANGE(56) 사용
 
+# ── ★동역학 프로필 (2026-09-21, feat/dyn-profile-imo — 스펙 docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md) ──
+#   agile = 현행(전타 yaw 45 °/s, 선회직경 0.18 L). 기본 = 비트동일.
+#   imo   = IMO MSC.137(76) 봉투: 선회직경 4 L 전 선박 고정(절대속도 식 yaw=(rudder/30°)·speed/R_FULL), 타속 3 °/s(SOLAS II-1/29),
+#           정지거리 ≈ 5 L(DECEL/DRAG/ACCEL), 물리 파생 보상 상수 × k_t 2.27(T_lat12 32.0/14.1 s). 가중치는 불변.
+#   vessel_gym 은 DYN 을 모듈 속성으로 import 하고, ckpt_io 는 스냅샷에 'dyn_profile' + 'dyn'(이 dict 숫자) 를 기록·대조·복원한다.
+#   state_dict 키에 영향 없음 = 스냅샷이 유일 근거(§5 "조용히 다른 실험" 목록에 해당).
+DYN_PROFILE = _env_str('VESSEL_DYN_PROFILE', 'agile').lower()
+assert DYN_PROFILE in ('agile', 'imo'), f"VESSEL_DYN_PROFILE={DYN_PROFILE!r} - 'agile' | 'imo'"
+OBSTACLES_MODE = _env_str('VESSEL_OBSTACLES', 'grid3x3').lower()   # 'grid3x3'(현행 coastal) | 'none'(open-sea, 벽만)
+assert OBSTACLES_MODE in ('grid3x3', 'none'), f"VESSEL_OBSTACLES={OBSTACLES_MODE!r} - 'grid3x3' | 'none'"
+SHIP_LEN_M = 14.18316   # 충돌 박스 길이 L (= vessel_gym.SHIP_HALF_LEN × 2). imo 프로필의 길이 단위
+DYN_K_T = 2.27          # imo 시간 배율 = T_lat12(imo 32.0 s) / T_lat12(agile 14.1 s) — 스펙 §5, dyn_profiles.py 실측
+
+
+def dyn_profile_constants(profile):
+    """Profile name -> dict of dynamics + physically-derived reward constants.
+
+    Single source for vessel_gym (import), ckpt_io (snapshot record/restore) and tests.
+    'agile' values equal the pre-2026-09-21 vessel_gym.py literals (bit-identical golden).
+    """
+    if profile == 'agile':
+        return {
+            'formula': 'ratio', 'turn_factor': 1.5, 'r_full': None, 'max_yaw_rate': 45.0, 'rudder_rate': 12.0,
+            'accel': 0.1, 'decel': 0.04, 'drag_coef': 0.1,
+            'tcpa_risk_denom': 30.0, 'rule_17b_time': 7.0, 'rule_17c_time': 3.5,
+            'rule_17b_dist': 18.0, 'rule_17c_dist': 9.0,
+            'early_action_time': 21.5, 'substantial_action_time': 11.5,
+            'goal_reached': 3.0, 'cmd_mismatch_slack_deg': 0.0,
+        }
+    if profile == 'imo':
+        r_full = 2.0 * SHIP_LEN_M          # 전타 정상 선회반경 = 2 L → 선회직경 4 L (IMO TD ≤ 5 L)
+        fleet_vmax = 1.0 * 1.8             # vessel_gym MAX_SPEED_BASE × SPEED_MULT_MAX = 함대 최고속 (obs[363] 분모 기준)
+        rudder_rate = 3.0                  # °/s. SOLAS II-1/29 최소 ≈ 2.3
+        return {
+            'formula': 'abs', 'turn_factor': None, 'r_full': r_full,
+            'max_yaw_rate': fleet_vmax / r_full / (math.pi / 180.0),   # ≈ 3.635 °/s
+            'rudder_rate': rudder_rate, 'accel': 0.01, 'decel': 0.004, 'drag_coef': 0.005,
+            'tcpa_risk_denom': 30.0 * DYN_K_T, 'rule_17b_time': 7.0 * DYN_K_T, 'rule_17c_time': 3.5 * DYN_K_T,
+            'rule_17b_dist': 18.0 * DYN_K_T, 'rule_17c_dist': 9.0 * DYN_K_T,
+            'early_action_time': 21.5 * DYN_K_T, 'substantial_action_time': 11.5 * DYN_K_T,
+            'goal_reached': SHIP_LEN_M / 2.0, 'cmd_mismatch_slack_deg': rudder_rate * 0.4,   # 결정(0.4 s)당 달성 가능 슬루
+        }
+    raise ValueError(f"dyn_profile_constants: 모르는 프로필 {profile!r} ('agile' | 'imo')")
+
+
+DYN = dyn_profile_constants(DYN_PROFILE)
+
 # ── 레이더 인코더 망 간 공유 — 2026-09-10 (VESSEL_SHARED_ENCODER) ──
 #   '0'     : 세 망(Message/Control/Critic)이 각자 인코더 (기존 구조, 기본 = 비트동일)
 #   'actor' : MessageActor 가 ControlActor 인코더를 같이 씀 (Critic 은 별도) — 절제용
@@ -511,6 +559,7 @@ YUGIOH = {  # env 이름 → 값. run_repro.sh common_env 가 이걸 그대로 e
     'VESSEL_THREAT_COEF': '0', 'VESSEL_GOAL_COMM_COEF': '0', 'VESSEL_INTENT_COEF': '0', 'VESSEL_ROLE_COMM_COEF': '0',
     'VESSEL_COMM_CONSUMER_COEF': '0', 'VESSEL_RECON_EMA_FLOOR': '0', 'VESSEL_AGG_MODE': 'sum', 'VESSEL_MSG_GAIN': '1.0',
     'VESSEL_TIMEOUT_BOOTSTRAP': '0', 'VESSEL_MSG_GATE_APPLY': '0',
+    'VESSEL_DYN_PROFILE': 'agile', 'VESSEL_OBSTACLES': 'grid3x3',   # ★2026-09-21 동역학 프로필·시나리오 (기본 = 비트동일)
 }
 # 학습기 인자 (gym 경로). commfix 12런과 동일 — crossing 2 는 eval 헤더(README_진단 :21), envs 128·rollout 32 는
 #   run_repro.sh(09-05) 원본 + cf_ON_s43_aux.csv 가 update 당 65,536 결정(=128×16×32)으로 245행인 것으로 확인.
