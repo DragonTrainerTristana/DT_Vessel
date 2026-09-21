@@ -34,7 +34,7 @@
 #   VESSEL_SEEDS     시드 목록. 기본 "43 44 45"
 #   VESSEL_NGPU      쓸 GPU 수. 기본은 torch 로 자동 감지(0장이면 1로 두고 CPU)
 #   VESSEL_JOBS      동시 실행 프로세스 수. 기본 = NGPU × 2 (VRAM 프로세스당 ~5.2GB 기준)
-#   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12)
+#   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12, on2/off2(dim 2 짝))
 #   VESSEL_BRANCH_WARMUP  갈래 재개 직후 통신 OFF 로 굴리는 에이전트당 결정 수. 기본 1200 (모든 갈래 동일)
 #   VESSEL_ALLOW_UNBRANCHED=1  eval 의 분기 검사 FAIL 을 무시 — 규약 이전 옛 배치 재평가 전용, 짝 비교 금지
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +81,7 @@ echo "  출력        : $OUT"
 echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
+echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3}"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -117,6 +118,11 @@ common_env() {
   export VESSEL_MSG_GAIN=1.0
   export VESSEL_TIMEOUT_BOOTSTRAP=0
   export VESSEL_MSG_GATE_APPLY=0
+  # ★2026-09-21 동역학 프로필·시나리오 — 바깥에서 준 값을 보존(기본 agile/grid3x3 = 비트동일).
+  #   imo 배치는 VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none 을 밖에서 주고, 별도 VESSEL_CKPT_DIR/VESSEL_OUT_DIR 을 쓴다.
+  #   preflight 드리프트 검사(names) 대상이 아니다 — 의도된 override 이므로. 학습기·check_branch 가 갈래 간 일치를 강제한다.
+  export VESSEL_DYN_PROFILE="${VESSEL_DYN_PROFILE:-agile}"
+  export VESSEL_OBSTACLES="${VESSEL_OBSTACLES:-grid3x3}"
 }
 
 # ── 사전 검증: 미러가 깨졌으면 돌리지 말 것 ─────────────────────────────────
@@ -260,6 +266,8 @@ arm_spec() {
     on6)   echo "ON 6" ;;
     on12)  echo "ON 12" ;;
     off12) echo "OFF 12" ;;     # on12 의 짝 — dim12 trunk 에서 분기한 OFF
+    on2)   echo "ON 2" ;;
+    off2)  echo "OFF 2" ;;      # on2 의 짝 — dim2 trunk 에서 분기한 OFF
     rand)  echo "RANDOM 6" ;;   # 난수 메시지 대조군 (random 모드)
     *) return 1 ;;
   esac
@@ -286,7 +294,7 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|rand)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand)"; exit 1; }
     dim=${spec#* }
     case " $dims " in *" $dim "*) ;; *) dims="$dims $dim" ;; esac
   done
@@ -373,7 +381,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
+      for nm in off on6 off12 on12 off2 on2; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
       echo "[eval] 분기 검사"
@@ -392,6 +400,8 @@ case "$MODE" in
       eval_one on6  ON  6  "$s"
       eval_one on12 ON  12 "$s"
       [ -f "$CK/off12_s$s.pt" ] && eval_one off12 OFF 12 "$s"
+      [ -f "$CK/on2_s$s.pt" ]  && eval_one on2  ON  2  "$s"
+      [ -f "$CK/off2_s$s.pt" ] && eval_one off2 OFF 2  "$s"
     done
     wait
     # ★2026-09-15: 0건이면 실패. 전에는 9건 전부 건너뛰고도 exit 0 "평가 완료" 였다.
