@@ -510,6 +510,8 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
 def main():
     # (ASCII 대시만 — U+2014 는 cp949 콘솔(Windows 리다이렉트)에서 UnicodeEncodeError 로 즉사함, 2026-09-10 실측)
     print(f"[version] {getattr(cfg, 'CODE_VERSION', '?')} - env 로 안 준 키는 config 기본값(YUGIOH)", flush=True)
+    print(f"[sim] dyn_profile={cfg.DYN_PROFILE} obstacles={cfg.OBSTACLES_MODE} formula={cfg.DYN['formula']} "
+          f"rudder_rate={cfg.DYN['rudder_rate']} r_full={cfg.DYN['r_full']} goal_reached={cfg.DYN['goal_reached']:.2f}", flush=True)
     ap = argparse.ArgumentParser()
     # OFF=통신 없음 / ORACLE=참 파트너 goal 주입(정보 상한) / ON=학습형 comm / RANDOM=난수 메시지 대조군
     ap.add_argument('--arm', default='OFF', choices=['OFF', 'ORACLE', 'ON', 'RANDOM'])
@@ -579,6 +581,12 @@ def main():
     if args.resume:
         _ck = torch.load(args.resume, map_location=device)
         _prev_snap = _ck.get('cfg_snapshot') or {}
+        # ★2026-09-21 sim 설정 일치 — 재개·분기는 같은 동역학·시나리오여야 함(다르면 다른 실험을 이어 붙이는 것). 우회 없음.
+        _prev_dp = str(_prev_snap.get('dyn_profile') or 'agile').lower()
+        _prev_ob = str(_prev_snap.get('obstacles') or 'grid3x3').lower()
+        if _prev_dp != cfg.DYN_PROFILE or _prev_ob != cfg.OBSTACLES_MODE:
+            raise SystemExit(f"[resume] 거부: 체크포인트 sim 설정 dyn_profile={_prev_dp} obstacles={_prev_ob} != "
+                             f"현재 {cfg.DYN_PROFILE}/{cfg.OBSTACLES_MODE} - VESSEL_DYN_PROFILE/VESSEL_OBSTACLES 를 맞출 것")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '

@@ -198,11 +198,24 @@ def test_apply_sim_snapshot_legacy_and_mismatch():
         vg.apply_dyn_constants(saved, saved_p); vg.OBSTACLES_MODE = saved_ob
 
 
+def test_check_branch_rejects_profile_mismatch(tmp=None):
+    import subprocess, tempfile
+    d = tempfile.mkdtemp()
+    base = {'arm': 'OFF', 'seed': 1, 'msg_dim': 6, 'branch_from': 'trunk_d6_s1.pt', 'branch_from_sha256': 'ab' * 32, 'branch_at': 100}
+    torch.save({'cfg_snapshot': dict(base, dyn_profile='agile', obstacles='grid3x3'), 'steps': 200}, os.path.join(d, 'off_s1.pt'))
+    torch.save({'cfg_snapshot': dict(base, arm='ON', dyn_profile='imo', obstacles='grid3x3'), 'steps': 200}, os.path.join(d, 'on6_s1.pt'))
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run([sys.executable, os.path.join(here, 'check_branch.py'), os.path.join(d, 'off_s1.pt'), os.path.join(d, 'on6_s1.pt')],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    assert r.returncode != 0 and 'dyn' in (r.stdout + r.stderr), (r.returncode, r.stdout[-600:])
+
+
 TESTS = [test_agile_dict_equals_legacy_literals, test_imo_dict_numbers, test_unknown_profile_raises,
          test_defaults_are_agile_grid, test_imo_turn_radius_fixed_across_fleet, test_agile_turn_radius_unchanged,
          test_stop_distance, test_yaw_helper_matches_legacy_formula, test_obs_yaw_norm_bounded,
          test_obstacles_none, test_obstacles_grid_default,
-         test_snapshot_records_profile, test_apply_sim_snapshot_legacy_and_mismatch]
+         test_snapshot_records_profile, test_apply_sim_snapshot_legacy_and_mismatch,
+         test_check_branch_rejects_profile_mismatch]
 
 
 def main():

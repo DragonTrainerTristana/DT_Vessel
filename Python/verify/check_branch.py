@@ -46,6 +46,7 @@ def load_meta(path):
         'arm': snap.get('arm', ck.get('arm')), 'seed': snap.get('seed', ck.get('seed')),
         'msg_dim': snap.get('msg_dim'), 'steps': ck.get('steps'),
         'trunk': snap.get('branch_from'), 'sha': snap.get('branch_from_sha256'), 'at': snap.get('branch_at'),
+        'dyn': str(snap.get('dyn_profile') or 'agile'), 'obst': str(snap.get('obstacles') or 'grid3x3'),
     }
 
 
@@ -76,11 +77,12 @@ def main():
         if not m['sha'] or m['at'] is None:
             fails.append(f"{m['name']}: 분기 기록 없음(branch_from_sha256/branch_at) - trunk 에서 분기하지 않은 런")
 
-    print(f"{'체크포인트':<28} {'arm':<7} {'seed':>5} {'dim':>4} {'steps':>10} {'branch_at':>10}  trunk")
+    print(f"{'체크포인트':<28} {'arm':<7} {'seed':>5} {'dim':>4} {'steps':>10} {'branch_at':>10}  trunk  dyn/obst")
     for m in metas:
         sha = (m['sha'] or '-')[:12]
         print(f"{m['name']:<28} {str(m['arm']):<7} {str(m['seed']):>5} {str(m['msg_dim']):>4} "
-              f"{str(m['steps']):>10} {str(m['at']):>10}  {m['trunk'] or '-'} ({sha})")
+              f"{str(m['steps']):>10} {str(m['at']):>10}  {m['trunk'] or '-'} ({sha})"
+              f"  {m['dyn']}/{m['obst']}")
 
     groups = defaultdict(list)
     for m in metas:
@@ -89,7 +91,7 @@ def main():
 
     for sha, ms in groups.items():
         tag = f"trunk {ms[0]['trunk']} ({sha[:12]})"
-        for key in ('seed', 'msg_dim', 'at'):
+        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst'):
             vals = sorted({str(m[key]) for m in ms})
             if len(vals) > 1:
                 fails.append(f'{tag}: {key} 불일치 {vals}')
