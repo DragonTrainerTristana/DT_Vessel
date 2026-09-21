@@ -587,6 +587,16 @@ def main():
         if _prev_dp != cfg.DYN_PROFILE or _prev_ob != cfg.OBSTACLES_MODE:
             raise SystemExit(f"[resume] 거부: 체크포인트 sim 설정 dyn_profile={_prev_dp} obstacles={_prev_ob} != "
                              f"현재 {cfg.DYN_PROFILE}/{cfg.OBSTACLES_MODE} - VESSEL_DYN_PROFILE/VESSEL_OBSTACLES 를 맞출 것")
+        # ★이름이 같아도 프로필 *정의*(숫자)가 바뀐 코드면 다른 실험이다. 스냅샷의 dyn 숫자 dict 가 유일한 근거.
+        if isinstance(_prev_snap.get('dyn'), dict):
+            from ckpt_io import dyn_constants_mismatch
+            _cur_dyn = vg.current_dyn_constants()
+            _bad_dyn = dyn_constants_mismatch(_prev_snap['dyn'], _cur_dyn)
+            if _bad_dyn:
+                _k = _bad_dyn[0]
+                raise SystemExit(f"[resume] 거부: 체크포인트 dyn 상수 {_k} = {_prev_snap['dyn'].get(_k)} != "
+                                 f"현재 {_cur_dyn.get(_k)} — 프로필 정의가 바뀐 코드로 재개 불가(스냅샷이 유일 근거)"
+                                 + (f" / 다른 키도 다름: {_bad_dyn[1:]}" if len(_bad_dyn) > 1 else ""))
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '

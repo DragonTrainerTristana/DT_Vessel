@@ -190,6 +190,11 @@ PYCHK
     "$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
       || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
     echo "  충실도 PASS"
+    # ★2026-09-21: 동역학 프로필·시나리오 게이트. 지금 env(agile/grid3x3 든 imo/none 이든) 그대로 돌린다.
+    "$PY" -u "$HERE/verify/test_dyn_profile.py" > "$OUT/_dyn_profile.txt" 2>&1 \
+      || { echo "  동역학 프로필 FAIL — $OUT/_dyn_profile.txt 확인"; exit 1; }
+    grep -q "ALL PASS" "$OUT/_dyn_profile.txt" || { echo "  동역학 프로필이 ALL PASS 가 아님"; exit 1; }
+    echo "  동역학 프로필 ALL PASS"
   fi
   echo
 }
@@ -409,7 +414,7 @@ case "$MODE" in
       echo
       echo "평가 실패: 체크포인트를 한 건도 못 찾아 0건 평가됨."
       echo "  찾은 곳    : $CK"
-      echo "  기대한 이름: {off,on6,on12}_s{$(echo $SEEDS | tr ' ' ',')}.pt"
+      echo "  기대한 이름: {off,on6,on12,off12,on2,off2}_s{$(echo $SEEDS | tr ' ' ',')}.pt"
       echo "  못 찾은 것 :$EVAL_MISS"
       echo "  실제 내용  :"
       if [ -d "$CK" ]; then
@@ -423,6 +428,13 @@ case "$MODE" in
     [ -z "$EVAL_MISS" ] || echo "  ⚠️건너뛴 체크포인트:$EVAL_MISS"
     echo "평가 완료 — $EVAL_N건, 결과는 $OUT/eval_*.txt"
     cat "$OUT/_status_eval.txt"
+    # ★2026-09-21: rc≠0 인 평가가 있으면 실패. 전에는 전부 죽어도 "평가 완료" 로 exit 0 이었다.
+    _eval_bad=$(grep -cv 'rc=0$' "$OUT/_status_eval.txt")
+    if [ "${_eval_bad:-0}" -ne 0 ]; then
+      echo
+      echo "평가 실패: rc≠0 인 평가 ${_eval_bad}건 — 위 목록에서 rc 를 확인하고 $OUT/eval_*.txt 를 볼 것"
+      exit 1
+    fi
     ;;
 
   random)

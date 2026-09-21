@@ -13,13 +13,15 @@
 #   조용히 누락시켜(실측 — 뒤 검사가 그때 config 기본값과 우연히 같아 실패로도
 #   안 드러났다) source 재사용이 불가능해 통째로 복사했다.
 #   → run_repro.sh 의 common_env export 를 하나라도 고치면 이 사본도 반드시 같이 고칠 것.
-#   동기화 확인: diff <(sed -n '89,126p' run_repro.sh) <(sed -n '37,74p' smoke_mac.sh)
+#   동기화 확인: diff <(sed -n '89,126p' run_repro.sh) <(sed -n '39,76p' smoke_mac.sh)
 #   (빈 출력 = 동일. 두 파일 중 한쪽 줄이 밀리면 sed 범위를 다시 맞출 것.)
 #
 # 돌리는 것 (이 순서로, run_repro.sh preflight 와 동일한 호출):
 #   1. _verify_comm_mirror.py       (통신 집계 rollout=update 미러)
 #   2. test_golden.py --check       (기본값 결과 비트동일 골든)
 #   3. test_vessel_gym_fidelity.py  (vessel_gym 물리·obs 충실도)
+#   4. test_dyn_profile.py          (동역학 프로필·시나리오. env 를 그대로 물려받음 —
+#                                    imo/none 으로 돌리려면 VESSEL_DYN_PROFILE·VESSEL_OBSTACLES 를 밖에서 줄 것)
 #
 # 쓰는 법: bash smoke_mac.sh
 # 환경변수(run_repro.sh 와 동일): VESSEL_PY(기본 python) · VESSEL_OUT_DIR(기본 $HERE/_repro_out)
@@ -89,23 +91,29 @@ echo
 
 common_env
 
-echo "[1/3] 통신 미러 검증"
+echo "[1/4] 통신 미러 검증"
 "$PY" -u "$HERE/verify/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
 grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
 echo "  통신 미러 ALL PASS"
 
-echo "[2/3] 골든 비트동일 검사"
+echo "[2/4] 골든 비트동일 검사"
 ( env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
     "$PY" -u "$HERE/verify/test_golden.py" --check ) > "$OUT/_golden.txt" 2>&1 \
   || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
 grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
 echo "  골든 ALL PASS"
 
-echo "[3/3] vessel_gym 충실도 검사"
+echo "[3/4] vessel_gym 충실도 검사"
 "$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
   || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
 echo "  충실도 PASS"
 
+echo "[4/4] 동역학 프로필 검사"
+"$PY" -u "$HERE/verify/test_dyn_profile.py" > "$OUT/_dyn_profile.txt" 2>&1 \
+  || { echo "  동역학 프로필 FAIL — $OUT/_dyn_profile.txt 확인"; exit 1; }
+grep -q "ALL PASS" "$OUT/_dyn_profile.txt" || { echo "  동역학 프로필이 ALL PASS 가 아님"; exit 1; }
+echo "  동역학 프로필 ALL PASS"
+
 echo
-echo "Mac 검증 완료 — 통신 미러·골든·충실도 전부 PASS (PPO 미러는 제외)"
+echo "Mac 검증 완료 — 통신 미러·골든·충실도·동역학 프로필 전부 PASS (PPO 미러는 제외)"
 echo "최종 판정은 Windows 의 run_repro.sh smoke 로 한다."

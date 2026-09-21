@@ -205,7 +205,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | `VESSEL_MSG_TOKEN_GAIN` / `VESSEL_CLIP_PER_MODULE` | `MSG_TOKEN_GAIN` / `CLIP_PER_MODULE` | **8.0 ★**(1.0) / **1 ★**(0) | config 끝 | attention 토큰 안 msg 상수배 / 망별 grad clip 0.5 |
 | `VESSEL_LOAD_MODEL` / `VESSEL_TRAIN` / `VESSEL_MODEL_PATH` | `LOAD_MODEL` / `TRAIN_MODE` / `MODEL_PATH` | 0 / 1 / — | :280-284 | Unity 경로 로드·eval |
 | `VESSEL_USE_EDITOR` / `VESSEL_NUM_ENVS` / `VESSEL_BASE_PORT` / `VESSEL_TIME_SCALE` | — | 1 / 2 / 5004 / 100 | :314-317 | Unity 환경 |
-| `VESSEL_DYN_PROFILE` | `DYN_PROFILE` | **agile** | config 끝 | 동역학 프로필. `imo` = 선회직경 4 L 고정(절대속도 식)·타속 3°/s·정지 5 L·보상 시간상수 ×2.27(`config.dyn_profile_constants`). 스냅샷 `dyn_profile`+`dyn` 이 유일 근거. 재개·분기·평가는 일치 강제(`allow_sim_mismatch`) — 스펙 `docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md` |
+| `VESSEL_DYN_PROFILE` | `DYN_PROFILE` | **agile** | config 끝 | 동역학 프로필. `imo` = 선회직경 4 L 고정(절대속도 식)·타속 3°/s·정지 5 L·보상 시간상수 ×2.27(`config.dyn_profile_constants`). 스냅샷 `dyn_profile`+`dyn` 이 유일 근거. 재개·분기·평가는 일치 강제 — 의도한 교차평가만 `VESSEL_ALLOW_SIM_MISMATCH=1`(`eval/eval_mixed.py`·`measure_regimes.py`·`corridor_run.py`·`astar_fig9/eval_astar_global.py`) / `--allow_sim_mismatch`(`eval/eval_ckpt.py`·`eval/diag_ckpt.py`). 재개는 우회 없음(이름이 같아도 `dyn` 숫자가 다르면 거부) — 스펙 `docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md` |
 | `VESSEL_OBSTACLES` | `OBSTACLES_MODE` | **grid3x3** | config 끝 | `none` = open-sea(장애물 0, 벽만). 스냅샷 `obstacles` |
 | PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
 

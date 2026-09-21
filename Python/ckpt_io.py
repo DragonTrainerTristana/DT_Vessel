@@ -91,6 +91,35 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
 # ──────────────────────────────────────────────────────────────────────────────
 # 복원 쪽
 # ──────────────────────────────────────────────────────────────────────────────
+_MISSING = object()
+
+
+def dyn_constants_mismatch(prev, cur):
+    """Return the list of dyn-constant keys whose value differs between two snapshots' `dyn` dicts.
+
+    Pure function (no globals, no side effects) so the trainer's resume check is unit-testable.
+    None == None, strings compare exactly, numbers compare with a 1e-9 tolerance, a key missing
+    on either side counts as a difference. Empty list = identical profile definition.
+    """
+    prev = prev or {}
+    cur = cur or {}
+    bad = []
+    for k in sorted(set(prev) | set(cur)):
+        a, b = prev.get(k, _MISSING), cur.get(k, _MISSING)
+        if a is _MISSING or b is _MISSING:
+            bad.append(k)
+            continue
+        if isinstance(a, bool) or isinstance(b, bool):
+            same = a == b
+        elif isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            same = abs(float(a) - float(b)) <= 1e-9
+        else:                      # None/None, 문자열('ratio'/'abs'), 그 밖의 타입
+            same = a == b
+        if not same:
+            bad.append(k)
+    return bad
+
+
 def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt]'):
     """Compare the checkpoint's sim settings (dyn_profile, obstacles, radar_range) with the current config and
     apply them to vessel_gym module globals. Missing keys mean legacy (agile / grid3x3). A mismatch aborts unless
@@ -117,6 +146,12 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
     vg.apply_dyn_constants(snap.get('dyn') or cfg.dyn_profile_constants(ck_dp), ck_dp)
     vg.OBSTACLES_MODE = ck_ob
     if ck_rr is not None:
+        # ★스냅샷 값을 강제 적용하기 전 가드 — vessel_gym import 시 가드(:56)는 config 값만 보므로
+        #   allow_sim_mismatch 로 들어온 작은 radar_range 는 여기서만 잡힌다(보상 문턱 19.6 파괴).
+        if float(ck_rr) < vg.RADAR_RANGE_BASE * 0.35 and not cfg.ALLOW_SMALL_RADAR:
+            raise SystemExit(f"{tag} 중단: 스냅샷 radar_range={ck_rr} < {vg.RADAR_RANGE_BASE * 0.35:.1f} — "
+                             "proximity 보상 문턱(19.6) 보다 작아 보상 불변 전제가 깨짐. "
+                             "의도한 것이면 VESSEL_ALLOW_SMALL_RADAR=1")
         vg.RADAR_RANGE = float(ck_rr)
     if not snap.get('dyn_profile'):
         notes.append("스냅샷에 dyn_profile 없음(2026-09-21 이전) → legacy 'agile'/'grid3x3' 로 복원")
@@ -140,7 +175,7 @@ class Restored:
                 f"state_recon={e['state_recon_coef']} radar={e['radar_head']}/{e['radar_act']} "
                 f"msg_ln={e['msg_ln']} token_gain={e['msg_token_gain']} agg={e['agg_mode']} msg_gain={e['msg_gain']} "
                 f"shared_enc={e.get('shared_encoder')} moe={int(e.get('use_moe', 1))}/{e.get('moe_width')}/{int(e.get('moe_shared', 0))} "
-                f"dyn={e.get('dyn_profile')} obst={e.get('obstacles')} "
+                f"dyn={e.get('dyn_profile')} obst={e.get('obstacles')} radar={e.get('radar_range')} "
                 f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
 
@@ -444,7 +479,8 @@ def describe(snap):
     keys = ('arm', 'msg_dim', 'use_attention', 'pos_ground', 'central_critic', 'state_recon_coef', 'use_moe',
             'msg_ln', 'comm_range', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'seed',
             'radar_act', 'radar_head', 'msg_token_gain', 'agg_mode', 'msg_gain', 'recon_ema_floor',
-            'clip_per_module', 'perpair_coef', 'farfield_coef', 'dyn_profile', 'obstacles')
+            'clip_per_module', 'perpair_coef', 'farfield_coef', 'dyn_profile', 'obstacles',
+            'los_gate', 'radar_dropout_p', 'max_episode_steps')
     return ' '.join(f"{k}={snap[k]}" for k in keys if k in snap)
 
 
@@ -468,6 +504,11 @@ _SNAP_TO_ENV = [
     ('farfield_coef', 'VESSEL_FARFIELD_COEF', str), ('perpair_coef', 'VESSEL_PERPAIR_COEF', str),
     ('msg_random_sd', 'VESSEL_MSG_RANDOM_SD', str),
     ('dyn_profile', 'VESSEL_DYN_PROFILE', str), ('obstacles', 'VESSEL_OBSTACLES', str),
+    # ★구멍 수리(스펙 §2): 가중치에 흔적이 없는 regime 토글. 재현용 export 로만 내보내고
+    #   apply_sim_snapshot 의 중단 대조에는 넣지 않는다 — dropout/los 는 각자 env 를 쓰는 별개 regime 이고
+    #   max_episode_steps 는 스펙 §8-2 에서 프로필마다 다시 재는 값이라서.
+    ('radar_dropout_p', 'VESSEL_RADAR_DROPOUT_P', str), ('radar_dropout_len', 'VESSEL_RADAR_DROPOUT_LEN', str),
+    ('los_gate', 'VESSEL_LOS_GATE', lambda v: '1' if v else '0'), ('max_episode_steps', 'VESSEL_MAX_EP_STEPS', str),
 ]
 
 

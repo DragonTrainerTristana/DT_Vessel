@@ -8,7 +8,8 @@
 
 검사 (하나라도 어기면 exit 1, 통과하면 'ALL PASS')
   1. 모든 체크포인트 스냅샷에 branch_from_sha256 · branch_at 이 있다 (= trunk 에서 분기한 런)
-  2. 같은 trunk(SHA256) 묶음 안에서 seed · msg_dim · branch_at 이 같다
+  2. 같은 trunk(SHA256) 묶음 안에서 seed · msg_dim · branch_at · dyn_profile · obstacles 가 같다
+     (dyn/obst 는 스냅샷 키. 없으면 legacy agile/grid3x3 으로 본다 — 2026-09-21 이전 체크포인트)
   3. 통신 팔(ON/RANDOM/ORACLE)이 있는 묶음에는 같은 trunk 의 OFF 갈래가 있다
   4. --trunk_dir 에 trunk 파일이 있으면 SHA256 을 다시 계산해 기록과 대조한다
   5. --csv_dir 에 trunk 곡선 CSV 가 있으면 각 갈래 CSV 의 step<=branch_at 행이 trunk CSV 와 글자까지 같다

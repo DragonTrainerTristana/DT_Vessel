@@ -114,6 +114,9 @@ git fetch origin && git checkout feat/dyn-profile-imo && git pull
 cd Python
 # 0) preflight + 기본(agile) 스모크 — 비트동일 확인
 bash run_repro.sh smoke
+#    프로필 게이트를 두 env 에서 따로 확인 (preflight 는 그때의 env 로만 돈다)
+python verify/test_dyn_profile.py                                                   # agile/grid3x3 → ALL PASS
+VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none python verify/test_dyn_profile.py      # imo/none → ALL PASS (SKIP 2 = legacy 기본 전용 케이스)
 # 1) imo open-sea 스모크
 export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none
 export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/imo_opensea VESSEL_OUT_DIR=$PWD/_repro_out_imo
@@ -129,5 +132,11 @@ bash run_repro.sh eval
 VESSEL_TRAIN_ARMS="off2 on2 off12 on12" bash run_repro.sh train && bash run_repro.sh eval
 # 6) coastal 보조: VESSEL_OBSTACLES=grid3x3 로 1)~4) 를 다른 CKPT/OUT 폴더에서
 ```
+
+평가는 체크포인트 스냅샷의 `dyn_profile`·`obstacles`·`radar_range` 와 현재 env 가 다르면 **중단**한다(조용히 다른 조건으로 재는 사고 방지).
+일부러 교차평가할 때만 우회: `VESSEL_ALLOW_SIM_MISMATCH=1`(`eval_mixed.py`·`measure_regimes.py`·`corridor_run.py`·`astar_fig9/eval_astar_global.py`)
+/ `--allow_sim_mismatch`(`eval_ckpt.py`·`diag_ckpt.py`). 그렇게 낸 숫자는 학습 조건과 다르다고 반드시 같이 적을 것.
+재개·분기는 우회가 없다 — 프로필 이름이 같아도 `dyn` 숫자가 다르면 학습기가 거부한다.
+`astar_fig9/eval_astar_global.py` 는 imo 프로필에서 무효(스펙 §2: R 28 m 로 웨이포인트 추종 불가).
 
 판정 기준·지표 = 스펙 §4(사전등록). 결과 표는 `eval_*.txt` 의 goal/vColl/fuel/headTravel/minSep/colregs/colregsOK + 시드별 승패. 결과 보고 기준 바꾸지 말 것.

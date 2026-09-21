@@ -30,6 +30,8 @@ vessel_gym 배치 심 위에서 재현함 — 그래야 Fig1~Fig8 과 같은 정
 - epReward 는 arm 간 비교 금지. waypoint 전환 때 progress 항의 기준거리(prev_dist)를
   다시 잡으므로 보상 스케일이 direct arm 과 다름. **ground-truth 지표(goal%/vColl%/fuel/len)만 씀.**
 - 장거리(Taiwan↔Busan) 로 키우려면 --arena_scale 을 올릴 것. 비용은 README 참고.
+- **imo 프로필에서는 무효**(스펙 §2: R 28 m 로 웨이포인트 추종 불가). 기본 waypoint 간격·도달반경이
+  agile 선회반경(≈1.3 m) 기준이라 imo 배는 waypoint 를 돌 수 없다. imo 체크포인트로는 돌리지 말 것.
 """
 import argparse
 import heapq
@@ -413,17 +415,22 @@ def main():
     ckpt_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ckpt_path = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ckpt_dir, args.ckpt)
 
-    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=args.ring, crossing=args.crossing, risk_range=420.0,   # ★Fig9 는 산출 당시 반경(420m)에 고정 — 그림 재산출 결정 시 200 으로 옮길 것
-                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
     # ★2026-09-10: 복원은 ckpt_io.restore_policy 로. 예전엔 msg_ln 만 스니핑하고 attention/pos_ground/radar_head/token_gain 은
     #   복원하지 않아, 그런 ckpt 는 학습과 다른 집계·인코더로 굴렀다(에러 없이). 이제 스냅샷을 전부 적용하고 헤더로 찍는다.
     #   ⚠️과거 이 스크립트가 낸 숫자가 불일치 상태였다면 재실행 시 값이 달라진다 — 그 경우 과거 값이 틀린 것.
     #   comm_range 가 ckpt 와 다르면 중단함. 의도한 것이면 VESSEL_ALLOW_COMM_RANGE_MISMATCH=1.
+    # ★2026-09-21: env *보다 먼저* 복원한다. restore_policy 가 스냅샷의 dyn_profile·obstacles·radar_range 를
+    #   vessel_gym 전역에 적용하므로, env 를 먼저 만들면 그 env 가 옛 동역학·장애물로 굳는다(조용히 다른 실험).
+    #   의도한 교차평가만 VESSEL_ALLOW_SIM_MISMATCH=1.
     from ckpt_io import restore_policy
     policy = restore_policy(ckpt_path, dev, arm=None,
                             allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                            allow_sim_mismatch=os.environ.get('VESSEL_ALLOW_SIM_MISMATCH', '0') == '1',
                             tag='[eval_astar_global]').policy
+
+    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
+                            ring_scale=args.ring, crossing=args.crossing, risk_range=420.0,   # ★Fig9 는 산출 당시 반경(420m)에 고정 — 그림 재산출 결정 시 200 으로 옮길 것
+                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
 
     wp_tab, wn_tab = build_path_table(env, args.path, args.cell, args.inflate,
                                       args.wall_margin, args.min_wpt_dist)
