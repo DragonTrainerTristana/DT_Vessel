@@ -106,8 +106,8 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
         bad.append(f"dyn_profile ckpt={ck_dp} 현재={cfg.DYN_PROFILE}")
     if ck_ob != cfg.OBSTACLES_MODE:
         bad.append(f"obstacles ckpt={ck_ob} 현재={cfg.OBSTACLES_MODE}")
-    if ck_rr is not None and abs(float(ck_rr) - float(vg.RADAR_RANGE)) > 1e-6:
-        bad.append(f"radar_range ckpt={ck_rr} 현재={vg.RADAR_RANGE}")
+    if ck_rr is not None and abs(float(ck_rr) - float(cfg.RADAR_RANGE)) > 1e-6:
+        bad.append(f"radar_range ckpt={ck_rr} 현재={cfg.RADAR_RANGE}")
     if bad:
         msg = ("sim 설정 불일치: " + "; ".join(bad)
                + " — VESSEL_DYN_PROFILE / VESSEL_OBSTACLES / VESSEL_RADAR_RANGE 를 학습값으로 주고 다시 실행할 것")
