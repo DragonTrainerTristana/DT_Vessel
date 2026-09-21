@@ -104,3 +104,30 @@ powershell -ExecutionPolicy Bypass -File Python\run_sweep_commgate.ps1 -Stage 2
 - 전 run의 설정 스냅샷은 각 결과 폴더의 `run_meta.txt` + `config_snapshot.txt`
   (`AGG_MODE=mean` 표기는 pos_ground 기본 ON에서는 미사용 폴백 — 무시)
 - 판정 이후의 계획(집계 ablation, H2 msgdim)은 Stage 2 결과를 보고 결정
+
+## imo open-sea 파일럿 (2026-09-21, feat/dyn-profile-imo) — Git Bash
+
+전제: GitHub clone(Dropbox `.git` 아님). 체크포인트·출력은 agile 배치와 **별도 폴더**.
+
+```bash
+git fetch origin && git checkout feat/dyn-profile-imo && git pull
+cd Python
+# 0) preflight + 기본(agile) 스모크 — 비트동일 확인
+bash run_repro.sh smoke
+# 1) imo open-sea 스모크
+export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none
+export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/imo_opensea VESSEL_OUT_DIR=$PWD/_repro_out_imo
+bash run_repro.sh smoke
+# 2) 파일럿 학습: trunk(OFF 9,043,968) → off / on6 갈래, 3시드, 통신 텔레메트리 ON
+VESSEL_TRAIN_ARMS="off on6" VESSEL_COMM_TELEMETRY=1 bash run_repro.sh train
+# 3) 난수 대조군: on6 갈래의 msg_sd 를 diag 로 읽어 sd 로 준다
+VESSEL_DIAG_CKPTS="on6_s43.pt on6_s44.pt on6_s45.pt" bash run_repro.sh diag      # _repro_out_imo/diag_on6_s4x.json → telemetry.msg_sd
+VESSEL_MSG_RANDOM_SD=<msg_sd 평균> bash run_repro.sh random
+# 4) 평가 (분기 검사 자동)
+bash run_repro.sh eval
+# 5) 차원 스윕 (파일럿 통과 시): dim 2·12 짝
+VESSEL_TRAIN_ARMS="off2 on2 off12 on12" bash run_repro.sh train && bash run_repro.sh eval
+# 6) coastal 보조: VESSEL_OBSTACLES=grid3x3 로 1)~4) 를 다른 CKPT/OUT 폴더에서
+```
+
+판정 기준·지표 = 스펙 §4(사전등록). 결과 표는 `eval_*.txt` 의 goal/vColl/fuel/headTravel/minSep/colregs/colregsOK + 시드별 승패. 결과 보고 기준 바꾸지 말 것.

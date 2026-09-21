@@ -139,7 +139,7 @@
 `MSG_DIM` (config :53) · `MOE_WIDTH` (:244, `_w` :138) · `SITUATION_INPUT` (:264, fc2 ±5) · `ATTN_DIM` (:108) · `RADAR_FEAT_DIM` (:49) · `INTENT_K`/`THREAT_K` (디코더 out) · `COMM_CONSUMER_K` (consumer out, ≤MAX_PARTNERS) · `COMM_CONSUMER_COUPLING` (fc3 in 128→134) · `VESSEL_RADAR_BOTTLENECK_CH`.
 
 **키에 영향 없는 옵션 = "조용히 다른 실험"** (가중치에 흔적 없음, **cfg_snapshot이 유일한 근거**):
-`USE_ATTENTION` · `POS_GROUND` · `VESSEL_AGG_MODE` · `VESSEL_NEAREST_SCALE` · `VESSEL_MSG_GAIN` · `VESSEL_MSG_TOKEN_GAIN` · `VESSEL_RADAR_ACT` · `VESSEL_RECON_EMA_FLOOR/PRE/LEGACY_STAT` · `COMM_RANGE` · `MAX_COMM_PARTNERS` · 모든 손실 계수 · `USE_ORACLE` · `USE_COMMUNICATION` · 보상·시뮬 상수 전부.
+`USE_ATTENTION` · `POS_GROUND` · `VESSEL_AGG_MODE` · `VESSEL_NEAREST_SCALE` · `VESSEL_MSG_GAIN` · `VESSEL_MSG_TOKEN_GAIN` · `VESSEL_RADAR_ACT` · `VESSEL_RECON_EMA_FLOOR/PRE/LEGACY_STAT` · `COMM_RANGE` · `MAX_COMM_PARTNERS` · 모든 손실 계수 · `USE_ORACLE` · `USE_COMMUNICATION` · `VESSEL_DYN_PROFILE` · `VESSEL_OBSTACLES` · 보상·시뮬 상수 전부.
 
 ---
 
@@ -205,6 +205,8 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | `VESSEL_MSG_TOKEN_GAIN` / `VESSEL_CLIP_PER_MODULE` | `MSG_TOKEN_GAIN` / `CLIP_PER_MODULE` | **8.0 ★**(1.0) / **1 ★**(0) | config 끝 | attention 토큰 안 msg 상수배 / 망별 grad clip 0.5 |
 | `VESSEL_LOAD_MODEL` / `VESSEL_TRAIN` / `VESSEL_MODEL_PATH` | `LOAD_MODEL` / `TRAIN_MODE` / `MODEL_PATH` | 0 / 1 / — | :280-284 | Unity 경로 로드·eval |
 | `VESSEL_USE_EDITOR` / `VESSEL_NUM_ENVS` / `VESSEL_BASE_PORT` / `VESSEL_TIME_SCALE` | — | 1 / 2 / 5004 / 100 | :314-317 | Unity 환경 |
+| `VESSEL_DYN_PROFILE` | `DYN_PROFILE` | **agile** | config 끝 | 동역학 프로필. `imo` = 선회직경 4 L 고정(절대속도 식)·타속 3°/s·정지 5 L·보상 시간상수 ×2.27(`config.dyn_profile_constants`). 스냅샷 `dyn_profile`+`dyn` 이 유일 근거. 재개·분기·평가는 일치 강제(`allow_sim_mismatch`) — 스펙 `docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md` |
+| `VESSEL_OBSTACLES` | `OBSTACLES_MODE` | **grid3x3** | config 끝 | `none` = open-sea(장애물 0, 벽만). 스냅샷 `obstacles` |
 | PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
 
 - `run_repro.sh common_env()` = **YUGIOH 를 명시 export**(config 기본값과 동일). `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`; rollout 32 는 12런 aux.csv 245행 = update 당 65,536 결정으로 확인). 2026-09-04 배치 설정은 `verify/test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
@@ -230,6 +232,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 - `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → **legacy 기본**(attention 0·pos_ground 1·token_gain 1·relu·agg sum)으로 감(YUGIOH 기본 아님). comm_range 불명이면 **중단** — `VESSEL_COMM_RANGE=<학습값>` + `allow_comm_range_mismatch` 로만 진행. **조용히 틀릴 수 있음** 명시 보고.
 - **2026-09-10 YUGIOH 에서 발견·수정**: `restore_policy` 가 `use_moe / moe_width / moe_shared` 를 복원 안 했음 → YUGIOH 기본(공유 MoE)으로 만들면 단일망·얇게는 strict 실패, 두껍게(MOE_SHARED=0)는 5벌 인코더가 한 객체에 덮여 **마지막 전문가만 남는 조용한 오염**. 지금은 스냅샷 → 없으면 키(`experts.`)·전문가 0/1 텐서 동일성·conv/fc 채널 수(폭 역산)로 스니핑. 구조 4종 × {정상/구 스냅샷/스냅샷 없음} 12건 시뮬 통과.
+- **2026-09-21**: 스냅샷 키에 `dyn_profile`·`dyn`·`obstacles`·`radar_dropout_p/len`·`los_gate`·`max_episode_steps` 추가.
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
 ### 8-1. ON/OFF 분기 규약 (2026-09-15, 사용자 지시 — 예외 없음)
