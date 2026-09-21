@@ -79,12 +79,50 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'goal_comm_coef': float(cfg.GOAL_COMM_COEF), 'role_comm_coef': float(cfg.ROLE_COMM_COEF),
         'comm_consumer_coef': float(cfg.COMM_CONSUMER_COEF), 'msg_gate_coef': float(cfg.MSG_GATE_COEF),
         'msg_gate_apply': bool(cfg.MSG_GATE_APPLY),
+        # ★2026-09-21 동역학 프로필·시나리오 + 이전에 빠져 있던 sim 토글 (키에 흔적 없음 = 스냅샷이 유일 근거). 키 추가만.
+        'dyn_profile': str(cfg.DYN_PROFILE),
+        'dyn': dict(vg.current_dyn_constants()),      # 숫자 dict — 나중에 프로필 정의가 바뀌어도 이 값으로 재현
+        'obstacles': str(cfg.OBSTACLES_MODE),
+        'radar_dropout_p': float(cfg.RADAR_DROPOUT_P), 'radar_dropout_len': int(cfg.RADAR_DROPOUT_LEN),
+        'los_gate': bool(cfg.LOS_GATE), 'max_episode_steps': int(cfg.MAX_EPISODE_STEPS),
     }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 복원 쪽
 # ──────────────────────────────────────────────────────────────────────────────
+def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt]'):
+    """Compare the checkpoint's sim settings (dyn_profile, obstacles, radar_range) with the current config and
+    apply them to vessel_gym module globals. Missing keys mean legacy (agile / grid3x3). A mismatch aborts unless
+    allow_sim_mismatch (deliberately separate from allow_comm_range_mismatch, which 4 eval scripts already set).
+    Returns the effective {'dyn_profile', 'obstacles', 'radar_range'}."""
+    snap = snap or {}
+    notes = notes if notes is not None else []
+    ck_dp = str(snap.get('dyn_profile') or 'agile').lower()
+    ck_ob = str(snap.get('obstacles') or 'grid3x3').lower()
+    ck_rr = snap.get('radar_range')
+    bad = []
+    if ck_dp != cfg.DYN_PROFILE:
+        bad.append(f"dyn_profile ckpt={ck_dp} 현재={cfg.DYN_PROFILE}")
+    if ck_ob != cfg.OBSTACLES_MODE:
+        bad.append(f"obstacles ckpt={ck_ob} 현재={cfg.OBSTACLES_MODE}")
+    if ck_rr is not None and abs(float(ck_rr) - float(vg.RADAR_RANGE)) > 1e-6:
+        bad.append(f"radar_range ckpt={ck_rr} 현재={vg.RADAR_RANGE}")
+    if bad:
+        msg = ("sim 설정 불일치: " + "; ".join(bad)
+               + " — VESSEL_DYN_PROFILE / VESSEL_OBSTACLES / VESSEL_RADAR_RANGE 를 학습값으로 주고 다시 실행할 것")
+        if not allow_sim_mismatch:
+            raise SystemExit(f"{tag} 중단: {msg}")
+        notes.append(msg + " (allow_sim_mismatch 로 진행 — 스냅샷 값을 vessel_gym 에 강제 적용)")
+    vg.apply_dyn_constants(snap.get('dyn') or cfg.dyn_profile_constants(ck_dp), ck_dp)
+    vg.OBSTACLES_MODE = ck_ob
+    if ck_rr is not None:
+        vg.RADAR_RANGE = float(ck_rr)
+    if not snap.get('dyn_profile'):
+        notes.append("스냅샷에 dyn_profile 없음(2026-09-21 이전) → legacy 'agile'/'grid3x3' 로 복원")
+    return {'dyn_profile': ck_dp, 'obstacles': ck_ob, 'radar_range': float(vg.RADAR_RANGE)}
+
+
 class Restored:
     """restore_policy() 결과. policy 외에 '실제로 적용된 설정' 을 들고 다닌다."""
     __slots__ = ('policy', 'snap', 'raw', 'state_dict', 'msg_dim', 'arm', 'max_partners',
@@ -102,6 +140,7 @@ class Restored:
                 f"state_recon={e['state_recon_coef']} radar={e['radar_head']}/{e['radar_act']} "
                 f"msg_ln={e['msg_ln']} token_gain={e['msg_token_gain']} agg={e['agg_mode']} msg_gain={e['msg_gain']} "
                 f"shared_enc={e.get('shared_encoder')} moe={int(e.get('use_moe', 1))}/{e.get('moe_width')}/{int(e.get('moe_shared', 0))} "
+                f"dyn={e.get('dyn_profile')} obst={e.get('obstacles')} "
                 f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
 
@@ -111,7 +150,7 @@ def _say(tag, msg):
 
 
 def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
-                   allow_arm_mismatch=False, allow_comm_range_mismatch=False, tag='[ckpt]'):
+                   allow_arm_mismatch=False, allow_comm_range_mismatch=False, allow_sim_mismatch=False, tag='[ckpt]'):
     """체크포인트를 열어 학습 때와 같은 구조·설정으로 CNNPolicy 를 만든다.
 
     Args:
@@ -123,6 +162,8 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         allow_comm_range_mismatch: comm_range 는 import 시점에 config/vessel_gym 에 고정된다.
             스냅샷과 다르면 relpos 정규화·파트너 선택·보상반경이 전부 달라지므로 기본 중단.
             True 면 경고만 (과거 숫자 재현 목적).
+        allow_sim_mismatch: dyn_profile·obstacles·radar_range 가 스냅샷과 다르면 기본 중단. True 면 스냅샷 값을
+            강제 적용하고 경고만.
     Returns:
         Restored — .policy(eval 모드), .snap, .effective(실제 적용 설정), .notes(경고 목록)
     """
@@ -239,6 +280,9 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     if max_partners is None:
         max_partners = int(cfg.MAX_COMM_PARTNERS)
 
+    # 4a) ★2026-09-21 sim 설정(동역학 프로필·시나리오·레이더 범위) — 불일치면 중단, 아니면 vessel_gym 전역에 적용
+    sim_eff = apply_sim_snapshot(snap, allow_sim_mismatch=allow_sim_mismatch, notes=notes, tag=tag)
+
     # 4b) 인코더 공유 방식 — 키로는 구분 불가(공유해도 접두어별 사본이 저장됨). 스냅샷이 유일한 근거.
     #     구 체크포인트(스냅샷에 키 없음)는 인코더 3벌 = '0'.
     net.SHARED_ENCODER = str((snap or {}).get('shared_encoder', '0')).lower()
@@ -324,6 +368,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'use_moe': bool(net.USE_MOE), 'moe_width': float(net.MOE_WIDTH), 'moe_shared': bool(net.MOE_SHARED),
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
         'ckpt_steps': (sd.get('steps') if isinstance(sd, dict) else None),
+        **sim_eff,
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,
                  max_partners=max_partners, effective=effective, notes=notes, path=path)
@@ -344,6 +389,12 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
     risk_range=reward_range=cfg.COMM_RANGE 는 학습기(vessel_gym_train.py:519)와 동일하게 고정.
     """
     snap = snap or {}
+    # ★2026-09-21: env 생성 *전* 스냅샷의 동역학·시나리오를 vessel_gym 전역에 적용(멱등 — restore_policy 가 이미 했어도 무해).
+    if snap.get('dyn') or snap.get('dyn_profile'):
+        vg.apply_dyn_constants(snap.get('dyn') or cfg.dyn_profile_constants(str(snap.get('dyn_profile'))),
+                               str(snap.get('dyn_profile') or 'agile'))
+    if snap.get('obstacles'):
+        vg.OBSTACLES_MODE = str(snap['obstacles']).lower()
     src = {}
 
     def pick(name, given, snap_key, default):
@@ -373,7 +424,8 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
                             risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
                             farfield_coef=ff, perpair_coef=pp, perpair_exp=pe)
     used = (f"envs={num_envs} vessels={n_vessels} ring={ring} crossing={crossing} comm_range={cfg.COMM_RANGE} "
-            f"farfield={ff} perpair={pp}^{pe} seed={seed}")
+            f"farfield={ff} perpair={pp}^{pe} seed={seed}"
+            f" dyn={vg.DYN_PROFILE} obst={vg.OBSTACLES_MODE}")
     ov = [k for k, v in src.items() if v == 'override']
     df = [k for k, v in src.items() if v == 'default']
     _say(tag, used + (f"  override={ov}" if ov else '') + (f"  default(스냅샷에 없음)={df}" if df else ''))
@@ -392,7 +444,7 @@ def describe(snap):
     keys = ('arm', 'msg_dim', 'use_attention', 'pos_ground', 'central_critic', 'state_recon_coef', 'use_moe',
             'msg_ln', 'comm_range', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'seed',
             'radar_act', 'radar_head', 'msg_token_gain', 'agg_mode', 'msg_gain', 'recon_ema_floor',
-            'clip_per_module', 'perpair_coef', 'farfield_coef')
+            'clip_per_module', 'perpair_coef', 'farfield_coef', 'dyn_profile', 'obstacles')
     return ' '.join(f"{k}={snap[k]}" for k in keys if k in snap)
 
 
@@ -415,6 +467,7 @@ _SNAP_TO_ENV = [
     ('role_comm_coef', 'VESSEL_ROLE_COMM_COEF', str), ('comm_consumer_coef', 'VESSEL_COMM_CONSUMER_COEF', str),
     ('farfield_coef', 'VESSEL_FARFIELD_COEF', str), ('perpair_coef', 'VESSEL_PERPAIR_COEF', str),
     ('msg_random_sd', 'VESSEL_MSG_RANDOM_SD', str),
+    ('dyn_profile', 'VESSEL_DYN_PROFILE', str), ('obstacles', 'VESSEL_OBSTACLES', str),
 ]
 
 

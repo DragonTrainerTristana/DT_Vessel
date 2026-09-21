@@ -11,6 +11,7 @@ import torch  # noqa: E402
 
 import config as cfg  # noqa: E402
 import vessel_gym as vg  # noqa: E402
+import ckpt_io  # noqa: E402
 
 L = 14.18316
 
@@ -155,10 +156,53 @@ def test_obstacles_grid_default():
     assert tuple(env.obstacles.shape) == (9, 2)
 
 
+def test_snapshot_records_profile():
+    s = ckpt_io.snapshot_config(arm='OFF', msg_dim=6, seed=1, n_envs=2, n_vessels=4, max_partners=4, trunc_boot=False,
+                                comm_on_at=0, ring=1.0, crossing=2, rollout=8, trainer='gym')
+    assert s['dyn_profile'] == cfg.DYN_PROFILE and s['dyn'] == vg.current_dyn_constants()
+    assert s['obstacles'] == cfg.OBSTACLES_MODE
+    for k in ('radar_dropout_p', 'radar_dropout_len', 'los_gate', 'max_episode_steps'):
+        assert k in s, k
+
+
+def test_apply_sim_snapshot_legacy_and_mismatch():
+    if cfg.DYN_PROFILE != 'agile' or cfg.OBSTACLES_MODE != 'grid3x3':
+        return
+    saved, saved_p, saved_ob = vg.current_dyn_constants(), vg.DYN_PROFILE, vg.OBSTACLES_MODE
+    try:
+        # (a) 키 없는 구 스냅샷 = legacy agile/grid3x3 → 현재 기본과 일치, 중단 없음
+        notes = []
+        eff = ckpt_io.apply_sim_snapshot({}, notes=notes, tag='[t]')
+        assert eff['dyn_profile'] == 'agile' and eff['obstacles'] == 'grid3x3' and any('legacy' in n for n in notes)
+        # (b) imo 스냅샷 vs agile config → 기본 중단
+        snap = {'dyn_profile': 'imo', 'dyn': cfg.dyn_profile_constants('imo'), 'obstacles': 'none', 'radar_range': 56.0}
+        try:
+            ckpt_io.apply_sim_snapshot(snap, tag='[t]')
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError('불일치인데 중단 안 함')
+        # (c) allow 면 스냅샷 값이 vessel_gym 에 적용됨
+        notes = []
+        eff = ckpt_io.apply_sim_snapshot(snap, allow_sim_mismatch=True, notes=notes, tag='[t]')
+        assert eff['dyn_profile'] == 'imo' and vg.DYN_FORMULA == 'abs' and abs(vg.R_FULL - 2 * L) < 1e-6
+        assert vg.OBSTACLES_MODE == 'none' and any('allow_sim_mismatch' in n for n in notes)
+        # (d) radar_range 불일치도 잡힘
+        try:
+            ckpt_io.apply_sim_snapshot({'radar_range': 28.0}, tag='[t]')
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError('radar_range 불일치인데 중단 안 함')
+    finally:
+        vg.apply_dyn_constants(saved, saved_p); vg.OBSTACLES_MODE = saved_ob
+
+
 TESTS = [test_agile_dict_equals_legacy_literals, test_imo_dict_numbers, test_unknown_profile_raises,
          test_defaults_are_agile_grid, test_imo_turn_radius_fixed_across_fleet, test_agile_turn_radius_unchanged,
          test_stop_distance, test_yaw_helper_matches_legacy_formula, test_obs_yaw_norm_bounded,
-         test_obstacles_none, test_obstacles_grid_default]
+         test_obstacles_none, test_obstacles_grid_default,
+         test_snapshot_records_profile, test_apply_sim_snapshot_legacy_and_mismatch]
 
 
 def main():
