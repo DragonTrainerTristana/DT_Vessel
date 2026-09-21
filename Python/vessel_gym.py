@@ -29,15 +29,22 @@ import config as _cfg   # ★2026-09-10: 아래 상수의 정본은 config.py. �
 DT = 0.04                    # fixedDeltaTime
 SUBSTEPS = 10                # DecisionPeriod — 결정(0.4s)당 물리 서브스텝
 MAX_SPEED_BASE = 1.0         # GlobalScale.MAX_SPEED
-ACCEL = 0.1                  # 가속률 (/s 아님, MoveTowards maxDelta = ACCEL*dt)
-DECEL = 0.04
-RUDDER_RATE = 12.0           # deg/s 타각 슬루
-MAX_TURN_RATE = 30.0         # deg (명령 타각 상한)
-TURN_FACTOR = 1.5            # rudderEff(1.5)·(10/length 2.0)·(beam 0.4/2) = 1.5
-MAX_YAW_RATE = 45.0          # MAX_TURN_RATE * TURN_FACTOR (speedRatio=1, full rudder)
-DRAG_COEF = 0.1
+# ★2026-09-21 동역학 프로필 (config.DYN ← VESSEL_DYN_PROFILE=agile|imo). 이름은 모듈 속성으로 유지(vg.RUDDER_RATE 등 참조처 불변).
+#   agile 값은 옛 리터럴과 동일(ACCEL 0.1 · DECEL 0.04 · RUDDER_RATE 12 · TURN_FACTOR 1.5 · MAX_YAW_RATE 45 · DRAG 0.1) = 비트동일.
+#   imo 는 스펙 §3. ckpt_io.restore_policy / make_env_from_snapshot 이 apply_dyn_constants() 로 스냅샷 값을 덮어쓴다.
+DYN_PROFILE = _cfg.DYN_PROFILE
+DYN_FORMULA = _cfg.DYN['formula']        # 'ratio'(agile: rudder·speedRatio·TURN_FACTOR) | 'abs'(imo: (rudder/30)·speed/R_FULL)
+ACCEL = _cfg.DYN['accel']                # 가속률 (/s 아님, MoveTowards maxDelta = ACCEL*dt)
+DECEL = _cfg.DYN['decel']
+RUDDER_RATE = _cfg.DYN['rudder_rate']    # deg/s 타각 슬루
+MAX_TURN_RATE = 30.0         # deg (명령 타각 상한) — 프로필 무관(obs[365]·보상 정규화 상수)
+TURN_FACTOR = _cfg.DYN['turn_factor']    # agile: rudderEff(1.5)·(10/length 2.0)·(beam 0.4/2) = 1.5 / imo: None (식이 다름)
+R_FULL = _cfg.DYN['r_full']              # imo: 전타 정상 선회반경 [m] = 2 L / agile: None
+MAX_YAW_RATE = _cfg.DYN['max_yaw_rate']  # obs[363] 분모. agile 45 = MAX_TURN_RATE×TURN_FACTOR / imo 함대 최고속 전타 yaw (파생값)
+DRAG_COEF = _cfg.DYN['drag_coef']
 DRAG_THRUST_MULT = 0.3       # targetSpeed>=0.1이면 drag ×0.3
 DRAG_THRUST_THRESH = 0.1     # 절대속도 단위
+CMD_MISMATCH_SLACK_DEG = _cfg.DYN['cmd_mismatch_slack_deg']   # 12-b 타속 포화 벌점에서 공제할 '달성 가능 슬루' (agile 0 = 비트동일)
 
 RADAR_RANGE = _cfg.RADAR_RANGE  # ★제한시계(안개) regime: *지각(obs)만* 축소
 RADAR_RANGE_BASE = 56.0      # 보상 기준 원값 — VESSEL_RADAR_RANGE와 무관하게 보상 불변(CTDE privileged). <20m 금지(THR 19.6 클립)
@@ -59,7 +66,7 @@ RADAR_DROPOUT_LEN = _cfg.RADAR_DROPOUT_LEN  # 블랙아웃 지속(결정 수) �
 RADAR_RAYS = 360
 RAY_HEIGHT = 0.2             # obs 평면 판정엔 무영향(수평 ray) — 기록용
 GOAL_NORM_K = 150.0
-GOAL_REACHED = 3.0
+GOAL_REACHED = _cfg.DYN['goal_reached']   # agile 3.0 (0.21 L) / imo L/2 = 7.09 (스펙 §5)
 COMM_RANGE = _cfg.COMM_RANGE  # (정책 통신 파트너용, sim은 위치만 제공)
 # ★2026-08-30 420 → 200 (사용자 결정): 통신 반경과 *보상이 반응하는 반경*을 하나로 맞춘다.
 #   기존 구조는 보상 risk 가 56m 에서 하드컷(dist>56 → risk=0)이고 56~420m 는 telescoping PBRS 뿐이라
@@ -79,12 +86,12 @@ MIN_GOAL_DIST = _cfg.MIN_GOAL_DIST
 RESPAWN_RNG_CONST = _cfg.RESPAWN_RNG_CONST
 
 # ── C# COLREGsHandler/GlobalScale 상수 (BASE × VESSEL_SCALE 0.2). 시간항은 스케일 불변 ──
-EARLY_ACTION_TIME       = 21.5   # Rule 16 조기행동 시점(s)
-SUBSTANTIAL_ACTION_TIME = 11.5   # Rule 16 충분행동 시점(s)
-RULE_17B_TIME           = 7.0    # stand-on 이 행동 *가능*해지는 시점(s)
-RULE_17C_TIME           = 3.5    # stand-on 이 행동 *해야 하는* 시점(s)
-RULE_17B_DIST           = 18.0   # BASE 90 × 0.2
-RULE_17C_DIST           = 9.0    # BASE 45 × 0.2
+EARLY_ACTION_TIME       = _cfg.DYN['early_action_time']        # Rule 16 조기행동 시점(s) — agile 21.5 / imo ×2.27
+SUBSTANTIAL_ACTION_TIME = _cfg.DYN['substantial_action_time']  # Rule 16 충분행동 시점(s) — agile 11.5
+RULE_17B_TIME           = _cfg.DYN['rule_17b_time']            # stand-on 이 행동 *가능*해지는 시점(s) — agile 7.0
+RULE_17C_TIME           = _cfg.DYN['rule_17c_time']            # stand-on 이 행동 *해야 하는* 시점(s) — agile 3.5
+RULE_17B_DIST           = _cfg.DYN['rule_17b_dist']            # agile 18.0 (BASE 90 × 0.2)
+RULE_17C_DIST           = _cfg.DYN['rule_17c_dist']            # agile 9.0 (BASE 45 × 0.2)
 SAFE_PASSING            = 12.0   # BASE 60 × 0.2 (Rule 8(d) 안전 통과 거리)
 CRITICAL_CPA            = 6.0    # BASE 30 × 0.2
 EFFECTIVE_SPEED_MIN     = 0.7    # BASE 3.5 × 0.2
@@ -116,7 +123,7 @@ DETECTION_RANGE = 56.0       # COLREGS_DETECTION (상황판정·COLREGs 게이�
 # ★보상이 반응하는 반경 (2026-08-30). DETECTION_RANGE 는 '규정 판정 거리', REWARD_RANGE 는 '비용 부과 거리'로 분리.
 #   기본 = COMM_RANGE(200m) → 레이더 밴드(0~56)와 통신 밴드(56~200)가 *같은 항, 같은 함수형*으로 비용을 받는다.
 #   56 으로 두면 이전 동작과 비트동일(anti-regression). VESSEL_REWARD_RANGE 로 override.
-TCPA_RISK_DENOM = 30.0
+TCPA_RISK_DENOM = _cfg.DYN['tcpa_risk_denom']   # agile 30 s / imo ×2.27 (스펙 §5)
 DCPA_RISK = 24.0
 HEAD_ON_ANGLE = 15.0
 CROSSING_ANGLE = 112.5
@@ -125,6 +132,7 @@ CROSSING_ANGLE = 112.5
 SHIP_HALF_LEN = 14.18316 / 2.0     # 7.0916 (bow 방향 반길이)
 SHIP_HALF_BEAM = 1.92741 / 2.0     # 0.9637 (beam 방향 반폭)
 
+OBSTACLES_MODE = _cfg.OBSTACLES_MODE   # 'grid3x3'(현행) | 'none'(open-sea, 2026-09-21)
 OBSTACLE_RADIUS = 20.0
 OBSTACLE_GRID_STEP = 120.0   # 3×3 격자 간격
 ARENA_HALF = 300.0           # 벽 box 중심 (600×600) — 씬 실측(2026-07-04): 벽=두께 1.0 box, 중심 ±300
@@ -182,6 +190,47 @@ DEG = math.pi / 180.0
 def _move_toward(a, b, max_delta):
     """Unity Mathf.MoveTowards: a를 b쪽으로 최대 max_delta만큼 이동."""
     return a + torch.clamp(b - a, -max_delta, max_delta)
+
+
+def yaw_rate_deg(rudder, speed, max_speed):
+    """Yaw rate [deg/s] for the active dynamics profile.
+
+    'ratio' (agile): rudder * (speed/max_speed) * TURN_FACTOR — the legacy expression in its original
+    operation order (bit-identical). 'abs' (imo): (rudder/MAX_TURN_RATE) * speed / R_FULL [rad/s] -> deg/s,
+    so the steady full-rudder turning radius is R_FULL for every vessel regardless of speed (Nomoto-like).
+    """
+    if DYN_FORMULA == 'abs':
+        return (rudder / MAX_TURN_RATE) * speed / R_FULL / DEG
+    speed_ratio = speed / torch.clamp(max_speed, min=1e-6)
+    return rudder * speed_ratio * TURN_FACTOR
+
+
+_DYN_TO_MODULE = {
+    'formula': 'DYN_FORMULA', 'turn_factor': 'TURN_FACTOR', 'r_full': 'R_FULL', 'max_yaw_rate': 'MAX_YAW_RATE',
+    'rudder_rate': 'RUDDER_RATE', 'accel': 'ACCEL', 'decel': 'DECEL', 'drag_coef': 'DRAG_COEF',
+    'tcpa_risk_denom': 'TCPA_RISK_DENOM', 'rule_17b_time': 'RULE_17B_TIME', 'rule_17c_time': 'RULE_17C_TIME',
+    'rule_17b_dist': 'RULE_17B_DIST', 'rule_17c_dist': 'RULE_17C_DIST',
+    'early_action_time': 'EARLY_ACTION_TIME', 'substantial_action_time': 'SUBSTANTIAL_ACTION_TIME',
+    'goal_reached': 'GOAL_REACHED', 'cmd_mismatch_slack_deg': 'CMD_MISMATCH_SLACK_DEG',
+}
+
+
+def apply_dyn_constants(d, profile=None):
+    """Overwrite this module's dynamics/reward globals from a profile dict (config.dyn_profile_constants or a
+    checkpoint snapshot 'dyn'). Methods read module globals at call time, so this takes effect on the next step
+    whether called before or after VesselBatchEnv() (ckpt_io restore path)."""
+    g = globals()
+    for k, name in _DYN_TO_MODULE.items():
+        if k in d:
+            g[name] = d[k]
+    if profile is not None:
+        g['DYN_PROFILE'] = str(profile)
+
+
+def current_dyn_constants():
+    """Return the profile dict currently applied to this module (snapshot recording / tests)."""
+    g = globals()
+    return {k: g[name] for k, name in _DYN_TO_MODULE.items()}
 
 
 def _wrap180(deg):
@@ -275,10 +324,14 @@ class VesselBatchEnv:
         self.dropout_left = torch.zeros(E, N, device=self.device, dtype=torch.long)  # 센서고장 잔여(결정 수)
         self.spawn_idx = torch.zeros(E, N, device=self.device, dtype=torch.long)
 
-        # 정적 장애물 9개 (원점 중심 3×3, 반지름 20) — [9,2]
-        gx = torch.tensor([-OBSTACLE_GRID_STEP, 0.0, OBSTACLE_GRID_STEP], device=self.device, dtype=self.dtype)
-        ox, oz = torch.meshgrid(gx, gx)   # torch<1.10 기본 'ij' indexing
-        self.obstacles = torch.stack([ox.reshape(-1), oz.reshape(-1)], dim=-1)  # [9,2]
+        if OBSTACLES_MODE == 'none':
+            # ★2026-09-21 open-sea: 장애물 0 → [0,2]. _radar 루프·_obb_circle_hit(.any 빈 축)·LOS 게이트(shape[0]>0 가드) 전부 안전.
+            self.obstacles = torch.zeros(0, 2, device=self.device, dtype=self.dtype)
+        else:
+            # 정적 장애물 9개 (원점 중심 3×3, 반지름 20) — [9,2]
+            gx = torch.tensor([-OBSTACLE_GRID_STEP, 0.0, OBSTACLE_GRID_STEP], device=self.device, dtype=self.dtype)
+            ox, oz = torch.meshgrid(gx, gx)   # torch<1.10 기본 'ij' indexing
+            self.obstacles = torch.stack([ox.reshape(-1), oz.reshape(-1)], dim=-1)  # [9,2]
         self.obstacle_r = OBSTACLE_RADIUS
 
         # 레이더 ray local 방향 (ray0=bow +Z, 시계방향) — [360,2] (x,z)
@@ -430,11 +483,8 @@ class VesselBatchEnv:
         self.speed = torch.clamp(self.speed, torch.zeros_like(self.speed), self.max_speed)
         # 3. 타각 슬루
         self.rudder = _move_toward(self.rudder, self.cmd_rudder, RUDDER_RATE * DT)
-        # 4. 유효타각 = 실제타각 × speedRatio
-        speed_ratio = self.speed / torch.clamp(self.max_speed, min=1e-6)
-        eff_rudder = self.rudder * speed_ratio
-        # 6. yawRate [deg/s]
-        yaw_rate = eff_rudder * TURN_FACTOR
+        # 4-6. yawRate [deg/s] — 프로필별 식(yaw_rate_deg). agile 은 옛 (rudder·speedRatio)·TURN_FACTOR 연산 순서 그대로(비트동일)
+        yaw_rate = yaw_rate_deg(self.rudder, self.speed, self.max_speed)
         # 7. 위치 적분 (회전 前 heading·현재속도) → heading 회전
         h_rad = self.heading * DEG
         fwd = torch.stack([torch.sin(h_rad), torch.cos(h_rad)], dim=-1)   # [E,N,2]
@@ -691,7 +741,7 @@ class VesselBatchEnv:
         goal_angle = torch.atan2(fz * gx - fx * gz, fx * gx + fz * gz) / DEG
         goal_angle_n = goal_angle / 180.0
         speed_ratio = self.speed / torch.clamp(self.max_speed, min=1e-6)
-        yaw_rate = self.rudder * speed_ratio * TURN_FACTOR
+        yaw_rate = yaw_rate_deg(self.rudder, self.speed, self.max_speed)   # 프로필별 식 (agile 비트동일)
         yaw_n = yaw_rate / MAX_YAW_RATE
         heading_n = _wrap180(self.heading) / 180.0
         rudder_n = self.rudder / MAX_TURN_RATE
@@ -922,7 +972,11 @@ class VesselBatchEnv:
         r = r - 0.02 * rudder_change * SUBSTEPS
         # 12-b. ★타속 포화 패널티 (C# CalculateSmoothnessReward, commandMismatchCoef=-0.03 — 파이썬에 없던 항).
         #   명령 타각이 실제보다 과도 = 타가 못 따라오는 만큼 비효율. 슬루 도입 후 C# 이 새로 추가한 항이다.
-        _sat = torch.clamp((self.cmd_rudder - self.rudder).abs() / MAX_TURN_RATE, 0, 1)
+        _dev = (self.cmd_rudder - self.rudder).abs()
+        if CMD_MISMATCH_SLACK_DEG > 0.0:
+            # ★imo: 결정(0.4 s)당 달성 가능한 슬루(RR×0.4°)는 정책 탓이 아니라 물리 → 공제 (스펙 §5). agile 은 0 = 옛 식 그대로
+            _dev = torch.clamp(_dev - CMD_MISMATCH_SLACK_DEG, min=0.0)
+        _sat = torch.clamp(_dev / MAX_TURN_RATE, 0, 1)
         r = r + CMD_MISMATCH_COEF * _sat * SUBSTEPS
         self.prev_rudder = self.rudder.clone()
         return r

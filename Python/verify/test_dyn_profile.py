@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath
 import torch  # noqa: E402
 
 import config as cfg  # noqa: E402
+import vessel_gym as vg  # noqa: E402
 
 L = 14.18316
 
@@ -58,8 +59,106 @@ def test_defaults_are_agile_grid():
     assert 'VESSEL_OBSTACLES' in cfg.YUGIOH and cfg.YUGIOH['VESSEL_OBSTACLES'] == 'grid3x3'
 
 
+class _profile:
+    """모듈 전역을 profile 로 바꿨다가 블록을 나가면 원래대로. 테스트 간 오염 방지."""
+    def __init__(self, profile):
+        self.profile = profile
+    def __enter__(self):
+        self.saved, self.saved_p = vg.current_dyn_constants(), vg.DYN_PROFILE
+        vg.apply_dyn_constants(cfg.dyn_profile_constants(self.profile), self.profile)
+    def __exit__(self, *a):
+        vg.apply_dyn_constants(self.saved, self.saved_p)
+
+
+def _env11(**kw):
+    env = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu', crossing=2, reward_range=300.0)
+    env.pos.zero_(); env.heading.zero_(); env.goal.fill_(1e6)
+    env.speed.fill_(kw.get('speed', 1.0)); env.max_speed.fill_(kw.get('max_speed', 1.0))
+    env.rudder.fill_(kw.get('rudder', 0.0)); env.cmd_rudder.fill_(kw.get('rudder', 0.0))
+    env.target_speed.fill_(kw.get('target', kw.get('max_speed', 1.0)))
+    return env
+
+
+def _steady_turn_radius(profile, vmax):
+    with _profile(profile):
+        env = _env11(speed=vmax, max_speed=vmax, rudder=30.0, target=vmax)
+        h0 = float(env.heading[0, 0])
+        n = 150 * vg.SUBSTEPS
+        for _ in range(n):
+            env._substep()
+        omega = (float(env.heading[0, 0]) - h0) / (n * vg.DT)          # deg/s
+        return float(env.speed[0, 0]) / (omega * math.pi / 180.0)
+
+
+def test_imo_turn_radius_fixed_across_fleet():
+    for vmax in (0.8, 1.0, 1.8):
+        R = _steady_turn_radius('imo', vmax)
+        assert abs(R - 2.0 * L) / (2.0 * L) < 0.01, (vmax, R)
+
+
+def test_agile_turn_radius_unchanged():
+    R = _steady_turn_radius('agile', 1.0)
+    assert abs(R - 1.2732) / 1.2732 < 0.01, R
+
+
+def _stop_distance(profile, v0=1.0):
+    with _profile(profile):
+        env = _env11(speed=v0, max_speed=1.0, rudder=0.0, target=0.0)
+        for _ in range(600 * vg.SUBSTEPS):           # 최대 240 s
+            env._substep()
+            if float(env.speed[0, 0]) < 0.005:
+                break
+        return float(env.pos[0, 0, 1])               # heading 0 = +Z 전진
+
+
+def test_stop_distance():
+    assert abs(_stop_distance('agile') - 5.0) < 0.5
+    d = _stop_distance('imo')
+    assert abs(d - 70.2) / 70.2 < 0.05, d
+
+
+def test_yaw_helper_matches_legacy_formula():
+    with _profile('agile'):
+        rud = torch.tensor([[30.0]]); spd = torch.tensor([[0.5]]); vmax = torch.tensor([[1.0]])
+        y = vg.yaw_rate_deg(rud, spd, vmax)
+        assert torch.equal(y, rud * (spd / torch.clamp(vmax, min=1e-6)) * 1.5)   # 옛 식과 비트동일
+    with _profile('imo'):
+        y = vg.yaw_rate_deg(torch.tensor([[30.0]]), torch.tensor([[1.0]]), torch.tensor([[1.0]]))
+        assert abs(float(y) - 1.0 / (2.0 * L) / (math.pi / 180.0)) < 1e-6          # ≈ 2.02 deg/s
+
+
+def test_obs_yaw_norm_bounded():
+    for p in ('agile', 'imo'):
+        with _profile(p):
+            env = _env11(speed=1.8, max_speed=1.8, rudder=30.0, target=1.8)
+            obs = env._build_obs()
+            assert -1.0 - 1e-6 <= float(obs[0, 0, 363]) <= 1.0 + 1e-6, (p, float(obs[0, 0, 363]))
+
+
+def test_obstacles_none():
+    saved = vg.OBSTACLES_MODE
+    vg.OBSTACLES_MODE = 'none'
+    try:
+        env = vg.VesselBatchEnv(num_envs=2, n_vessels=4, device='cpu', crossing=2, reward_range=300.0)
+        assert tuple(env.obstacles.shape) == (0, 2)
+        obs = env.reset()
+        for _ in range(5):
+            obs, r, done, oc = env.step(torch.zeros(2, 4, 2))
+        assert torch.isfinite(obs).all() and torch.isfinite(r).all()
+        assert not (oc == vg.OUT_COLLISION_OBSTACLE).any()
+    finally:
+        vg.OBSTACLES_MODE = saved
+
+
+def test_obstacles_grid_default():
+    env = vg.VesselBatchEnv(num_envs=1, n_vessels=2, device='cpu', crossing=2, reward_range=300.0)
+    assert tuple(env.obstacles.shape) == (9, 2)
+
+
 TESTS = [test_agile_dict_equals_legacy_literals, test_imo_dict_numbers, test_unknown_profile_raises,
-         test_defaults_are_agile_grid]
+         test_defaults_are_agile_grid, test_imo_turn_radius_fixed_across_fleet, test_agile_turn_radius_unchanged,
+         test_stop_distance, test_yaw_helper_matches_legacy_formula, test_obs_yaw_norm_bounded,
+         test_obstacles_none, test_obstacles_grid_default]
 
 
 def main():
