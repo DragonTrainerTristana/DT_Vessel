@@ -50,6 +50,8 @@ def main():
     ap.add_argument('--allow_arm_mismatch', action='store_true')
     # ★2026-09-10: comm_range 는 import 시점 고정. 스냅샷과 다르면 기본 중단(ckpt_io). 과거 숫자 재현 목적만 허용.
     ap.add_argument('--allow_comm_range_mismatch', action='store_true')
+    ap.add_argument('--allow_sim_mismatch', action='store_true',
+                    help='dyn_profile/obstacles/radar_range 가 스냅샷과 달라도 진행(스냅샷 값 강제 적용, 교차평가 전용)')
     # ★2026-09-05 fix: GPU 인덱스를 고를 수단이 없어 항상 cuda:0 에 몰렸음.
     #   무위험 속도개선이 '독립 프로세스 병렬(이 머신 ~6개)'인데, 6개가 전부 물리 GPU0 에
     #   4096 에이전트씩 올라가 메모리 경합·OOM 또는 직렬화된 속도가 됨. 미지정이면 기존 동작 그대로.
@@ -77,7 +79,8 @@ def main():
     from ckpt_io import restore_policy, make_env_from_snapshot
     _r = restore_policy(ckpt_path, dev, arm=args.arm, max_partners=args.max_partners,
                         allow_arm_mismatch=args.allow_arm_mismatch,
-                        allow_comm_range_mismatch=args.allow_comm_range_mismatch, tag='[eval]')
+                        allow_comm_range_mismatch=args.allow_comm_range_mismatch,
+                        allow_sim_mismatch=args.allow_sim_mismatch, tag='[eval]')
     policy = _r.policy
     args.max_partners = _r.max_partners
     env = make_env_from_snapshot(_r.snap, device=dev, num_envs=E, seed=args.seed, n_vessels=N,

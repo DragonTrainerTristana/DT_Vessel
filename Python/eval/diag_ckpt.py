@@ -71,6 +71,8 @@ def main():
     ap.add_argument('--arm', default=None, choices=[None, 'OFF', 'ORACLE', 'ON', 'RANDOM'], help='None=스냅샷')
     ap.add_argument('--allow_arm_mismatch', action='store_true')
     ap.add_argument('--allow_comm_range_mismatch', action='store_true')
+    ap.add_argument('--allow_sim_mismatch', action='store_true',
+                    help='dyn_profile/obstacles/radar_range 가 스냅샷과 달라도 진행(스냅샷 값 강제 적용, 교차평가 전용)')
     ap.add_argument('--min_sit_rate', type=float, default=0.05)
     ap.add_argument('--expect_vcoll', type=float, default=None, help='평가에서 얻은 vColl%% (예: 1.1)')
     ap.add_argument('--expect_tol', type=float, default=0.5, help='상대 허용오차 (0.5 = ±50%%)')
@@ -89,7 +91,8 @@ def main():
     # ── 1. 복원 (불일치는 여기서 중단) ──
     r = restore_policy(args.ckpt, dev, arm=args.arm, max_partners=args.max_partners,
                        allow_arm_mismatch=args.allow_arm_mismatch,
-                       allow_comm_range_mismatch=args.allow_comm_range_mismatch, tag='[diag]')
+                       allow_comm_range_mismatch=args.allow_comm_range_mismatch,
+                       allow_sim_mismatch=args.allow_sim_mismatch, tag='[diag]')
     env = make_env_from_snapshot(r.snap, device=dev, num_envs=args.envs, seed=args.seed, n_vessels=args.vessels,
                                  ring=args.ring, crossing=args.crossing, tag='[diag]')
     E, N = env.E, env.N
@@ -151,7 +154,7 @@ def main():
     total = int(counts[1:].sum())
     rates = {OUT_NAMES[oc]: (float(counts[oc]) / total * 100.0 if total else float('nan')) for oc in range(1, 5)}
     gates = {'sit_rate': {'value': sit_rate, 'min': args.min_sit_rate, 'pass': sit_rate >= args.min_sit_rate},
-             'config_match': {'pass': True, 'note': 'restore_policy 가 comm_range/arm 불일치에서 중단함'}}
+             'config_match': {'pass': True, 'note': 'restore_policy 가 comm_range/arm/dyn_profile/obstacles/radar_range 불일치에서 중단함'}}
     if args.expect_vcoll is not None:
         v = rates['vColl']
         ok = total > 0 and abs(v - args.expect_vcoll) <= args.expect_tol * max(args.expect_vcoll, 1e-9)

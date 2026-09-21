@@ -120,10 +120,6 @@ def main():
         send_mask = comm                                    # 송신 불가
         recv_mask = comm if args.mode == 'radar' else torch.ones_like(comm)
 
-    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
-                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
-                            perpair_coef=-0.15, perpair_exp=3.0)
     # ★2026-09-10: 복원은 ckpt_io.restore_policy 단일 구현으로. 예전 인라인 블록은 radar_head/radar_act/token_gain
     #   복원이 빠져 있었고(eval_ckpt 와 불일치), 스냅샷 적용이 VESSEL_EVAL_APPLY_SNAPSHOT opt-in 이라 기본은
     #   학습과 다른 집계로 조용히 굴렀다. 이제 항상 스냅샷을 적용하고 적용된 설정을 헤더로 찍는다.
@@ -131,9 +127,16 @@ def main():
     from ckpt_io import restore_policy
     _r = restore_policy(ckpt_path, dev, arm=None, max_partners=args.max_partners,
                         allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                        allow_sim_mismatch=os.environ.get('VESSEL_ALLOW_SIM_MISMATCH', '0') == '1',
                         tag='[eval_mixed]')
     policy, _msg_dim = _r.policy, _r.msg_dim
     args.max_partners = _r.max_partners
+
+    # ★2026-09-21: restore_policy 가 vessel_gym 동역학 전역을 스냅샷으로 덮어쓰므로 env 는 그 *뒤*에 만든다.
+    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
+                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
+                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
+                            perpair_coef=-0.15, perpair_exp=3.0)
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()

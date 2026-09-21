@@ -69,10 +69,6 @@ def main():
     ck_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ck = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ck_dir, args.ckpt)
 
-    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
-                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
-                            perpair_coef=-0.15, perpair_exp=3.0)
     # ★2026-09-10: 복원은 ckpt_io.restore_policy 로. 예전엔 msg_ln 만 스니핑하고 attention/pos_ground/radar_head/token_gain 은
     #   복원하지 않아, 그런 ckpt 는 학습과 다른 집계·인코더로 굴렀다(에러 없이). 이제 스냅샷을 전부 적용하고 헤더로 찍는다.
     #   ⚠️과거 이 스크립트가 낸 숫자가 불일치 상태였다면 재실행 시 값이 달라진다 — 그 경우 과거 값이 틀린 것.
@@ -80,7 +76,14 @@ def main():
     from ckpt_io import restore_policy
     policy = restore_policy(ck, dev, arm=None,
                             allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                            allow_sim_mismatch=os.environ.get('VESSEL_ALLOW_SIM_MISMATCH', '0') == '1',
                             tag='[measure_regimes]').policy
+
+    # ★2026-09-21: restore_policy 가 vessel_gym 동역학 전역을 스냅샷으로 덮어쓰므로 env 는 그 *뒤*에 만든다.
+    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
+                            ring_scale=args.ring, crossing=args.crossing, risk_range=vg.COMM_RANGE, reward_range=vg.COMM_RANGE,   # ★2026-08-30 학습과 동일 반경(200m)
+                            farfield_coef=float(os.environ.get('VESSEL_FARFIELD_COEF', '0.0')),   # ★2026-08-30 학습과 동일
+                            perpair_coef=-0.15, perpair_exp=3.0)
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()

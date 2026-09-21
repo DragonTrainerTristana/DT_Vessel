@@ -84,11 +84,6 @@ def main():
     print(f'회랑 {args.length:.0f} x {args.width:.0f} m | {E} env x {N} 척 = {E*N:,} 척 동시')
     print(f'  1항차 예상 {est:.0f} 결정, 시간예산 {vg.MAX_EPISODE_STEPS//10} 결정')
 
-    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
-                            ring_scale=1.0, crossing=2, risk_range=420.0,   # ★Fig9 는 산출 당시 반경(420m)에 고정 — 그림 재산출 결정 시 200 으로 옮길 것
-                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
-    env.obstacles = torch.zeros(0, 2, device=dev, dtype=env.dtype)   # 열린 바다 — 장애물 없음
-
     ck_dir = os.environ.get('VESSEL_CKPT_DIR', os.path.join(scr, 'checkpoints'))
     ck = args.ckpt if os.path.isabs(args.ckpt) else os.path.join(ck_dir, args.ckpt)
     # ★2026-09-10: 복원은 ckpt_io.restore_policy 로. 예전엔 msg_ln 만 스니핑하고 attention/pos_ground/radar_head/token_gain 은
@@ -98,7 +93,14 @@ def main():
     from ckpt_io import restore_policy
     policy = restore_policy(ck, dev, arm=None,
                             allow_comm_range_mismatch=os.environ.get('VESSEL_ALLOW_COMM_RANGE_MISMATCH', '0') == '1',
+                            allow_sim_mismatch=os.environ.get('VESSEL_ALLOW_SIM_MISMATCH', '0') == '1',
                             tag='[corridor_run]').policy
+
+    # ★2026-09-21: restore_policy 가 vessel_gym 동역학 전역을 스냅샷으로 덮어쓰므로 env 는 그 *뒤*에 만든다.
+    env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=dev, seed=args.seed,
+                            ring_scale=1.0, crossing=2, risk_range=420.0,   # ★Fig9 는 산출 당시 반경(420m)에 고정 — 그림 재산출 결정 시 200 으로 옮길 것
+                            farfield_coef=0.5, perpair_coef=-0.15, perpair_exp=3.0)
+    env.obstacles = torch.zeros(0, 2, device=dev, dtype=env.dtype)   # 열린 바다 — 회랑은 스스로 장애물을 비우므로 OBSTACLES_MODE 와 무관
 
     fs = FrameStack(E, N, dev)
     obs = env.reset()
