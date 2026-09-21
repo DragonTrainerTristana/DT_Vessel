@@ -3,7 +3,7 @@ vessel_gym 충실도 테스트.
 
 ⚠️ 한계: 이 Mac엔 Unity가 없어 Unity 궤적을 직접 대조할 수 없다. 이 테스트가 검증하는 것:
   (1) 배칭 정확성: 배치 텐서 동역학 == C# 수식을 그대로 옮긴 스칼라 참조 (텐서 버그 검출)
-  (2) 물리 상식: full rudder 선회율 45°/s 수렴, 직진 가속이 accel rate 준수, drag 평형
+  (2) 물리 상식: full rudder 선회율이 프로필 기대값(agile 45°/s, imo 2.02°/s)에 수렴, 직진 가속이 ACCEL 준수, drag 평형
   (3) 레이더 기하: 정면 장애물까지 거리 = 중심거리 − 반지름, 측면 ray = max range
   (4) 상황판정: 정면 조우 → HeadOn, 우현 횡단 → GiveWay (사각지대 fix 포함)
 Unity 대조(같은 action 시퀀스 궤적 비교)는 Windows에서 별도 수행 — 이 테스트 통과는 "전사·배칭이 맞다"까지.
@@ -37,9 +37,12 @@ def scalar_dynamics_reference(a0, a1, steps, max_speed=1.0, init_speed=0.0, init
             # 3 rudder slew
             rd = vg.RUDDER_RATE * DT
             rudder = rudder + max(-rd, min(rd, cmd_rudder - rudder))
-            # 4-6 yaw
-            sr = s / max(1e-6, max_speed)
-            yaw = (rudder * sr) * vg.TURN_FACTOR
+            # 4-6 yaw (프로필 파생: agile=ratio 옛 식 비트동일 / imo=abs 절대속도 식)
+            if vg.DYN_FORMULA == 'abs':
+                yaw = (rudder / vg.MAX_TURN_RATE) * s / vg.R_FULL / vg.DEG
+            else:
+                sr = s / max(1e-6, max_speed)
+                yaw = (rudder * sr) * vg.TURN_FACTOR
             # 7 position (pre-rotation heading, current speed) then rotate
             hr = hdg * vg.DEG
             px += math.sin(hr) * s * DT
@@ -95,9 +98,10 @@ def test_physics_sanity():
     env._substep()
     dh = float(env.heading[0, 0]) - h0
     yaw_rate = dh / vg.DT
-    # 이론: rudder(30)*speedRatio(~1)*turnFactor(1.5) = 45 (drag로 speed 미세 감소분 반영되어 ≲45)
-    print(f"  full-rudder yawRate ≈ {yaw_rate:.2f} deg/s (이론 ~45, drag로 소폭↓)")
-    assert 43.0 < yaw_rate <= 45.5, f"선회율 이상 {yaw_rate}"
+    # 이론: agile=rudder(30)*speedRatio(~1)*turnFactor(1.5)=45 / imo=(rudder/30)*speed/R_FULL/DEG (drag로 speed 미세 감소분 반영되어 소폭↓)
+    exp_yaw = 45.0 if vg.DYN_FORMULA == 'ratio' else (30.0 / vg.MAX_TURN_RATE) * 1.0 / vg.R_FULL / vg.DEG
+    print(f"  full-rudder yawRate ≈ {yaw_rate:.3f} deg/s (프로필 {vg.DYN_PROFILE} 기대 {exp_yaw:.3f}, drag 로 소폭↓)")
+    assert exp_yaw * 0.955 < yaw_rate <= exp_yaw * 1.012, f"선회율 이상 {yaw_rate} (기대 {exp_yaw})"
 
     # 직진 가속: rudder 0, target 1.0, 초기 0 → 첫 서브스텝 속도 증가 ≈ accel*dt=0.004 (drag 반영 후 소폭↓)
     env2 = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu')
@@ -106,8 +110,9 @@ def test_physics_sanity():
     env2.target_speed.fill_(1.0); env2.goal.fill_(1e6)
     env2._substep()
     s1 = float(env2.speed[0, 0])
-    print(f"  직진 첫 서브스텝 속도 {s1:.5f} (accel*dt=0.004, drag×0.3 후 ~0.00399)")
-    assert 0.0039 < s1 < 0.0041, f"가속 이상 {s1}"
+    exp_s1 = vg.ACCEL * vg.DT * (1.0 - vg.DRAG_COEF * vg.DT * vg.DRAG_THRUST_MULT)
+    print(f"  직진 첫 서브스텝 속도 {s1:.6f} (기대 {exp_s1:.6f} = ACCEL·DT 후 drag×0.3)")
+    assert abs(s1 - exp_s1) < 0.025 * exp_s1, f"가속 이상 {s1} (기대 {exp_s1})"
     print("[2] 물리 상식 PASS")
 
 
