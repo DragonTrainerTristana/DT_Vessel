@@ -199,12 +199,36 @@ PYCHK
   echo
 }
 
-# 동시 실행 수 제한 (GPU 라운드로빈)
+# 동시 실행 수 제한 (GPU 배정은 아래 pick_gpu)
 GPU_I=0
 # ★2026-09-15: eval 모드가 체크포인트를 전부 건너뛰고도 exit 0 "평가 완료" 로 보고했었다.
 EVAL_N=0        # 실제로 띄운 평가 수
 EVAL_MISS=""    # 못 찾은 체크포인트 이름
 throttle() { while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || sleep 2; done; }
+
+# ── GPU 배정 (2026-09-22) ─────────────────────────────────────────────────
+# 예전: GPU_I % NGPU 라운드로빈. 모드마다 0 부터 세서 작업 3개(trunk·random·diag)면 GPU 3 이 항상 놀았고,
+#   남의 작업으로 VRAM 이 줄어든 GPU 도 가리지 않았다.
+# 지금: 우리 작업 수 최소 GPU → 같으면 남은 VRAM 최대. VESSEL_GPU_PICK=rr 이면 예전 방식.
+#   nvidia-smi 가 없거나 실패하면 free=0 → 작업 수만으로 고른다.
+#   CUDA_DEVICE_ORDER=PCI_BUS_ID 로 CUDA 번호 = nvidia-smi 번호.
+#   결과 영향 없음 — 어느 물리 GPU 에 붙느냐만 바뀐다(갈래 뒤 GPU 비결정성은 §8-1 에서 이미 감수).
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+declare -a GPU_PIDS=()
+pick_gpu() {
+  if [ "${VESSEL_GPU_PICK:-free}" = "rr" ]; then echo $(( GPU_I % NGPU )); return; fi
+  local g n f p best=0 best_n=999999 best_f=-1
+  local -a free=()
+  mapfile -t free < <(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null)
+  for (( g=0; g<NGPU; g++ )); do
+    n=0; for p in ${GPU_PIDS[$g]:-}; do kill -0 "$p" 2>/dev/null && n=$(( n + 1 )); done
+    f=${free[$g]:-0}; f=${f//[^0-9]/}; f=${f:-0}
+    if [ "$n" -lt "$best_n" ] || { [ "$n" -eq "$best_n" ] && [ "$f" -gt "$best_f" ]; }; then
+      best=$g; best_n=$n; best_f=$f
+    fi
+  done
+  echo "$best"
+}
 
 # ── 학습 한 런 ──────────────────────────────────────────────────────────────
 # 인자: 이름 arm msg_dim seed steps [trunk.pt branch_at]
@@ -212,8 +236,9 @@ throttle() { while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null
 #   ★2026-09-15: ON/OFF 비교용 런은 반드시 branch_batch(아래)를 거친다. 직접 부르는 건 trunk·옛 모드뿐.
 train_one() {
   local nm=$1 arm=$2 dim=$3 s=$4 steps=$5 trunk=${6:-} br_at=${7:-0}
-  local gpu=$(( GPU_I % NGPU )); GPU_I=$(( GPU_I + 1 ))
   throttle
+  local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+  echo "  ${nm}_s$s → GPU $gpu"
   (
     common_env
     export CUDA_VISIBLE_DEVICES=$gpu
@@ -240,14 +265,16 @@ train_one() {
       > "$OUT/$run.log" 2>&1
     echo "$run rc=$?" >> "$OUT/_status_train.txt"
   ) &
+  GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
 }
 
 # ── 평가 한 런 ──────────────────────────────────────────────────────────────
 eval_one() {
   local nm=$1 arm=$2 dim=$3 s=$4
-  local gpu=$(( GPU_I % NGPU )); GPU_I=$(( GPU_I + 1 ))
   [ -f "$CK/${nm}_s$s.pt" ] || { echo "  건너뜀(체크포인트 없음): ${nm}_s$s"; EVAL_MISS="$EVAL_MISS ${nm}_s$s.pt"; return; }
   throttle
+  local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+  echo "  eval_${nm}_s$s → GPU $gpu"
   EVAL_N=$(( EVAL_N + 1 ))
   (
     common_env
@@ -262,6 +289,7 @@ eval_one() {
       > "$OUT/eval_${nm}_s$s.txt" 2>&1
     echo "eval_${nm}_s$s rc=$?" >> "$OUT/_status_eval.txt"
   ) &
+  GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
 }
 
 # ── 팔 이름 → "ARM DIM" ─────────────────────────────────────────────────────
@@ -386,7 +414,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
+      for nm in off on6 off12 on12 off2 on2 rand; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
       echo "[eval] 분기 검사"
@@ -407,6 +435,8 @@ case "$MODE" in
       [ -f "$CK/off12_s$s.pt" ] && eval_one off12 OFF 12 "$s"
       [ -f "$CK/on2_s$s.pt" ]  && eval_one on2  ON  2  "$s"
       [ -f "$CK/off2_s$s.pt" ] && eval_one off2 OFF 2  "$s"
+      # ★2026-09-22: 난수 대조군도 평가 (스펙 §4 ON > RANDOM 판정). 전에는 random 으로 학습만 하고 평가 목록에 없었다.
+      [ -f "$CK/rand_s$s.pt" ] && eval_one rand RANDOM 6 "$s"
     done
     wait
     # ★2026-09-15: 0건이면 실패. 전에는 9건 전부 건너뛰고도 exit 0 "평가 완료" 였다.
@@ -414,7 +444,7 @@ case "$MODE" in
       echo
       echo "평가 실패: 체크포인트를 한 건도 못 찾아 0건 평가됨."
       echo "  찾은 곳    : $CK"
-      echo "  기대한 이름: {off,on6,on12,off12,on2,off2}_s{$(echo $SEEDS | tr ' ' ',')}.pt"
+      echo "  기대한 이름: {off,on6,on12,off12,on2,off2,rand}_s{$(echo $SEEDS | tr ' ' ',')}.pt"
       echo "  못 찾은 것 :$EVAL_MISS"
       echo "  실제 내용  :"
       if [ -d "$CK" ]; then
@@ -463,13 +493,16 @@ case "$MODE" in
     : > "$OUT/_status_diag.txt"
     for c in ${VESSEL_DIAG_CKPTS:?VESSEL_DIAG_CKPTS 를 줄 것}; do
       throttle
+      gpu=$(pick_gpu)
       n="$(basename "$c" .pt)"
+      echo "  diag_${n} → GPU $gpu"
       (
         set +e
-        VESSEL_CKPT_DIR="$CK" "$PY" -u "$HERE/eval/diag_ckpt.py" --ckpt "$c" --device "cuda:$(( GPU_I % NGPU ))" \
+        VESSEL_CKPT_DIR="$CK" "$PY" -u "$HERE/eval/diag_ckpt.py" --ckpt "$c" --device "cuda:$gpu" \
           --out "$OUT/diag_${n}.json" ${VESSEL_DIAG_ARGS:-} > "$OUT/diag_${n}.txt" 2>&1
         echo "$n rc=$?" >> "$OUT/_status_diag.txt"
       ) &
+      GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
       GPU_I=$(( GPU_I + 1 ))
     done
     wait
