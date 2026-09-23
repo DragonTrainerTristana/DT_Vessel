@@ -122,6 +122,9 @@ export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none
 export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/imo_opensea VESSEL_OUT_DIR=$PWD/_repro_out_imo
 bash run_repro.sh smoke
 # 2) 파일럿 학습: trunk(OFF 9,043,968) → off / on6 갈래, 3시드, 통신 텔레메트리 ON
+#    ★2026-09-23: 목표는 대척(crossing 2)이 아니라 무작위(≥ MIN_GOAL_DIST 400 m) — 대척은 open-sea 에서 16척이 원점에 몰려 OFF 가 학습 실패(1차 파일럿 goal 50 %/vColl 47 %).
+#    새 CKPT/OUT 폴더를 쓸 것(1차 trunk 는 crossing 2 라 재사용 불가 — check_branch 가 crossing 불일치로 막음).
+export VESSEL_CROSSING=0
 VESSEL_TRAIN_ARMS="off on6" VESSEL_COMM_TELEMETRY=1 bash run_repro.sh train
 # 3) 난수 대조군: on6 갈래의 msg_sd 를 diag 로 읽어 sd 로 준다
 VESSEL_DIAG_CKPTS="on6_s43.pt on6_s44.pt on6_s45.pt" bash run_repro.sh diag      # _repro_out_imo/diag_on6_s4x.json → telemetry.msg_sd

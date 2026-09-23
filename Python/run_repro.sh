@@ -37,6 +37,9 @@
 #   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12, on2/off2(dim 2 짝))
 #   VESSEL_BRANCH_WARMUP  갈래 재개 직후 통신 OFF 로 굴리는 에이전트당 결정 수. 기본 1200 (모든 갈래 동일)
 #   VESSEL_ALLOW_UNBRANCHED=1  eval 의 분기 검사 FAIL 을 무시 — 규약 이전 옛 배치 재평가 전용, 짝 비교 금지
+#   VESSEL_CROSSING  목표 배정. 기본 2 = 대척(agile 배치 재현). 0 = 스폰에서 MIN_GOAL_DIST(400 m) 이상 떨어진 목표 중 무작위
+#                    (2026-09-23: open-sea 에서 대척은 16척 경로가 전부 원점 56 m 안을 지나 중앙 난투 → imo 파일럿은 0 으로).
+#                    평가는 스냅샷 crossing 을 자동으로 따름. 같은 trunk 묶음 안 crossing 일치는 check_branch 가 검사.
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 export PYTHONIOENCODING=utf-8   # ★Windows cp949 콘솔로 리다이렉트할 때 한글·기호 print 가 UnicodeEncodeError 로 죽는 것 방지 (2026-09-10)
@@ -81,7 +84,7 @@ echo "  출력        : $OUT"
 echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
-echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3}"
+echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3} crossing=${VESSEL_CROSSING:-2}"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -260,7 +263,7 @@ train_one() {
     fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
       --arm "$arm" --steps "$steps" "${extra[@]}" \
-      --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --seed "$s" --ckpt_every "${VESSEL_CKPT_EVERY:-2}" \
+      --envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing "${VESSEL_CROSSING:-2}" --max_partners 4 --seed "$s" --ckpt_every "${VESSEL_CKPT_EVERY:-2}" \
       --save "$CK/$run.pt" --csv "$OUT/$run.csv" \
       > "$OUT/$run.log" 2>&1
     echo "$run rc=$?" >> "$OUT/_status_train.txt"

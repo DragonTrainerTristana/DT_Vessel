@@ -48,6 +48,7 @@ def load_meta(path):
         'msg_dim': snap.get('msg_dim'), 'steps': ck.get('steps'),
         'trunk': snap.get('branch_from'), 'sha': snap.get('branch_from_sha256'), 'at': snap.get('branch_at'),
         'dyn': str(snap.get('dyn_profile') or 'agile'), 'obst': str(snap.get('obstacles') or 'grid3x3'),
+        'crossing': snap.get('crossing'),   # 2026-09-23: 같은 trunk 묶음 안 목표 배정 방식 일치
     }
 
 
@@ -92,7 +93,7 @@ def main():
 
     for sha, ms in groups.items():
         tag = f"trunk {ms[0]['trunk']} ({sha[:12]})"
-        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst'):
+        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing'):
             vals = sorted({str(m[key]) for m in ms})
             if len(vals) > 1:
                 fails.append(f'{tag}: {key} 불일치 {vals}')
