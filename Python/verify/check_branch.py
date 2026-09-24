@@ -8,8 +8,10 @@
 
 검사 (하나라도 어기면 exit 1, 통과하면 'ALL PASS')
   1. 모든 체크포인트 스냅샷에 branch_from_sha256 · branch_at 이 있다 (= trunk 에서 분기한 런)
-  2. 같은 trunk(SHA256) 묶음 안에서 seed · msg_dim · branch_at · dyn_profile · obstacles 가 같다
-     (dyn/obst 는 스냅샷 키. 없으면 legacy agile/grid3x3 으로 본다 — 2026-09-21 이전 체크포인트)
+  2. 같은 trunk(SHA256) 묶음 안에서 seed · msg_dim · branch_at · dyn_profile · obstacles · crossing ·
+     sim(보상·게이트 상수 24개) 가 같다
+     (dyn/obst 는 스냅샷 키. 없으면 legacy agile/grid3x3 으로 본다 — 2026-09-21 이전 체크포인트.
+      sim 은 2026-09-23 이후 키 — 없으면 null 끼리 비교라 통과한다)
   3. 통신 팔(ON/RANDOM/ORACLE)이 있는 묶음에는 같은 trunk 의 OFF 갈래가 있다
   4. --trunk_dir 에 trunk 파일이 있으면 SHA256 을 다시 계산해 기록과 대조한다
   5. --csv_dir 에 trunk 곡선 CSV 가 있으면 각 갈래 CSV 의 step<=branch_at 행이 trunk CSV 와 글자까지 같다
@@ -22,6 +24,7 @@
 """
 import argparse
 import hashlib
+import json
 import os
 import sys
 from collections import defaultdict
@@ -49,7 +52,18 @@ def load_meta(path):
         'trunk': snap.get('branch_from'), 'sha': snap.get('branch_from_sha256'), 'at': snap.get('branch_at'),
         'dyn': str(snap.get('dyn_profile') or 'agile'), 'obst': str(snap.get('obstacles') or 'grid3x3'),
         'crossing': snap.get('crossing'),   # 2026-09-23: 같은 trunk 묶음 안 목표 배정 방식 일치
+        # 2026-09-23: 보상 계수·게이트 상수 24개. 비교는 문자열로(정렬 JSON), 보고는 다른 키만 뽑아서.
+        'sim': json.dumps(snap.get('sim'), sort_keys=True),
     }
+
+
+def sim_diff_keys(ms):
+    """Keys whose value differs across a group's `sim` dicts (for the failure message - the whole JSON is unreadable)."""
+    dicts = [json.loads(m['sim']) or {} for m in ms]
+    keys = set()
+    for d in dicts:
+        keys |= set(d)
+    return sorted(k for k in keys if len({repr(d.get(k, '<없음>')) for d in dicts}) > 1)
 
 
 def csv_rows_upto(path, at):
@@ -93,10 +107,11 @@ def main():
 
     for sha, ms in groups.items():
         tag = f"trunk {ms[0]['trunk']} ({sha[:12]})"
-        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing'):
+        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing', 'sim'):
             vals = sorted({str(m[key]) for m in ms})
             if len(vals) > 1:
-                fails.append(f'{tag}: {key} 불일치 {vals}')
+                fails.append(f'{tag}: sim 불일치 {sim_diff_keys(ms)}' if key == 'sim'
+                             else f'{tag}: {key} 불일치 {vals}')
         arms = {m['arm'] for m in ms}
         comm = sorted(arms & set(COMM_ARMS))
         if comm and 'OFF' not in arms:

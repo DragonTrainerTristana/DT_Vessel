@@ -137,6 +137,7 @@ VESSEL_TRAIN_ARMS="off2 on2 off12 on12" bash run_repro.sh train && bash run_repr
 ```
 
 평가는 체크포인트 스냅샷의 `dyn_profile`·`obstacles`·`radar_range` 와 현재 env 가 다르면 **중단**한다(조용히 다른 조건으로 재는 사고 방지).
+2026-09-23 부터 보상 계수·게이트 상수 24개(`config.SIM_SNAPSHOT_KEYS`, 스냅샷 `sim`)까지 같이 대조한다 — 평가·재개 모두. 교차평가는 `--allow_sim_mismatch` / `VESSEL_ALLOW_SIM_MISMATCH=1`, 재개는 우회 없음(`ckpt_io.py <ckpt> --env` 가 뽑아 주는 export 줄을 쓸 것).
 일부러 교차평가할 때만 우회: `VESSEL_ALLOW_SIM_MISMATCH=1`(`eval_mixed.py`·`measure_regimes.py`·`corridor_run.py`·`astar_fig9/eval_astar_global.py`)
 / `--allow_sim_mismatch`(`eval_ckpt.py`·`diag_ckpt.py`). 그렇게 낸 숫자는 학습 조건과 다르다고 반드시 같이 적을 것.
 재개·분기는 우회가 없다 — 프로필 이름이 같아도 `dyn` 숫자가 다르면 학습기가 거부한다.

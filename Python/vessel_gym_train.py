@@ -597,6 +597,16 @@ def main():
                 raise SystemExit(f"[resume] 거부: 체크포인트 dyn 상수 {_k} = {_prev_snap['dyn'].get(_k)} != "
                                  f"현재 {_cur_dyn.get(_k)} — 프로필 정의가 바뀐 코드로 재개 불가(스냅샷이 유일 근거)"
                                  + (f" / 다른 키도 다름: {_bad_dyn[1:]}" if len(_bad_dyn) > 1 else ""))
+        # ★2026-09-23 sim 상수(보상 계수·게이트·COLREGS_MODE·에피소드 길이)도 같아야 한다 — 다르면 보상이 다른
+        #   실험을 이어 붙이는 것. 체크포인트에 있는 키만 본다(구 체크포인트 호환). 우회 없음.
+        if isinstance(_prev_snap.get('sim'), dict):
+            from ckpt_io import dyn_constants_mismatch
+            _ck_sim, _cur_sim = _prev_snap['sim'], cfg.sim_constants()
+            _bad_sim = dyn_constants_mismatch(_ck_sim, {k: v for k, v in _cur_sim.items() if k in _ck_sim})
+            if _bad_sim:
+                _d = ', '.join(f"{k} ckpt={_ck_sim[k]!r} 현재={_cur_sim.get(k, '<없음>')!r}" for k in _bad_sim)
+                raise SystemExit(f"[resume] 거부: 체크포인트 sim 상수 불일치 {_bad_sim} — 보상·게이트가 다른 "
+                                 f"코드/env 로 재개 불가(스냅샷이 유일 근거): {_d}")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '

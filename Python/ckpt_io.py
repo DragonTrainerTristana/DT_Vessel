@@ -85,6 +85,9 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'obstacles': str(cfg.OBSTACLES_MODE),
         'radar_dropout_p': float(cfg.RADAR_DROPOUT_P), 'radar_dropout_len': int(cfg.RADAR_DROPOUT_LEN),
         'los_gate': bool(cfg.LOS_GATE), 'max_episode_steps': int(cfg.MAX_EPISODE_STEPS),
+        # ★2026-09-23: vessel_gym 이 config 에서 받는 sim 상수 전부(보상 계수·게이트·COLREGS_MODE·에피소드 길이).
+        #   위 낱개 키(radar_dropout_p 등)는 구 로더 호환으로 남겨 둔다 — 값은 같다. 키 추가만.
+        'sim': dict(cfg.sim_constants()),
     }
 
 
@@ -120,6 +123,23 @@ def dyn_constants_mismatch(prev, cur):
     return bad
 
 
+def _apply_sim_dict(d):
+    """Push a checkpoint's `sim` dict onto config + vessel_gym module globals. Returns the number of keys applied.
+
+    RADAR_RANGE is skipped on purpose - apply_sim_snapshot handles it (small-radar guard). cfg must be written too
+    because VesselBatchEnv.__init__ reads _cfg.FARPAIR_COEF / FARPAIR_EXP / REWARD_RANGE directly. Idempotent.
+    """
+    n = 0
+    for k, v in (d or {}).items():
+        if k == 'RADAR_RANGE':
+            continue
+        setattr(cfg, k, v)
+        if hasattr(vg, k):
+            setattr(vg, k, v)
+        n += 1
+    return n
+
+
 def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt]'):
     """Compare the checkpoint's sim settings (dyn_profile, obstacles, radar_range) with the current config and
     apply them to vessel_gym module globals. Missing keys mean legacy (agile / grid3x3). A mismatch aborts unless
@@ -129,7 +149,12 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
     notes = notes if notes is not None else []
     ck_dp = str(snap.get('dyn_profile') or 'agile').lower()
     ck_ob = str(snap.get('obstacles') or 'grid3x3').lower()
+    # ★2026-09-23 sim 상수 24개(보상 계수·게이트·COLREGS_MODE·에피소드 길이). RADAR_RANGE 는 top-level
+    #   'radar_range' 와 같은 값이라 아래 전용 검사(작은 레이더 가드 포함) 하나로만 다룬다 — 줄 중복 방지.
+    ck_sim = snap.get('sim') if isinstance(snap.get('sim'), dict) else None
     ck_rr = snap.get('radar_range')
+    if ck_rr is None and ck_sim is not None:
+        ck_rr = ck_sim.get('RADAR_RANGE')
     bad = []
     if ck_dp != cfg.DYN_PROFILE:
         bad.append(f"dyn_profile ckpt={ck_dp} 현재={cfg.DYN_PROFILE}")
@@ -137,9 +162,18 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
         bad.append(f"obstacles ckpt={ck_ob} 현재={cfg.OBSTACLES_MODE}")
     if ck_rr is not None and abs(float(ck_rr) - float(cfg.RADAR_RANGE)) > 1e-6:
         bad.append(f"radar_range ckpt={ck_rr} 현재={cfg.RADAR_RANGE}")
+    # 체크포인트에 있는 키만 대조한다 — 구 체크포인트(키 일부 없음)를 불일치로 몰지 않기 위함.
+    #   반대로 *현재* config 에 없는 키는 불일치(코드가 상수를 지웠다는 뜻).
+    if ck_sim is not None:
+        cur_sim = cfg.sim_constants()
+        for k in dyn_constants_mismatch(ck_sim, {k: v for k, v in cur_sim.items() if k in ck_sim}):
+            if k == 'RADAR_RANGE':
+                continue          # 위 radar_range 검사와 중복
+            bad.append(f"{k} ckpt={ck_sim[k]!r} 현재={getattr(cfg, k, '<없음>')!r}")
     if bad:
         msg = ("sim 설정 불일치: " + "; ".join(bad)
-               + " — VESSEL_DYN_PROFILE / VESSEL_OBSTACLES / VESSEL_RADAR_RANGE 를 학습값으로 주고 다시 실행할 것")
+               + " — VESSEL_DYN_PROFILE / VESSEL_OBSTACLES / VESSEL_RADAR_RANGE 를 학습값으로 주고 다시 실행할 것"
+               + " (보상·게이트 상수는 `python ckpt_io.py <ckpt> --env` 가 뽑아 주는 export 줄을 쓸 것)")
         if not allow_sim_mismatch:
             raise SystemExit(f"{tag} 중단: {msg}")
         notes.append(msg + " (allow_sim_mismatch 로 진행 — 스냅샷 값을 vessel_gym 에 강제 적용)")
@@ -153,9 +187,17 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
                              "proximity 보상 문턱(19.6) 보다 작아 보상 불변 전제가 깨짐. "
                              "의도한 것이면 VESSEL_ALLOW_SMALL_RADAR=1")
         vg.RADAR_RANGE = float(ck_rr)
+    # RADAR_RANGE 는 위에서 이미 적용됨(가드 포함) → _apply_sim_dict 는 건너뛰지만 '다룬 키' 수에는 넣는다.
+    n_sim = len(ck_sim) if ck_sim is not None else 0
+    if ck_sim is not None:
+        _apply_sim_dict(ck_sim)
     if not snap.get('dyn_profile'):
         notes.append("스냅샷에 dyn_profile 없음(2026-09-21 이전) → legacy 'agile'/'grid3x3' 로 복원")
-    return {'dyn_profile': ck_dp, 'obstacles': ck_ob, 'radar_range': float(vg.RADAR_RANGE)}
+    if ck_sim is None:
+        notes.append("스냅샷에 sim 없음(2026-09-23 이전) → 보상·게이트 상수는 현재 config 값으로 감"
+                     "(학습값과 다르면 조용히 틀림)")
+    return {'dyn_profile': ck_dp, 'obstacles': ck_ob, 'radar_range': float(vg.RADAR_RANGE),
+            'sim_keys_applied': int(n_sim)}
 
 
 class Restored:
@@ -176,6 +218,7 @@ class Restored:
                 f"msg_ln={e['msg_ln']} token_gain={e['msg_token_gain']} agg={e['agg_mode']} msg_gain={e['msg_gain']} "
                 f"shared_enc={e.get('shared_encoder')} moe={int(e.get('use_moe', 1))}/{e.get('moe_width')}/{int(e.get('moe_shared', 0))} "
                 f"dyn={e.get('dyn_profile')} obst={e.get('obstacles')} radar={e.get('radar_range')} "
+                f"sim={e.get('sim_keys_applied', 0)}keys "
                 f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
 
@@ -430,6 +473,10 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
                                str(snap.get('dyn_profile') or 'agile'))
     if snap.get('obstacles'):
         vg.OBSTACLES_MODE = str(snap['obstacles']).lower()
+    if isinstance(snap.get('sim'), dict):
+        # ★2026-09-23: 보상 계수·게이트도 스냅샷 값으로 (restore_policy 가 이미 했어도 멱등).
+        #   VesselBatchEnv.__init__ 이 _cfg.FARPAIR_*/REWARD_RANGE 를 읽으므로 생성 *전*이어야 한다.
+        _apply_sim_dict(snap['sim'])
     src = {}
 
     def pick(name, given, snap_key, default):
@@ -504,12 +551,25 @@ _SNAP_TO_ENV = [
     ('farfield_coef', 'VESSEL_FARFIELD_COEF', str), ('perpair_coef', 'VESSEL_PERPAIR_COEF', str),
     ('msg_random_sd', 'VESSEL_MSG_RANDOM_SD', str),
     ('dyn_profile', 'VESSEL_DYN_PROFILE', str), ('obstacles', 'VESSEL_OBSTACLES', str),
-    # ★구멍 수리(스펙 §2): 가중치에 흔적이 없는 regime 토글. 재현용 export 로만 내보내고
-    #   apply_sim_snapshot 의 중단 대조에는 넣지 않는다 — dropout/los 는 각자 env 를 쓰는 별개 regime 이고
-    #   max_episode_steps 는 스펙 §8-2 에서 프로필마다 다시 재는 값이라서.
-    ('radar_dropout_p', 'VESSEL_RADAR_DROPOUT_P', str), ('radar_dropout_len', 'VESSEL_RADAR_DROPOUT_LEN', str),
-    ('los_gate', 'VESSEL_LOS_GATE', lambda v: '1' if v else '0'), ('max_episode_steps', 'VESSEL_MAX_EP_STEPS', str),
+    # ★2026-09-23: radar_dropout_p/len·los_gate·max_episode_steps 는 스냅샷 'sim' 에서 나온다(아래 env_lines).
+    #   여기 static 으로도 두면 export 줄이 두 번 나오므로 뺐다 — 구 스냅샷(sim 없음)은 _SIM_LEGACY_TOPLEVEL 로 폴백.
 ]
+
+# 구 스냅샷(2026-09-23 이전) 폴백: sim 키 → 그때 top-level 에 있던 이름
+_SIM_LEGACY_TOPLEVEL = {'RADAR_DROPOUT_P': 'radar_dropout_p', 'RADAR_DROPOUT_LEN': 'radar_dropout_len',
+                        'LOS_GATE': 'los_gate', 'MAX_EPISODE_STEPS': 'max_episode_steps'}
+
+
+def _sim_env_value(v):
+    """sim constant -> export string. None (unset) yields None so the caller skips the line:
+    an empty VESSEL_X= would be read back as 0.0/'' instead of 'not set'."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return '1' if v else '0'
+    if isinstance(v, float):
+        return f'{v:g}'
+    return str(v)
 
 
 def env_lines(snap):
@@ -518,6 +578,21 @@ def env_lines(snap):
     for key, env, fmt in _SNAP_TO_ENV:
         if key in snap and snap[key] is not None:
             lines.append(f"export {env}={fmt(snap[key])}")
+        else:
+            unknown.append(env)
+    # ★2026-09-23 sim 상수 24개 — 보상·게이트까지 그대로 재현할 수 있게 export 로 낸다.
+    #   RADAR_RANGE 는 위 static 'radar_range' 줄이 이미 냈으므로 건너뛴다(중복 방지).
+    ck_sim = snap.get('sim') if isinstance(snap.get('sim'), dict) else None
+    if ck_sim is None:
+        ck_sim = {k: snap[t] for k, t in _SIM_LEGACY_TOPLEVEL.items() if snap.get(t) is not None}
+    for k in cfg.SIM_SNAPSHOT_KEYS:
+        if k == 'RADAR_RANGE':
+            continue
+        env = cfg.SIM_ENV_NAMES.get(k, 'VESSEL_' + k)
+        if k in ck_sim:
+            v = _sim_env_value(ck_sim[k])
+            if v is not None:
+                lines.append(f"export {env}={v}")
         else:
             unknown.append(env)
     args = ' '.join(f"--{a} {snap[a]}" for a in ('arm', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'rollout', 'seed', 'comm_on_at') if snap.get(a) is not None)

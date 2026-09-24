@@ -88,45 +88,9 @@ echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBS
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
-# 전부 config 기본값과 같지만 *명시* 한다 — 로그·스냅샷만 보고 설정을 알 수 있게, 그리고 preflight 가 대조하게.
-common_env() {
-  export VESSEL_USE_ATTENTION=1
-  export VESSEL_CENTRAL_CRITIC=1
-  export VESSEL_STATE_RECON_COEF=0.05
-  export VESSEL_USE_MOE=1
-  export VESSEL_MOE_SHARED=1
-  export VESSEL_MOE_WIDTH=1.0
-  export VESSEL_SHARED_ENCODER=all
-  export VESSEL_RADAR_ACT=leaky
-  export VESSEL_RADAR_HEAD=bottleneck
-  export VESSEL_RADAR_BOTTLENECK_CH=8
-  export VESSEL_MSG_LN=1
-  export VESSEL_MSG_TOKEN_GAIN=8.0
-  export VESSEL_CLIP_PER_MODULE=1
-  export VESSEL_MSG_L2=0.0002
-  export VESSEL_POS_GROUND=1
-  export VESSEL_COMM_RANGE=300
-  export VESSEL_MAX_PARTNERS=4
-  export VESSEL_RADAR_RANGE=56
-  export VESSEL_COLREGS_MODE=unity
-  export VESSEL_SIM_COLREGS_COEF=0.45
-  export VESSEL_INTENT_K=3
-  export VESSEL_THREAT_COEF=0
-  export VESSEL_GOAL_COMM_COEF=0
-  export VESSEL_INTENT_COEF=0
-  export VESSEL_ROLE_COMM_COEF=0
-  export VESSEL_COMM_CONSUMER_COEF=0
-  export VESSEL_RECON_EMA_FLOOR=0
-  export VESSEL_AGG_MODE=sum
-  export VESSEL_MSG_GAIN=1.0
-  export VESSEL_TIMEOUT_BOOTSTRAP=0
-  export VESSEL_MSG_GATE_APPLY=0
-  # ★2026-09-21 동역학 프로필·시나리오 — 바깥에서 준 값을 보존(기본 agile/grid3x3 = 비트동일).
-  #   imo 배치는 VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none 을 밖에서 주고, 별도 VESSEL_CKPT_DIR/VESSEL_OUT_DIR 을 쓴다.
-  #   preflight 드리프트 검사(names) 대상이 아니다 — 의도된 override 이므로. 학습기·check_branch 가 갈래 간 일치를 강제한다.
-  export VESSEL_DYN_PROFILE="${VESSEL_DYN_PROFILE:-agile}"
-  export VESSEL_OBSTACLES="${VESSEL_OBSTACLES:-grid3x3}"
-}
+# ★2026-09-24: common_env() 정본은 common_env.sh 한 곳이다 — smoke_mac.sh 도 같은 파일을 source 한다
+#   (예전엔 사본 두 벌이라 export 하나 고치려면 두 번 고쳐야 했음). preflight 가 그 값과 config 기본값을 대조한다.
+source "$HERE/common_env.sh"
 
 # ── 사전 검증: 미러가 깨졌으면 돌리지 말 것 ─────────────────────────────────
 preflight() {
@@ -139,13 +103,15 @@ preflight() {
     exit 1
   }
   # ★YUGIOH 드리프트 검사: common_env 의 export 값 == config.py 기본값 (누가 config 기본값만 바꾸면 여기서 잡힘)
+  #   DYN_PROFILE·OBSTACLES·RADAR_RANGE 는 names 에 없다 — common_env 가 바깥 override 를 보존하는
+  #   의도된 실험 축이라 여기서 잡으면 imo·용량반응 배치가 시작조차 못 한다(스냅샷·check_branch 가 대신 강제).
   ( common_env; "$PY" - <<'PYCHK'
 import os, json, subprocess, sys
 env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
 code = "import json, config as c; print(json.dumps({k: str(getattr(c, k)) for k in %r}))"
 names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARED_ENCODER','RADAR_ACT','RADAR_HEAD',
          'MSG_TOKEN_GAIN','CLIP_PER_MODULE','MSG_L2_COEF','COMM_RANGE','MSG_LN','POS_GROUND','MOE_WIDTH','USE_MOE',
-         'RADAR_BOTTLENECK_CH','MAX_COMM_PARTNERS','RADAR_RANGE','COLREGS_MODE','COLREGS_SIM_COEF','INTENT_K',
+         'RADAR_BOTTLENECK_CH','MAX_COMM_PARTNERS','COLREGS_MODE','COLREGS_SIM_COEF','INTENT_K',
          'THREAT_COEF','GOAL_COMM_COEF','INTENT_COEF','ROLE_COMM_COEF','COMM_CONSUMER_COEF','RECON_EMA_FLOOR',
          'AGG_MODE','MSG_GAIN','TIMEOUT_BOOTSTRAP','MSG_GATE_APPLY']
 def _dump(e=None):
@@ -198,6 +164,11 @@ PYCHK
       || { echo "  동역학 프로필 FAIL — $OUT/_dyn_profile.txt 확인"; exit 1; }
     grep -q "ALL PASS" "$OUT/_dyn_profile.txt" || { echo "  동역학 프로필이 ALL PASS 가 아님"; exit 1; }
     echo "  동역학 프로필 ALL PASS"
+    # ★2026-09-23: 스냅샷 sim 상수(보상 계수·게이트·COLREGS_MODE·에피소드 길이) 기록·대조·복원 게이트.
+    "$PY" -u "$HERE/verify/test_sim_snapshot.py" > "$OUT/_sim_snapshot.txt" 2>&1 \
+      || { echo "  sim 스냅샷 FAIL — $OUT/_sim_snapshot.txt 확인"; exit 1; }
+    grep -q "ALL PASS" "$OUT/_sim_snapshot.txt" || { echo "  sim 스냅샷이 ALL PASS 가 아님"; exit 1; }
+    echo "  sim 스냅샷 ALL PASS"
   fi
   echo
 }

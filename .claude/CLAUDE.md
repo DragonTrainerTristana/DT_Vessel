@@ -209,7 +209,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | `VESSEL_OBSTACLES` | `OBSTACLES_MODE` | **grid3x3** | config 끝 | `none` = open-sea(장애물 0, 벽만). 스냅샷 `obstacles` |
 | PPO 상수 | γ 0.99 · λ 0.95 · LR 3e-4 · BATCH 2048 · `N_EPOCH` 2 · `MINIBATCH_SIZE` 512 · clip 0.2 · entropy 0.01 · value 0.5 · grad 0.5 | | :290-299 | gym 경로는 rollout 길이를 `--rollout`(기본 64)으로 받고 나머지는 config 사용(:820, :846-901) |
 
-- `run_repro.sh common_env()` = **YUGIOH 를 명시 export**(config 기본값과 동일). `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`; rollout 32 는 12런 aux.csv 245행 = update 당 65,536 결정으로 확인). 2026-09-04 배치 설정은 `verify/test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
+- `common_env()` 정본 = **`Python/common_env.sh` 한 파일**(2026-09-24 단일화 — `run_repro.sh`·`smoke_mac.sh` 가 `source` 함. 예전엔 사본 두 벌이라 export 하나를 두 번 고쳐야 했음) = **YUGIOH 를 명시 export**(config 기본값과 동일). `${VAR:-기본}` 3개(`VESSEL_DYN_PROFILE`·`VESSEL_OBSTACLES`·`VESSEL_RADAR_RANGE`)는 바깥 override 를 보존하는 의도된 실험 축이라 드리프트 검사 `names` 목록에서 빠져 있다. `preflight` 가 export 값과 config 기본값을 대조해 드리프트면 중단. 학습 인자 `--envs 128 --vessels 16 --rollout 32 --ring 1.0 --crossing 2 --max_partners 4 --steps 16056320`(= `config.YUGIOH_ARGS`; rollout 32 는 12런 aux.csv 245행 = update 당 65,536 결정으로 확인). 2026-09-04 배치 설정은 `verify/test_golden.py BATCH_ENV`(legacy 핀 포함)에만 남아 있음.
 - `config.py` import 시 `models/<COMM_FOLDER>/VesselNavigation_<시각>/logs` 디렉토리 생성 부작용(:347-348) — 스크립트에서 import만 해도 빈 폴더 생김.
 
 ---
@@ -227,12 +227,13 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | **게이트 3개 통과 못 하면 숫자 안 냄** | ① 조우율(sit≠0) ≥ 5% (`--min_sit_rate`) ② 설정 == 스냅샷(restore가 불일치 시 중단) ③ `--expect_vcoll` 주면 창 vColl이 평가값 ±50% 안 |
 | **검증 안 된 숫자 보고 금지** | 조우율 낮은 창·다른 설정으로 잰 숫자가 두 번 보고 후 철회됨 — 그게 `eval/diag_ckpt.py`가 생긴 이유 |
 | **골든 테스트** `verify/test_golden.py --check` | 학습기(`vessel_gym_train.py`·`networks.py`·`config.py`·`vessel_gym.py`) **변경마다.** 케이스 `default_ON` / `default_OFF` / `batch_2026_09_04_ON`, 고정시드 CPU 2 update → state_dict SHA256·곡선 CSV·스냅샷·Adam 비트 비교. 골든 `Python/verify/golden/2026-09-10_*.json`(git 추적). `--regen`은 명시 승인 필요 |
-| **스냅샷 키** | `ckpt_io.snapshot_config` — 추가 자유, **삭제·의미 변경 금지** |
+| **스냅샷 키** | `ckpt_io.snapshot_config` — 추가 자유, **삭제·의미 변경 금지**. `sim`(24 상수 dict, 2026-09-23) = vessel_gym 이 config 에서 받는 보상 계수·게이트·`COLREGS_MODE`·`MAX_EPISODE_STEPS` 전부 → `apply_sim_snapshot` 이 **재개·평가 일치 강제**(다르면 중단, `allow_sim_mismatch` 로만 우회. 재개는 우회 없음) |
 | Unity ground-truth | `VESSEL_OUTCOME_LOG`(goal/collision_vessel/collision_obstacle/timeout) · `VESSEL_METRIC_LOG` **17열**(`VesselAgent.cs` :903-904: agentId,episodeIndex,outcome,steps,fuel,rudderVar,complianceMean,occlRate,commandVar,minVesselDist,nearMissSteps,straightness,headingTravel,minDCPA,dcpaBelowSteps,fuelThrust,fuelTurn). 뒤 8열 = 진단 전용, 보상 비연결 |
 
 - `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → **legacy 기본**(attention 0·pos_ground 1·token_gain 1·relu·agg sum)으로 감(YUGIOH 기본 아님). comm_range 불명이면 **중단** — `VESSEL_COMM_RANGE=<학습값>` + `allow_comm_range_mismatch` 로만 진행. **조용히 틀릴 수 있음** 명시 보고.
 - **2026-09-10 YUGIOH 에서 발견·수정**: `restore_policy` 가 `use_moe / moe_width / moe_shared` 를 복원 안 했음 → YUGIOH 기본(공유 MoE)으로 만들면 단일망·얇게는 strict 실패, 두껍게(MOE_SHARED=0)는 5벌 인코더가 한 객체에 덮여 **마지막 전문가만 남는 조용한 오염**. 지금은 스냅샷 → 없으면 키(`experts.`)·전문가 0/1 텐서 동일성·conv/fc 채널 수(폭 역산)로 스니핑. 구조 4종 × {정상/구 스냅샷/스냅샷 없음} 12건 시뮬 통과.
 - **2026-09-21**: 스냅샷 키에 `dyn_profile`·`dyn`·`obstacles`·`radar_dropout_p/len`·`los_gate`·`max_episode_steps` 추가.
+- **2026-09-23**: 스냅샷 키 `sim` 추가 — `config.SIM_SNAPSHOT_KEYS` 24개를 `snapshot_config` 가 기록하고 `apply_sim_snapshot`/`make_env_from_snapshot` 이 대조·복원, 학습기 재개(`vessel_gym_train.py` :603)와 `verify/check_branch.py` 가 일치를 강제한다. 체크포인트에 *있는* 키만 대조(구 체크포인트 호환), 현재 config 에 없는 키는 불일치. `ckpt_io.py <ckpt> --env` 가 24개를 `export` 로 뽑아 준다. 검사 = `verify/test_sim_snapshot.py`(preflight·smoke_mac 5단계).
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
 ### 8-1. ON/OFF 분기 규약 (2026-09-15, 사용자 지시 — 예외 없음)

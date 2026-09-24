@@ -527,6 +527,26 @@ def dyn_profile_constants(profile):
 
 DYN = dyn_profile_constants(DYN_PROFILE)
 
+# ── ★sim 상수 스냅샷 (2026-09-23): vessel_gym 이 config 에서 받는 상수 전부. ckpt_io 가 기록·대조·복원,
+#   학습기 재개·check_branch 가 일치 강제. 왜 — 여태 스냅샷은 dyn_profile/obstacles/radar_range 만 봤고
+#   보상 계수·게이트·COLREGS_MODE·MAX_EPISODE_STEPS 는 기록도 대조도 안 했다 → 다른 보상으로 평가·재개해도 조용했음.
+#   COMM_RANGE 는 별도 게이트(comm_range), DYN 은 'dyn', DYN_PROFILE/OBSTACLES_MODE 는 이름 키로 이미 다룸 → 여기서 제외.
+SIM_SNAPSHOT_KEYS = (
+    'RADAR_RANGE', 'RADAR_DROPOUT_P', 'RADAR_DROPOUT_LEN', 'MIN_GOAL_DIST', 'RESPAWN_RNG_CONST',
+    'EARLY_AVOID_COEF', 'EARLY_RISK_GATE', 'EARLY_RELAX_TCPA', 'COLREGS_RISK_GATE', 'CMD_MISMATCH_COEF',
+    'PROXRAMP_COEF', 'PROXRAMP_DIST', 'LOS_GATE', 'SPEED_AVOID_UNLOCK', 'SPEED_UNLOCK_GATE', 'COLREGS_MODE',
+    'MAX_EPISODE_STEPS', 'COLLISION_PENALTY', 'FUEL_COEF', 'PROGRESS_COEF', 'COLREGS_SIM_COEF',
+    'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE',
+)
+# 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
+SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',
+                 'COLREGS_SIM_COEF': 'VESSEL_SIM_COLREGS_COEF'}
+
+
+def sim_constants():
+    """Current values of all snapshot-tracked sim constants (bool/int/float/str/None - torch.save/JSON safe)."""
+    return {k: globals()[k] for k in SIM_SNAPSHOT_KEYS}
+
 # ── 레이더 인코더 망 간 공유 — 2026-09-10 (VESSEL_SHARED_ENCODER) ──
 #   '0'     : 세 망(Message/Control/Critic)이 각자 인코더 (기존 구조, 기본 = 비트동일)
 #   'actor' : MessageActor 가 ControlActor 인코더를 같이 씀 (Critic 은 별도) — 절제용
