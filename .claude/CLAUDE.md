@@ -260,6 +260,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 | 주제 | 정본 | 기준일 |
 |---|---|---|
+| **이번 주 계획·게이트 체크리스트** | `runs/2026-09-24_plan/2026-09-24_통신체크리스트_주간Fig계획.pdf` (git 밖 Dropbox. Windows `C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\runs\2026-09-24_plan\`) — **작업 전 먼저 읽을 것**. 게이트 G0–G8·분기는 결과 전 고정, 계획 밖 실험·코드 변경 금지 | 09-24 |
 | **현재 상태·할 일** | `runs/STATUS.md` | 08-26 기준 + **08-31 갱신**(ring 0.7 원인 확정·1-1 철회 포함) |
 | 배치 실행 계획 | `runs/ABLATION_PLAN.md` | 08-31 확정 |
 | 통신 계획·사전등록 | `runs/m2_ablation/COMM_PLAN.md` | 09-04 |
