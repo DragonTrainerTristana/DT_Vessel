@@ -4,8 +4,10 @@
 # run_repro.sh 와 smoke_mac.sh 가 `source "$HERE/common_env.sh"` 로 가져다 쓴다.
 # 값은 config.py 끝 `YUGIOH` 표와 1:1 — 전부 config 기본값이지만 *명시* export 한다
 #   (로그·스냅샷만 보고 설정을 알 수 있게). run_repro.sh preflight 의 드리프트 검사 대상.
-#   단 아래 `${VAR:-기본}` 형태 3개(DYN_PROFILE·OBSTACLES·RADAR_RANGE)는 의도된 override 라
-#   drift-check `names` 목록에서 빠져 있다.
+#   단 아래 `${VAR:-기본}` 형태 3개(DYN_PROFILE·OBSTACLES·RADAR_RANGE)는 의도된 실험 축이라
+#   drift-check 의 `names`(= 기본값과 같은가) 목록에서 빠져 있다. 대신 preflight 의 'override 축'
+#   검사가 *실제 적용값* 을 대조하고(config 가 그 값을 못 읽으면 FAIL) 기본값과 다르면 ★ 로 찍는다
+#   — 셸에 남아 있던 옛 export 가 배치를 조용히 바꾸지 못하게.
 # ─────────────────────────────────────────────────────────────────────────────
 common_env() {
   export VESSEL_USE_ATTENTION=1
@@ -25,9 +27,13 @@ common_env() {
   export VESSEL_POS_GROUND=1
   export VESSEL_COMM_RANGE=300
   export VESSEL_MAX_PARTNERS=4
-  # ★2026-09-24 레이더 사거리 — 바깥에서 준 값을 보존(기본 56 = 불변). 용량반응 56→84/112 실험용.
-  #   obs 정규화(dist/range−0.5)가 같이 바뀌므로 값마다 trunk 를 따로 학습할 것 — 갈래끼리 섞지 말 것.
-  #   preflight 드리프트 검사(names) 대상이 아니다 — DYN_PROFILE 과 같이 의도된 override 이므로.
+  # ★2026-09-24 레이더 사거리 — 바깥에서 준 값을 보존(기본 56 = YUGIOH 값, 안 주면 불변).
+  #   용량반응 스윕(설계 스펙 `docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md` §8-5,
+  #   RADAR_RANGE ∈ {56,84,112,168}) 용. obs 정규화(dist/range−0.5)가 같이 바뀌므로 값마다 trunk 를
+  #   따로 학습할 것 — 갈래끼리 섞지 말 것(스냅샷·check_branch 가 묶음 안 일치를 강제).
+  #   DYN_PROFILE 과 같이 드리프트 검사 names 대상은 아니지만, preflight 'override 축' 검사가
+  #   적용값을 대조·표시한다(run_repro.sh preflight 의 'override 축'). 이 축 자체는 저자 확인 대기 — 되돌리려면
+  #   아래 줄을 `export VESSEL_RADAR_RANGE=56` 으로 고정하고 names 에 'RADAR_RANGE' 를 되돌리면 됨.
   export VESSEL_RADAR_RANGE="${VESSEL_RADAR_RANGE:-56}"
   export VESSEL_COLREGS_MODE=unity
   export VESSEL_SIM_COLREGS_COEF=0.45

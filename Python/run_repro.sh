@@ -37,6 +37,8 @@
 #   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12, on2/off2(dim 2 짝))
 #   VESSEL_BRANCH_WARMUP  갈래 재개 직후 통신 OFF 로 굴리는 에이전트당 결정 수. 기본 1200 (모든 갈래 동일)
 #   VESSEL_ALLOW_UNBRANCHED=1  eval 의 분기 검사 FAIL 을 무시 — 규약 이전 옛 배치 재평가 전용, 짝 비교 금지
+#   VESSEL_RADAR_RANGE  레이더 사거리(m). 기본 56 = YUGIOH 값. 바꾸면 obs 정규화(dist/range−0.5)가 같이 바뀌므로
+#                    값마다 trunk 를 따로 학습할 것(용량반응 스윕용 — 설계 스펙 §8-5). preflight 가 적용값을 대조·표시한다.
 #   VESSEL_CROSSING  목표 배정. 기본 2 = 대척(agile 배치 재현). 0 = 스폰에서 MIN_GOAL_DIST(400 m) 이상 떨어진 목표 중 무작위
 #                    (2026-09-23: open-sea 에서 대척은 16척 경로가 전부 원점 56 m 안을 지나 중앙 난투 → imo 파일럿은 0 으로).
 #                    평가는 스냅샷 crossing 을 자동으로 따름. 같은 trunk 묶음 안 crossing 일치는 check_branch 가 검사.
@@ -84,7 +86,7 @@ echo "  출력        : $OUT"
 echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
-echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3} crossing=${VESSEL_CROSSING:-2}"
+echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3} crossing=${VESSEL_CROSSING:-2} radar=${VESSEL_RADAR_RANGE:-56}"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -103,8 +105,12 @@ preflight() {
     exit 1
   }
   # ★YUGIOH 드리프트 검사: common_env 의 export 값 == config.py 기본값 (누가 config 기본값만 바꾸면 여기서 잡힘)
-  #   DYN_PROFILE·OBSTACLES·RADAR_RANGE 는 names 에 없다 — common_env 가 바깥 override 를 보존하는
-  #   의도된 실험 축이라 여기서 잡으면 imo·용량반응 배치가 시작조차 못 한다(스냅샷·check_branch 가 대신 강제).
+  #   DYN_PROFILE·OBSTACLES·RADAR_RANGE 는 names(기본값과 같은가) 에 없다 — common_env 가 바깥 override 를
+  #   보존하는 의도된 실험 축이라 여기서 기본값과 대조하면 imo·용량반응 배치가 시작조차 못 한다.
+  #   ★2026-09-24 대신 아래 'override 축' 검사가 *실제 적용값* 을 대조·표시한다(키를 그냥 빼면 조용해짐):
+  #     (a) common_env 가 export 한 값을 config 가 그대로 읽었는가 — 오타·타입 오류로 조용히 기본값 폴백되면 FAIL
+  #     (b) 기본값과 다르면 ★ 로 찍는다 — 셸에 남아 있던 옛 export 가 배치를 조용히 바꾸지 못하게.
+  #   값 자체의 팔 간 일치는 스냅샷·check_branch 가 강제한다.
   ( common_env; "$PY" - <<'PYCHK'
 import os, json, subprocess, sys
 env = {k: v for k, v in os.environ.items() if not k.startswith('VESSEL_')}
@@ -114,10 +120,15 @@ names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARE
          'RADAR_BOTTLENECK_CH','MAX_COMM_PARTNERS','COLREGS_MODE','COLREGS_SIM_COEF','INTENT_K',
          'THREAT_COEF','GOAL_COMM_COEF','INTENT_COEF','ROLE_COMM_COEF','COMM_CONSUMER_COEF','RECON_EMA_FLOOR',
          'AGG_MODE','MSG_GAIN','TIMEOUT_BOOTSTRAP','MSG_GATE_APPLY']
+# override 축 = 기본값과 달라도 되는 실험 축. 위 names 와 달리 '기본값과 같은가' 가 아니라
+#   'common_env 가 export 한 값을 config 가 실제로 그대로 읽었는가' 를 본다.
+override = [('DYN_PROFILE', 'VESSEL_DYN_PROFILE'), ('OBSTACLES_MODE', 'VESSEL_OBSTACLES'),
+            ('RADAR_RANGE', 'VESSEL_RADAR_RANGE')]
+dump_names = names + [k for k, _ in override]
 def _dump(e=None):
     # ★2026-09-15: returncode/stderr 를 안 보면 환경 문제(torch 없음·config import 에러)가
     #   빈 stdout -> IndexError 로 터져 "드리프트" 로 오보된다. exit 2 = 환경 문제(드리프트 아님).
-    r = subprocess.run([sys.executable, '-c', code % names], env=e, capture_output=True,
+    r = subprocess.run([sys.executable, '-c', code % dump_names], env=e, capture_output=True,
                        text=True, encoding='utf-8', errors='replace')
     out = (r.stdout or '').strip()
     if r.returncode != 0 or not out:
@@ -126,19 +137,34 @@ def _dump(e=None):
             print('   ', ln)
         sys.exit(2)
     return json.loads(out.splitlines()[-1])
-a = _dump(env)
-b = _dump()
+a = _dump(env)   # VESSEL_* 를 전부 뺀 config 기본값
+b = _dump()      # common_env 를 적용한 실제 값
 bad = [k for k in names if a[k] != b[k]]
+def _same(want, got):
+    try:
+        return abs(float(want) - float(got)) <= 1e-9
+    except (TypeError, ValueError):
+        return str(want).strip().lower() == str(got).strip().lower()
+ovr_bad = []
+for k, e in override:
+    want = os.environ.get(e)
+    if want is None or not _same(want, b[k]):
+        ovr_bad.append('%s: common_env=%r → config=%r' % (k, want, b[k]))
+    mark = '' if b[k] == a[k] else '   ★기본(%s) 아님 — 이 값 전용 trunk 로만 쓸 것' % a[k]
+    print('  override 축: %s=%s%s' % (k, b[k], mark))
+for ln in ovr_bad:
+    print('  ★override 적용 실패(config 가 그 값을 안 읽음):', ln)
 print('  YUGIOH 드리프트:', 'PASS (common_env == config 기본값)' if not bad else f'★FAIL {bad}')
-sys.exit(1 if bad else 0)
+sys.exit(1 if (bad or ovr_bad) else 0)
 PYCHK
   ); _drift_rc=$?
   if [ "$_drift_rc" -eq 2 ]; then
     echo "preflight 실패: 파이썬 환경 문제 — 드리프트 검사가 config 를 import 하지 못함(위 stderr 참고)."
-    echo "  → 드리프트 판정이 아님. VESSEL_PY 확인: $PY"
+    echo "  → 드리프트 판정이 아님. VESSEL_PY 확인: $PY — 또는 VESSEL_* 값이 파싱 안 됨(위 stderr 마지막 줄, 예: VESSEL_RADAR_RANGE=112m)"
     exit 1
   elif [ "$_drift_rc" -ne 0 ]; then
-    echo "preflight 실패: common_env 와 config.py 기본값이 다름 — config.py 끝 YUGIOH 표를 볼 것"
+    echo "preflight 실패: 드리프트(★FAIL 목록 = config.py 끝 YUGIOH 표) 또는 override 축 적용 실패(위 줄)"
+    echo "  → override 축이면 VESSEL_DYN_PROFILE·VESSEL_OBSTACLES·VESSEL_RADAR_RANGE 값(오타·단위)을 볼 것"
     exit 1
   fi
   echo "[preflight] PPO·통신 미러 검증"
