@@ -187,10 +187,12 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
                              "proximity 보상 문턱(19.6) 보다 작아 보상 불변 전제가 깨짐. "
                              "의도한 것이면 VESSEL_ALLOW_SMALL_RADAR=1")
         vg.RADAR_RANGE = float(ck_rr)
-    # RADAR_RANGE 는 위에서 이미 적용됨(가드 포함) → _apply_sim_dict 는 건너뛰지만 '다룬 키' 수에는 넣는다.
-    n_sim = len(ck_sim) if ck_sim is not None else 0
-    if ck_sim is not None:
-        _apply_sim_dict(ck_sim)
+        cfg.RADAR_RANGE = float(ck_rr)   # cfg.sim_constants() 가 이 값을 보고하도록 cfg 도 동기화
+    # RADAR_RANGE 는 위에서 이미 적용됨(가드 포함) → _apply_sim_dict 는 건너뛰지만, 그게 sim 딕셔너리의 24키 중
+    #   하나였다면(top-level radar_range 만 있고 sim 딕셔너리 자체가 없는 구 스냅샷은 해당 안 됨) '다룬 키' 수에 넣는다.
+    n_applied = _apply_sim_dict(ck_sim) if ck_sim is not None else 0
+    radar_in_sim = ck_rr is not None and ck_sim is not None and 'RADAR_RANGE' in ck_sim
+    n_sim = n_applied + (1 if radar_in_sim else 0)
     if not snap.get('dyn_profile'):
         notes.append("스냅샷에 dyn_profile 없음(2026-09-21 이전) → legacy 'agile'/'grid3x3' 로 복원")
     if ck_sim is None:
@@ -568,7 +570,9 @@ def _sim_env_value(v):
     if isinstance(v, bool):
         return '1' if v else '0'
     if isinstance(v, float):
-        return f'{v:g}'
+        return repr(float(v))    # shortest round-trip repr — f'{v:g}' truncated precision (was lossy)
+    if isinstance(v, int):
+        return str(int(v))
     return str(v)
 
 
@@ -593,6 +597,8 @@ def env_lines(snap):
             v = _sim_env_value(ck_sim[k])
             if v is not None:
                 lines.append(f"export {env}={v}")
+            else:
+                unknown.append(f"{env}(unset)")   # 키는 있으나 값이 None(예: REWARD_RANGE) — 조용히 빠뜨리지 않는다
         else:
             unknown.append(env)
     args = ' '.join(f"--{a} {snap[a]}" for a in ('arm', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'rollout', 'seed', 'comm_on_at') if snap.get(a) is not None)

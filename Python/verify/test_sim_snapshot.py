@@ -84,7 +84,7 @@ def test_mismatch_aborts_and_allow_applies():
         assert cfg.COLREGS_SIM_COEF == 0.30 and vg.COLREGS_SIM_COEF == 0.30
         assert eff['sim_keys_applied'] == len(cfg.SIM_SNAPSHOT_KEYS), eff
     # 블록을 나오면 원래 값
-    assert vg.COLREGS_SIM_COEF != 0.30 or cfg.sim_constants()['COLREGS_SIM_COEF'] != 0.30
+    assert vg.COLREGS_SIM_COEF != 0.30 and cfg.sim_constants()['COLREGS_SIM_COEF'] != 0.30
 
 
 def test_legacy_snapshot_without_sim():
