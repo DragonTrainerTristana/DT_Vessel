@@ -144,3 +144,48 @@ VESSEL_TRAIN_ARMS="off2 on2 off12 on12" bash run_repro.sh train && bash run_repr
 `astar_fig9/eval_astar_global.py` 는 imo 프로필에서 무효(스펙 §2: R 28 m 로 웨이포인트 추종 불가).
 
 판정 기준·지표 = 스펙 §4(사전등록). 결과 표는 `eval_*.txt` 의 goal/vColl/fuel/headTravel/minSep/colregs/colregsOK + 시드별 승패. 결과 보고 기준 바꾸지 말 것.
+
+## 의도·역할 통신 배치 (2026-09-25, feat/comm-intent) — Git Bash
+
+스펙·사전등록 = `docs/superpowers/specs/2026-09-25-comm-intent-design.md` (결과 전 고정). 레이더 56 고정(저자 결정).
+팔 5개가 **같은 EXT trunk** 에서 분기: off / arpa6(ARPA@56) / onl6(ON-latent) / ons6(ON-state) / oni6(ON-intent).
+통신 팔은 전부 보조손실 0(`VESSEL_AUX_LOSS_SCALE=0`, run_repro 가 팔마다 export). 체크포인트 이름 접두어 `x_` 자동.
+
+```bash
+git fetch origin && git checkout feat/comm-intent && git pull
+cd Python
+export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none VESSEL_CROSSING=0 VESSEL_COMM_EXT=1
+export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/comm_intent VESSEL_OUT_DIR=$PWD/_repro_out_intent
+export VESSEL_SEEDS="43 44 45"            # ★저자 결정 대기: 5시드면 "43 44 45 46 47" (결과 전에 정할 것)
+# 0) preflight(PPO 미러 포함 — Windows 에서만) + EXT 스모크: trunk 1 update → 5팔 1 update → 분기 검사
+bash run_repro.sh smoke
+# 1) 본 배치 (trunk OFF 9,043,968 → 5팔 16.06M). 통신 텔레메트리로 act_zero_state/role/intent 도 기록
+VESSEL_TRAIN_ARMS="off arpa6 onl6 ons6 oni6" VESSEL_COMM_TELEMETRY=1 VESSEL_SKIP_GOLDEN=1 bash run_repro.sh train
+# 2) 평가(분기 검사 자동)
+VESSEL_SKIP_GOLDEN=1 bash run_repro.sh eval
+#    F5 궤적: 팔마다 같은 시드·burn-in 0 → reset 장면이 같음(첫 재스폰 전 조우만 짝지을 것)
+VESSEL_SKIP_GOLDEN=1 bash run_repro.sh traj
+# 3) 절제: msgzero / latent0 / state0·role0·intent0 / field-shuffle
+VESSEL_SKIP_GOLDEN=1 bash run_repro.sh ablate
+```
+
+병행 — 계획서 G6 2단계(보조손실 비대칭 절제). EXT 코드 불필요. 1차 파일럿 trunk 를 **새 폴더에 복사**해서 쓴다
+(원 폴더에서 돌리면 1차 off 갈래를 덮어씀. 복사본 trunk 의 SHA 는 같으므로 분기 검사 통과).
+**새 셸에서** 돌릴 것(`env | grep VESSEL_` 로 남은 값 확인) — 1차 trunk 는 sim 스냅샷 이전이라 학습기의 sim 대조가 건너뛰어지고,
+trunk↔갈래 crossing 대조도 없어서 '1차 설정 그대로' 인지는 셸 env 만 보장한다:
+
+```bash
+unset VESSEL_COMM_EXT VESSEL_COMM_FIELDS VESSEL_COMM_LATENT VESSEL_PARTNER_RANGE VESSEL_AUX_LOSS_SCALE
+P1=<1차 파일럿 CKPT 폴더>; P1OUT=<1차 파일럿 OUT 폴더>
+export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none VESSEL_CROSSING=2    # 1차 파일럿 설정 그대로(crossing 2)
+export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/g6_aux0 VESSEL_OUT_DIR=$PWD/_repro_out_g6
+export VESSEL_SEEDS="43 44 45"            # 1차 파일럿 시드 (복사하는 trunk 가 이 셋뿐)
+export VESSEL_REQUIRE_TRUNK=1             # trunk 가 없으면 새로 학습하지 않고 중단
+mkdir -p $VESSEL_CKPT_DIR $VESSEL_OUT_DIR
+cp $P1/trunk_d6_s4{3,4,5}.pt $VESSEL_CKPT_DIR/ && cp $P1OUT/trunk_d6_s4{3,4,5}.csv $VESSEL_OUT_DIR/
+VESSEL_TRAIN_ARMS="off on6a0" VESSEL_SKIP_GOLDEN=1 bash run_repro.sh train && VESSEL_SKIP_GOLDEN=1 bash run_repro.sh eval
+# 판정(결과 전 해석표): on6a0 ≥ off → aux 비대칭이 H1a 해로움 원인 / on6a0 ≈ 1차 RANDOM → aux 는 일부만 / 변화 없음 → 원인 아님
+```
+
+GPU: ON형 팔은 프로세스당 VRAM 이 OFF 보다 크다(1차 파일럿 ON ≈ 5.6 GB, OFF ≈ 1.6 GB). EXT 는 attention MLP 로 조금 더 큼 — 첫 배치에서 `nvidia-smi` 로 확인.
+판정·지표 = 스펙 §6. 조율 진단(`[조율/…]`)·텔레메트리는 기전 설명용이고 H1 판정 근거가 아님.

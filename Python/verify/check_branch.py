@@ -9,7 +9,7 @@
 검사 (하나라도 어기면 exit 1, 통과하면 'ALL PASS')
   1. 모든 체크포인트 스냅샷에 branch_from_sha256 · branch_at 이 있다 (= trunk 에서 분기한 런)
   2. 같은 trunk(SHA256) 묶음 안에서 seed · msg_dim · branch_at · dyn_profile · obstacles · crossing ·
-     sim(보상·게이트 상수 24개) 가 같다
+     sim(보상·게이트 상수 24개) · comm_ext(의도·역할 통신 구조, 2026-09-25) 가 같다
      (dyn/obst 는 스냅샷 키. 없으면 legacy agile/grid3x3 으로 본다 — 2026-09-21 이전 체크포인트.
       sim 은 2026-09-23 이후 키 — 없으면 null 끼리 비교라 통과한다)
   3. 통신 팔(ON/RANDOM/ORACLE)이 있는 묶음에는 같은 trunk 의 OFF 갈래가 있다
@@ -54,7 +54,25 @@ def load_meta(path):
         'crossing': snap.get('crossing'),   # 2026-09-23: 같은 trunk 묶음 안 목표 배정 방식 일치
         # 2026-09-23: 보상 계수·게이트 상수 24개. 비교는 문자열로(정렬 JSON), 보고는 다른 키만 뽑아서.
         'sim': json.dumps(snap.get('sim'), sort_keys=True),
+        # 2026-09-25 의도·역할 통신: comm_ext 는 구조(같은 trunk 묶음 안 일치 필수). 필드·latent·반경·aux 는 팔마다 다를 수 있어
+        #   표시만 한다 — 스냅샷 arm 이 전부 'ON' 이라 팔 구분 근거가 이 키들뿐(파일명으로 판단 금지).
+        'comm_ext': int(snap.get('comm_ext', 0) or 0),
+        'variant': _variant(snap),
     }
+
+
+def _variant(snap):
+    """통신 팔 변형 표시 문자열(EXT 만). 예: 'intent' / 'state,L0,R56' (ARPA@56) / aux 0 이면 ',aux0'."""
+    if not snap.get('comm_ext'):
+        return '-'
+    v = [str(snap.get('comm_fields'))]
+    if float(snap.get('comm_latent', 1.0)) != 1.0:
+        v.append(f"L{float(snap['comm_latent']):g}")
+    if snap.get('partner_range') is not None:
+        v.append(f"R{float(snap['partner_range']):g}")
+    if float(snap.get('aux_loss_scale', 1.0)) != 1.0:
+        v.append(f"aux{float(snap['aux_loss_scale']):g}")
+    return ','.join(v)
 
 
 def sim_diff_keys(ms):
@@ -93,12 +111,12 @@ def main():
         if not m['sha'] or m['at'] is None:
             fails.append(f"{m['name']}: 분기 기록 없음(branch_from_sha256/branch_at) - trunk 에서 분기하지 않은 런")
 
-    print(f"{'체크포인트':<28} {'arm':<7} {'seed':>5} {'dim':>4} {'steps':>10} {'branch_at':>10}  trunk  dyn/obst")
+    print(f"{'체크포인트':<28} {'arm':<7} {'seed':>5} {'dim':>4} {'steps':>10} {'branch_at':>10}  trunk  dyn/obst  ext:변형")
     for m in metas:
         sha = (m['sha'] or '-')[:12]
         print(f"{m['name']:<28} {str(m['arm']):<7} {str(m['seed']):>5} {str(m['msg_dim']):>4} "
               f"{str(m['steps']):>10} {str(m['at']):>10}  {m['trunk'] or '-'} ({sha})"
-              f"  {m['dyn']}/{m['obst']}")
+              f"  {m['dyn']}/{m['obst']}  {m['comm_ext']}:{m['variant']}")
 
     groups = defaultdict(list)
     for m in metas:
@@ -107,7 +125,7 @@ def main():
 
     for sha, ms in groups.items():
         tag = f"trunk {ms[0]['trunk']} ({sha[:12]})"
-        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing', 'sim'):
+        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing', 'sim', 'comm_ext'):
             vals = sorted({str(m[key]) for m in ms})
             if len(vals) > 1:
                 fails.append(f'{tag}: sim 불일치 {sim_diff_keys(ms)}' if key == 'sim'

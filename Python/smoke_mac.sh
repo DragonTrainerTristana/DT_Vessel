@@ -17,6 +17,7 @@
 #   4. test_dyn_profile.py          (동역학 프로필·시나리오. env 를 그대로 물려받음 —
 #                                    imo/none 으로 돌리려면 VESSEL_DYN_PROFILE·VESSEL_OBSTACLES 를 밖에서 줄 것)
 #   5. test_sim_snapshot.py         (스냅샷 sim 상수 24개 기록·대조·복원)
+#   6. test_comm_ext.py             (의도·역할 통신 필드 정의·미러·체크포인트, 2026-09-25)
 #
 # 쓰는 법: bash smoke_mac.sh
 # 환경변수(run_repro.sh 와 동일): VESSEL_PY(기본 python) · VESSEL_OUT_DIR(기본 $HERE/_repro_out)
@@ -49,35 +50,41 @@ echo
 
 common_env
 
-echo "[1/5] 통신 미러 검증"
+echo "[1/6] 통신 미러 검증"
 "$PY" -u "$HERE/verify/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
 grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
 echo "  통신 미러 ALL PASS"
 
-echo "[2/5] 골든 비트동일 검사"
+echo "[2/6] 골든 비트동일 검사"
 ( env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
     "$PY" -u "$HERE/verify/test_golden.py" --check ) > "$OUT/_golden.txt" 2>&1 \
   || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
 grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
 echo "  골든 ALL PASS"
 
-echo "[3/5] vessel_gym 충실도 검사"
+echo "[3/6] vessel_gym 충실도 검사"
 "$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
   || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
 echo "  충실도 PASS"
 
-echo "[4/5] 동역학 프로필 검사"
+echo "[4/6] 동역학 프로필 검사"
 "$PY" -u "$HERE/verify/test_dyn_profile.py" > "$OUT/_dyn_profile.txt" 2>&1 \
   || { echo "  동역학 프로필 FAIL — $OUT/_dyn_profile.txt 확인"; exit 1; }
 grep -q "ALL PASS" "$OUT/_dyn_profile.txt" || { echo "  동역학 프로필이 ALL PASS 가 아님"; exit 1; }
 echo "  동역학 프로필 ALL PASS"
 
-echo "[5/5] 스냅샷 sim 상수 검사"
+echo "[5/6] 스냅샷 sim 상수 검사"
 "$PY" -u "$HERE/verify/test_sim_snapshot.py" > "$OUT/_sim_snapshot.txt" 2>&1 \
   || { echo "  sim 스냅샷 FAIL — $OUT/_sim_snapshot.txt 확인"; exit 1; }
 grep -q "ALL PASS" "$OUT/_sim_snapshot.txt" || { echo "  sim 스냅샷이 ALL PASS 가 아님"; exit 1; }
 echo "  sim 스냅샷 ALL PASS"
 
+echo "[6/6] 의도·역할 통신(COMM_EXT) 검사"
+"$PY" -u "$HERE/verify/test_comm_ext.py" > "$OUT/_comm_ext.txt" 2>&1 \
+  || { echo "  COMM_EXT FAIL — $OUT/_comm_ext.txt 확인"; exit 1; }
+grep -q "ALL PASS" "$OUT/_comm_ext.txt" || { echo "  COMM_EXT 가 ALL PASS 가 아님"; exit 1; }
+echo "  COMM_EXT ALL PASS"
+
 echo
-echo "Mac 검증 완료 — 통신 미러·골든·충실도·동역학 프로필·sim 스냅샷 전부 PASS (PPO 미러는 제외)"
+echo "Mac 검증 완료 — 통신 미러·골든·충실도·동역학 프로필·sim 스냅샷·COMM_EXT 전부 PASS (PPO 미러는 제외)"
 echo "최종 판정은 Windows 의 run_repro.sh smoke 로 한다."

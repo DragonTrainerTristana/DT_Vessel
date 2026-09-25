@@ -46,6 +46,12 @@ def _reload(use_comm, use_attention, use_moe=False, msg_dim=6):
     os.environ['VESSEL_SITUATION_INPUT'] = '0'
     os.environ.pop('VESSEL_NEAREST_SCALE', None)
     os.environ.pop('VESSEL_MSG_GAIN', None)
+    # ★2026-09-25 의도·역할 통신(COMM_EXT)은 gym 전용 — Unity 경로(_get_others_msg)는 relpos 3D 만 받고 EXT 면 raise 한다.
+    #   preflight 가 배치 env(VESSEL_COMM_EXT=1)를 물려받아도 이 검증기는 EXT=0 Unity 경로를 검증하도록 고정.
+    os.environ['VESSEL_COMM_EXT'] = '0'
+    os.environ['VESSEL_COMM_FIELDS'] = 'latent'
+    os.environ.pop('VESSEL_COMM_LATENT', None)
+    os.environ.pop('VESSEL_PARTNER_RANGE', None)
     import config
     importlib.reload(config)
     import networks

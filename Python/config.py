@@ -433,6 +433,26 @@ AGG_MODE = _env_str('VESSEL_AGG_MODE', 'sum').lower()              # POS_GROUND=
 NEAREST_SCALE = _env_float('VESSEL_NEAREST_SCALE', 0.0)
 MSG_GAIN = _env_float('VESSEL_MSG_GAIN', 1.0)
 MSG_RANDOM_SD = _env_float('VESSEL_MSG_RANDOM_SD', 0.20)           # RANDOM 팔 난수 메시지 표준편차
+# ★의도·역할 통신 (2026-09-25, 스펙 docs/superpowers/specs/2026-09-25-comm-intent-design.md). 기본 = 비트동일.
+#   COMM_EXT=1 이면 attention 토큰의 relpos 3 뒤에 파트너 상태·역할·명령 20차원(COMM_EXT_DIM)을 붙이고
+#   k/v 를 MLP 로 바꾼다(state_dict 키·shape 결정자 → 새 trunk 필요). 필드는 comm_gather 가 env 상태로 계산해
+#   prelpos 로 버퍼에 저장 → update 가 재사용(구조적 미러). 아래 4개는 networks 모듈 전역으로 옮겨지고
+#   ckpt_io 가 스냅샷으로 덮어쓴다(가중치에 흔적 없음 = 스냅샷이 유일 근거).
+COMM_EXT = _env_str('VESSEL_COMM_EXT', '0') == '1'
+COMM_EXT_DIM = 20                     # 레이아웃 'v1' — 스펙 §2 표. 순서·정규화 상수를 바꾸면 레이아웃 이름도 바꿀 것
+COMM_EXT_LAYOUT = 'v1'
+# 레이아웃 v1 그룹 슬라이스(확장 20차원 안의 위치). state = 침로·속력·ROT·상대속도·CPA 위험 / role = 내 역할·상대 선언 역할 /
+#   intent = 상대 직전 명령 타각·속력. 팔(COMM_FIELDS) → 켜는 그룹.
+COMM_EXT_GROUPS = {'state': (0, 8), 'role': (8, 18), 'intent': (18, 20)}
+COMM_FIELDS_TO_GROUPS = {'latent': (), 'state': ('state', 'role'), 'intent': ('state', 'role', 'intent')}
+COMM_FIELDS =_env_str('VESSEL_COMM_FIELDS', 'latent').lower()     # latent | state | intent (켜는 필드 그룹)
+assert COMM_FIELDS in ('latent', 'state', 'intent'), \
+    f"VESSEL_COMM_FIELDS={COMM_FIELDS!r} - 'latent' | 'state' | 'intent' (모르는 값이 조용히 zeros 로 가는 사고 방지)"
+assert COMM_EXT or COMM_FIELDS == 'latent', \
+    f"VESSEL_COMM_FIELDS={COMM_FIELDS} 는 VESSEL_COMM_EXT=1 이 필요함 (EXT=0 이면 필드 자리가 없어 조용히 무시됨)"
+COMM_LATENT = _env_float('VESSEL_COMM_LATENT', 1.0)                # attention 토큰의 latent 메시지 배율. 0 = ARPA@56 팔(통신 없음)
+PARTNER_RANGE = _env_float('VESSEL_PARTNER_RANGE', None)           # 파트너 선택 반경. None = COMM_RANGE. 보상 반경과 분리
+AUX_LOSS_SCALE = _env_float('VESSEL_AUX_LOSS_SCALE', 1.0)          # ON 전용 보조손실(MSG_L2·state_recon 등) 배율. 0 = 목적함수 OFF 와 대칭
 # StateRecon / MoE 내부 스위치
 RECON_EMA_FLOOR = _env_float('VESSEL_RECON_EMA_FLOOR', 0.0)        # 그룹 정규화 바닥 (2026-09-07)
 RECON_LEGACY_STAT = _env_str('VESSEL_RECON_LEGACY_STAT', '0') == '1'

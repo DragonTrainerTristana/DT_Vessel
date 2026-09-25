@@ -96,6 +96,17 @@ AGG_MODE = _cfg.AGG_MODE
 NEAREST_SCALE = _cfg.NEAREST_SCALE
 MSG_GAIN = _cfg.MSG_GAIN
 SHARED_ENCODER = _cfg.SHARED_ENCODER   # '0'|'actor'|'all' — CNNPolicy.__init__ 이 읽음. ckpt_io 가 스냅샷으로 덮어씀
+# ★의도·역할 통신 (2026-09-25, 스펙 2026-09-25-comm-intent-design.md). 기본 = 비트동일(COMM_EXT False).
+#   COMM_EXT: CNNPolicy.__init__ 이 읽는 shape 결정자(relpos_dim 3 → 3+COMM_EXT_DIM, attention k/v → MLP).
+#   COMM_GROUPS·COMM_LATENT·PARTNER_RANGE: rollout(vessel_gym_train.comm_gather)과 update(aggregate_batch)가
+#   **같이 읽는** 런타임 전역 = 미러의 근거. ckpt_io.restore_policy 가 스냅샷으로 덮어쓴다(가중치에 흔적 없음).
+COMM_EXT = _cfg.COMM_EXT
+COMM_EXT_DIM = _cfg.COMM_EXT_DIM
+COMM_FIELDS = _cfg.COMM_FIELDS
+COMM_GROUPS = tuple(_cfg.COMM_FIELDS_TO_GROUPS[_cfg.COMM_FIELDS])   # 켜진 확장 필드 그룹. 평가 절제는 여기만 바꾼다
+COMM_LATENT = _cfg.COMM_LATENT      # attention 토큰의 latent 메시지 배율 (0 = ARPA@56: 통신 없이 추적 정보만)
+PARTNER_RANGE = _cfg.PARTNER_RANGE  # 파트너 선택 반경 (None = COMM_RANGE). 보상 반경과 분리
+COMM_EXT_MLP_HIDDEN = 64            # EXT 일 때 k/v MLP 은닉 폭 (역할×의도 상호작용을 집계 전에 만들기 위함)
 
 
 def _bmm_linear(cores, sit, h, attr):
@@ -451,17 +462,28 @@ class GroundedAttention(nn.Module):
     ★rollout·update 모두 aggregate_batch(벡터화) 하나를 탄다(2026-09-10 aggregate_single 제거) → 같은 partner 입력에
       같은 결과 → PPO ratio(old_logprob) 유효. batch만 padding을 -inf 마스킹으로 제외.
     """
-    def __init__(self, msg_dim, relpos_dim, query_in_dim, d_attn=32):
+    def __init__(self, msg_dim, relpos_dim, query_in_dim, d_attn=32, mlp_hidden=0):
         super(GroundedAttention, self).__init__()
         self.msg_dim = msg_dim
         self.scale = float(d_attn) ** 0.5
         token_dim = relpos_dim + msg_dim
         self.q_proj = nn.Linear(query_in_dim, d_attn)
-        self.k_proj = nn.Linear(token_dim, d_attn)
-        self.v_proj = nn.Linear(token_dim, msg_dim)
-        with torch.no_grad():
-            self.v_proj.weight.mul_(0.1)
-            self.v_proj.bias.zero_()
+        if mlp_hidden > 0:
+            # ★의도·역할 통신(COMM_EXT, 2026-09-25): 토큰에 상대 역할·명령 타각이 들어오면 '상대가 give-way 이고
+            #   우현으로 틀고 있다 → 나는 유지' 같은 역할×의도 상호작용을 *파트너별로 집계 전에* 만들어야 한다.
+            #   선형 k/v 는 그걸 못 한다(집계 뒤 fc2 는 파트너가 섞인 6D 만 봄). 키: k_proj.{0,2} / v_proj.{0,2}.
+            #   v 마지막 층은 기존과 같은 소진폭(×0.1, bias 0) 규약.
+            self.k_proj = nn.Sequential(nn.Linear(token_dim, mlp_hidden), nn.ReLU(), nn.Linear(mlp_hidden, d_attn))
+            self.v_proj = nn.Sequential(nn.Linear(token_dim, mlp_hidden), nn.ReLU(), nn.Linear(mlp_hidden, msg_dim))
+            with torch.no_grad():
+                self.v_proj[2].weight.mul_(0.1)
+                self.v_proj[2].bias.zero_()
+        else:
+            self.k_proj = nn.Linear(token_dim, d_attn)
+            self.v_proj = nn.Linear(token_dim, msg_dim)
+            with torch.no_grad():
+                self.v_proj.weight.mul_(0.1)
+                self.v_proj.bias.zero_()
 
     # (2026-09-10) aggregate_single 제거 — rollout 도 aggregate_batch(벡터화)를 쓰며 유일 호출부가 도달 불가였음.
     #   rollout·update 가 **같은 aggregate_batch** 를 타는 것이 미러의 구조적 근거.
@@ -470,7 +492,11 @@ class GroundedAttention(nn.Module):
         """update 배치 집계. q_in [N,1,Q], relpos [N,K,R], msg_part [N,K,M], mask [N,K,1]
         → context [N,1,M]. padding(mask=0)은 -inf 마스킹으로 softmax 제외, 전무파트너는 0."""
         query = self.q_proj(q_in)                              # [N,1,d]
-        token = torch.cat([relpos, msg_part * _MSG_TOKEN_GAIN], dim=-1)   # [N,K,R+M]
+        # ★COMM_LATENT (2026-09-25): ARPA@56 팔은 latent 메시지 항을 0 으로(통신 없이 추적 정보만). rollout·update 가
+        #   이 함수 하나를 타므로 미러가 구조적으로 보장된다. 1.0(기본)이면 곱하지 않음 = 비트동일.
+        _lat = COMM_LATENT
+        _msg_tok = msg_part * _MSG_TOKEN_GAIN if _lat == 1.0 else msg_part * _MSG_TOKEN_GAIN * _lat
+        token = torch.cat([relpos, _msg_tok], dim=-1)          # [N,K,R+M]  (R = 3 + 확장필드)
         keys = self.k_proj(token)                              # [N,K,d]
         vals = self.v_proj(token)                              # [N,K,M]
         scores = (keys * query).sum(dim=-1) / self.scale       # [N,K]  (query [N,1,d] broadcast)
@@ -1005,7 +1031,12 @@ class CNNPolicy(nn.Module):
         #   receiver가 "어느 방위에서 온 메시지"인지 알게 됨. VESSEL_POS_GROUND=0으로 sum 대조군.
         #   relpos는 "주소"(어디서), 학습 6D latent는 "내용"(의도) → 학습메시지 thesis 유지.
         self.pos_ground = POS_GROUND
-        self.relpos_dim = 3
+        # ★COMM_EXT (2026-09-25): relpos 3 뒤에 파트너 상태·역할·명령 COMM_EXT_DIM 을 붙임(comm_gather 가 계산 → 버퍼 저장 →
+        #   update 재사용). attention 경로에서만 쓰이므로 USE_ATTENTION 필수 — sum 경로는 relpos 를 안 봐서 필드가 조용히 버려짐.
+        self.comm_ext = bool(COMM_EXT)
+        if self.comm_ext and not USE_ATTENTION:
+            raise RuntimeError("VESSEL_COMM_EXT=1 은 VESSEL_USE_ATTENTION=1 이 필요함 (확장 필드는 attention 토큰으로만 들어감)")
+        self.relpos_dim = 3 + (COMM_EXT_DIM if self.comm_ext else 0)
         self.msg_encoder = nn.Sequential(
             nn.Linear(self.relpos_dim + msg_dim, 32), nn.ReLU(), nn.Linear(32, msg_dim)
         )
@@ -1015,7 +1046,8 @@ class CNNPolicy(nn.Module):
         #   출력차원 msg_dim → 게이트/fc2 불변. v_proj zero-init → context=0 at init(H1a).
         self.use_attention = USE_ATTENTION
         _query_in = SELF_STATE_SIZE + GOAL_SIZE   # 4+2 = 6
-        self.attn = GroundedAttention(msg_dim, self.relpos_dim, _query_in, ATTN_DIM)
+        self.attn = GroundedAttention(msg_dim, self.relpos_dim, _query_in, ATTN_DIM,
+                                      mlp_hidden=COMM_EXT_MLP_HIDDEN if self.comm_ext else 0)
 
         # ★ intent self-supervised 디코더 (Phase 2): 메시지가 sender 미래의도를 담게 강제.
         #   INTENT_COEF=0(default)이면 evaluate_actions에서 미호출 → 기존과 비트동일.
@@ -1091,6 +1123,10 @@ class CNNPolicy(nn.Module):
             return torch.zeros_like(msg)
 
         if comm_partners is not None and agent_id_list is not None:
+            if self.relpos_dim != 3:
+                # ★COMM_EXT(2026-09-25) 는 gym 경로 전용 — Unity 는 relpos 3D 만 주므로 여기서 조용히 어긋나지 않게 막는다.
+                raise RuntimeError("COMM_EXT 체크포인트(relpos_dim=%d)는 Unity 경로(_get_others_msg)를 지원하지 않음 "
+                                   "- gym 전용(vessel_gym_train.comm_gather)" % self.relpos_dim)
             id_to_idx = {aid: idx for idx, aid in enumerate(agent_id_list)}
 
             # ★ attention 벡터화 경로 (per-agent 파이썬 루프 제거 → GPU 커널 런치 급감, 6-way 병렬 회복).
@@ -1301,6 +1337,9 @@ class CNNPolicy(nn.Module):
             #   msg=msg_actor(...,situation)와 동일 함수형 → PPO ratio 유효. partner_situations[N,K]는 rollout서 저장.
             msg_part = self.msg_actor(partner_x, partner_goal, partner_self, partner_situations)  # [N,K,msg_dim]
             Kc = partner_mask.sum(dim=1, keepdim=True).clamp(min=1.0)                       # [N,1,1] 실제 파트너 수
+            if partner_relpos is not None and partner_relpos.shape[-1] != self.relpos_dim:
+                raise RuntimeError(f"partner_relpos 마지막 차원 {partner_relpos.shape[-1]} != relpos_dim {self.relpos_dim} "
+                                   f"- rollout(comm_gather)과 모델의 COMM_EXT 가 다름")
             if self.use_attention and partner_relpos is not None:
                 # ★ 위치 grounding + attention (rollout 도 같은 aggregate_batch → PPO ratio 유효)
                 q_in = torch.cat([self_state, goal], dim=-1)                                  # [N,1,6]

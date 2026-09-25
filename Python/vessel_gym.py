@@ -238,6 +238,107 @@ def _wrap180(deg):
     return (deg + 180.0) % 360.0 - 180.0
 
 
+# ─────────────────────────── ★의도·역할 통신 확장 필드 (2026-09-25, COMM_EXT 레이아웃 v1) ───────────────────────────
+#   스펙 docs/superpowers/specs/2026-09-25-comm-intent-design.md §2. 저자 의도: "서로 좌표를 알고, 상대 입장에서 내가 타를
+#   어떻게 줄지·속도를 어떻게 줄지·COLREGs 역할(나는 stand-on 너는 give-way)을 알면 상대는 보완 행동을 한다."
+#   env 상태의 결정론적 함수(정책 파라미터 무관) → comm_gather 가 prelpos 에 붙여 버퍼에 저장, update 는 재사용(미러).
+COMM_EXT_SOG_NORM = MAX_SPEED_BASE * SPEED_MULT_MAX       # 1.8 m/s = 함대 최고속 (sog·명령 속력 정규화)
+COMM_EXT_VREL_NORM = 2.0 * COMM_EXT_SOG_NORM              # 3.6 m/s = 최대 접근속도 (상대속도 정규화)
+
+
+def encounter_role(bearing, other_bearing, dist, approach, faster, R):
+    """COLREGs 조우 역할 [..] long (SIT_NONE/HEADON/STANDON/GIVEWAY/OVERTAKING) — `_pairwise` situation cascade 의 순수 함수판.
+
+    bearing: 내 선수 기준 상대 방위(deg, +우현). other_bearing: 상대 선수 기준 내 방위. dist: 거리.
+    approach: 접근 중(raw_tcpa ≥ 0, 상대속도 ≈0 포함). faster: 내 속력 > 상대 ×1.1. R: 판정 반경.
+    _pairwise 와 같은 식(HeadOn 15°, Overtaking 두 경로, crossing 5° 부호 규칙, 양현 clear 제외). R=56 이면
+    _pairwise()['sit'] 와 같아야 한다(verify/test_comm_ext.py). LOS 가림은 적용 안 함(통신은 장애물에 안 가려짐).
+    """
+    absB, absOB = bearing.abs(), other_bearing.abs()
+    clear_pp = (bearing < -10.0) & (other_bearing < -10.0)
+    clear_ss = (bearing > 10.0) & (other_bearing > 10.0)
+    valid = (dist <= R) & approach & (absB <= 100.0) & (~clear_pp) & (~clear_ss)
+    headon = valid & (absB < HEAD_ON_ANGLE) & (absOB < HEAD_ON_ANGLE)
+    stern = absOB > CROSSING_ANGLE
+    overtake_a = valid & (~headon) & stern & faster
+    overtake_b = valid & (~headon) & (~overtake_a) & stern & (absB <= 5.0)
+    overtake = overtake_a | overtake_b
+    crossing_zone = valid & (~headon) & (~overtake) & (absB < CROSSING_ANGLE)
+    cross_giveway = crossing_zone & torch.where(absB > 5.0, bearing > 0, other_bearing < 0)
+    cross_standon = crossing_zone & (~cross_giveway)
+    role = torch.full_like(dist, SIT_NONE, dtype=torch.long)
+    role = torch.where(headon, torch.full_like(role, SIT_HEADON), role)
+    role = torch.where(overtake, torch.full_like(role, SIT_OVERTAKING), role)
+    role = torch.where(cross_giveway, torch.full_like(role, SIT_GIVEWAY), role)
+    role = torch.where(cross_standon, torch.full_like(role, SIT_STANDON), role)
+    return role
+
+
+def comm_pair_features(env, topi, partner_range, role_gate=True):
+    """파트너 확장 필드 [E,N,K,20] (레이아웃 v1). topi [E,N,K] = comm_gather 가 고른 파트너 인덱스.
+
+    [0:2] sin/cos(ψj−ψi) · [2] sog_j/1.8 · [3] rot_j/MAX_YAW_RATE · [4:6] (v_j−v_i) 수신자 선체좌표[우현,전방]/3.6 ·
+    [6] dcpa_risk · [7] tcpa_risk (둘 다 접근 중일 때만) · [8:13] 내 역할 one-hot(i→j) · [13:18] 상대 선언 역할(j→i) ·
+    [18] 상대 명령 타각/30 · [19] 상대 명령 속력/1.8.
+    역할은 반경 partner_range 안에서 판정하고, role_gate=True 면 충돌위험(dcpa < DCPA_RISK) 쌍에만 부여(스펙 §2).
+    패딩 슬롯도 유한값을 내므로 호출부가 torch.where(pmask>0, ·, 0) 로 지운다. 환경 상태를 바꾸지 않는다.
+    """
+    E, N, K = topi.shape
+    b = torch.arange(E, device=topi.device)[:, None, None]
+    pos_i = env.pos.unsqueeze(2)                                   # [E,N,1,2]
+    pos_j = env.pos[b, topi]                                       # [E,N,K,2]
+    h_i = env.heading.unsqueeze(-1) * DEG                          # [E,N,1] rad
+    h_j = env.heading[b, topi] * DEG                               # [E,N,K]
+    spd_i = env.speed.unsqueeze(-1)
+    spd_j = env.speed[b, topi]
+    to_other = pos_j - pos_i                                       # [E,N,K,2]
+    dx, dz = to_other[..., 0], to_other[..., 1]
+    dist = torch.linalg.norm(to_other, dim=-1)                     # _pairwise 와 같은 연산(반경 경계 비교가 일치하도록)
+    fx, fz = torch.sin(h_i), torch.cos(h_i)                        # 내 선수 단위벡터
+    gx, gz = torch.sin(h_j), torch.cos(h_j)                        # 상대 선수 단위벡터
+    # 방위 — _pairwise 와 같은 SignedAngle 식
+    bearing = torch.atan2(fz * dx - fx * dz, fx * dx + fz * dz) / DEG
+    other_bearing = torch.atan2(gx * dz - gz * dx, -(gx * dx + gz * dz)) / DEG
+    # 상대운동 — _pairwise 와 같은 TCPA/DCPA 식 (상대속도 ≈0 이면 tcpa=∞ 대신 0 으로 두고 approach 로 구분)
+    rvx = gx * spd_j - fx * spd_i
+    rvz = gz * spd_j - fz * spd_i
+    rel_speed2 = rvx * rvx + rvz * rvz
+    still = rel_speed2 < 1e-4                                      # rel_speed < 0.01
+    dot = dx * rvx + dz * rvz
+    raw_tcpa = torch.where(still, torch.zeros_like(dot), -dot / torch.clamp(rel_speed2, min=1e-9))
+    approach = still | (raw_tcpa >= 0)
+    tcpa = torch.clamp(raw_tcpa, min=0.0)
+    cx, cz = dx + rvx * tcpa, dz + rvz * tcpa
+    dcpa = torch.where(still, dist, torch.sqrt(cx * cx + cz * cz))
+    zero = torch.zeros_like(dist)
+    dcpa_risk = torch.where(approach, 1.0 - torch.clamp(dcpa / DCPA_RISK, 0.0, 1.0), zero)
+    tcpa_risk = torch.where(approach & (~still), 1.0 / (1.0 + tcpa / TCPA_RISK_DENOM), zero)
+    # 역할 — 내 것(i→j)과 상대가 판정해 선언하는 것(j→i). 거리·접근·dcpa 는 대칭이라 방위·빠르기만 바꿔 부른다
+    my_role = encounter_role(bearing, other_bearing, dist, approach, spd_i > spd_j * 1.1, partner_range)
+    their_role = encounter_role(other_bearing, bearing, dist, approach, spd_j > spd_i * 1.1, partner_range)
+    if role_gate:
+        risky = dcpa < DCPA_RISK
+        my_role = torch.where(risky, my_role, torch.zeros_like(my_role))
+        their_role = torch.where(risky, their_role, torch.zeros_like(their_role))
+    import torch.nn.functional as _F
+    dt = env.dtype if hasattr(env, 'dtype') else dist.dtype
+    oh = lambda r: _F.one_hot(r, 5).to(dt)
+    dh = h_j - h_i
+    rot_j = yaw_rate_deg(env.rudder[b, topi], spd_j, env.max_speed[b, topi]) / MAX_YAW_RATE
+    feats = torch.cat([
+        torch.sin(dh).unsqueeze(-1), torch.cos(dh).unsqueeze(-1),
+        (spd_j / COMM_EXT_SOG_NORM).unsqueeze(-1),
+        rot_j.unsqueeze(-1),
+        ((rvx * torch.cos(h_i) - rvz * torch.sin(h_i)) / COMM_EXT_VREL_NORM).unsqueeze(-1),   # 우현
+        ((rvx * torch.sin(h_i) + rvz * torch.cos(h_i)) / COMM_EXT_VREL_NORM).unsqueeze(-1),   # 전방
+        dcpa_risk.unsqueeze(-1), tcpa_risk.unsqueeze(-1),
+        oh(my_role), oh(their_role),
+        (env.cmd_rudder[b, topi] / MAX_TURN_RATE).unsqueeze(-1),
+        (env.target_speed[b, topi] / COMM_EXT_SOG_NORM).unsqueeze(-1),
+    ], dim=-1)
+    return feats.to(dt)
+
+
 class _Unset:
     """인자 생략 감지용 sentinel (작은 int 는 `is` 비교가 불가능해서 별도 객체)."""
     def __repr__(self):

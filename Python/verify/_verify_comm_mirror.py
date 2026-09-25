@@ -20,7 +20,10 @@ import torch
 
 def run_case(name, env_overrides, K, use_masks):
     for k, v in env_overrides.items():
-        os.environ[k] = v
+        if v is None:                  # ★2026-09-25: None = env 에서 지움(config 기본값으로). 앞 케이스 값이 새지 않게
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
     for m in ('config', 'networks', 'vessel_gym', 'vessel_gym_train'):
         sys.modules.pop(m, None)
     import config as cfg
@@ -83,7 +86,12 @@ def run_case(name, env_overrides, K, use_masks):
 
 
 BASE = dict(VESSEL_USE_COMM='1', VESSEL_MOE_SHARED='1', VESSEL_THREAT_COEF='0.5',
-            VESSEL_MSG_LN='1', VESSEL_POS_GROUND='1', VESSEL_USE_ATTENTION='0')
+            VESSEL_MSG_LN='1', VESSEL_POS_GROUND='1', VESSEL_USE_ATTENTION='0',
+            # ★2026-09-25 의도·역할 통신 토글은 기본(끔)으로 고정 — preflight 가 배치 env(VESSEL_COMM_EXT=1 등)를
+            #   물려받아도 기존 케이스는 EXT=0 경로를 검증한다. EXT 는 아래 전용 케이스에서만.
+            VESSEL_COMM_EXT='0', VESSEL_COMM_FIELDS='latent', VESSEL_COMM_LATENT='1.0', VESSEL_PARTNER_RANGE=None,
+            VESSEL_AUX_LOSS_SCALE='1.0')
+_EXT = {'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1', 'VESSEL_COMM_EXT': '1'}
 CASES = [
     ('MoE + threat + LN',      {**BASE, 'VESSEL_USE_MOE': '1'}, 4, False),
     ('단일망(MoE off)',         {**BASE, 'VESSEL_USE_MOE': '0'}, 4, False),
@@ -132,6 +140,20 @@ CASES = [
                                       'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
     ('플랜 공유MoE + SE/bn/leaky',     {**BASE, 'VESSEL_USE_MOE': '1', 'VESSEL_MOE_SHARED': '1',
                                       'VESSEL_SHARED_ENCODER': 'all', 'VESSEL_RADAR_HEAD': 'bottleneck', 'VESSEL_RADAR_ACT': 'leaky'}, 4, False),
+    # ★의도·역할 통신 COMM_EXT (2026-09-25, 스펙 2026-09-25-comm-intent-design). 확장필드는 comm_gather 가 env 로 계산해
+    #   prelpos 로 저장 → update 재사용. 필드 그룹·latent 배율·파트너 반경은 networks 전역을 두 경로가 같이 읽는다.
+    #   5팔 사다리(latent/state/intent/ARPA@56) + 혼합함대 + dim12 + K=1 + imo. imo 는 마지막(DYN env 가 뒤로 샘).
+    ('EXT latent',              {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'latent'}, 4, False),
+    ('EXT state',               {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'state'}, 4, False),
+    ('EXT intent',              {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent'}, 4, False),
+    ('EXT ARPA@56 (latent 0)',  {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'state', 'VESSEL_COMM_LATENT': '0.0',
+                                 'VESSEL_PARTNER_RANGE': '56'}, 4, False),
+    ('EXT intent + 혼합함대',    {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent'}, 4, True),
+    ('EXT intent + dim12',      {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_MSG_DIM': '12'}, 4, False),
+    ('EXT intent K=1',          {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent'}, 1, False),
+    ('EXT intent + aux 0',      {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_AUX_LOSS_SCALE': '0.0'}, 4, False),
+    ('EXT intent + imo/none',   {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_DYN_PROFILE': 'imo',
+                                 'VESSEL_OBSTACLES': 'none'}, 4, False),
 ]
 
 if __name__ == '__main__':

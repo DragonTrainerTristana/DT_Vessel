@@ -42,6 +42,21 @@
 #   VESSEL_CROSSING  목표 배정. 기본 2 = 대척(agile 배치 재현). 0 = 스폰에서 MIN_GOAL_DIST(400 m) 이상 떨어진 목표 중 무작위
 #                    (2026-09-23: open-sea 에서 대척은 16척 경로가 전부 원점 56 m 안을 지나 중앙 난투 → imo 파일럿은 0 으로).
 #                    평가는 스냅샷 crossing 을 자동으로 따름. 같은 trunk 묶음 안 crossing 일치는 check_branch 가 검사.
+#   ★2026-09-25 의도·역할 통신 (스펙 docs/superpowers/specs/2026-09-25-comm-intent-design.md)
+#   VESSEL_COMM_EXT=1  배치 단위 구조 스위치(attention 토큰 +20차원, k/v MLP). trunk·체크포인트 이름에 접두어 x_ 가
+#                    자동으로 붙는다(VESSEL_RUN_PREFIX 로 바꿈) — EXT=0 trunk 를 '재사용' 하다 strict 로드로 죽는 사고 방지.
+#     팔(전부 dim 6, 같은 trunk, 통신 팔은 보조손실 0 = OFF 와 목적함수 대칭):
+#       off    OFF — 레이더만
+#       arpa6  ARPA@56 — 확장필드 state(침로·속력·ROT·상대속도·CPA·역할)를 레이더 반경 56 m 파트너에만, latent 0 (통신 없음)
+#       onl6   ON-latent — 학습 latent + 위치 (확장필드 0)
+#       ons6   ON-state  — + 300 m 상태·역할 공유
+#       oni6   ON-intent — + 파트너 직전 명령 타각·속력 (저자 의도: '내가 타를 어떻게·속도를 어떻게 줄지')
+#     예) VESSEL_COMM_EXT=1 VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none VESSEL_CROSSING=0 \
+#         VESSEL_TRAIN_ARMS="off arpa6 onl6 ons6 oni6" bash run_repro.sh train
+#   on6a0  (EXT 0) ON dim6 보조손실 0 — 계획서 G6 2단계(aux 비대칭 절제). 1차 trunk 를 새 $CK 에 복사해 "off on6a0" 로 돌릴 것
+#   bash run_repro.sh ablate  EXT 통신 체크포인트마다 절제 평가(msgzero·latent0·그룹별 0·field-shuffle)
+#   bash run_repro.sh traj   F5 '같은 조우 ON vs OFF' 궤적 덤프: 팔마다 같은 시드·burn-in 0 으로 reset 직후 장면부터
+#                            1500 결정(16 env) 기록 → traj_<이름>_s<시드>.pt. 첫 재스폰 전까지 팔 간 초기 장면이 같다
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 export PYTHONIOENCODING=utf-8   # ★Windows cp949 콘솔로 리다이렉트할 때 한글·기호 print 가 UnicodeEncodeError 로 죽는 것 방지 (2026-09-10)
@@ -59,6 +74,10 @@ UPDATE_DEC=$(( 128 * 16 * 32 ))                # 65,536
 BRANCH_AT=$(( UPDATE_DEC * 138 ))              # 9,043,968 = 138 update 끝 (09-10 배치 comm_on_at 9M 과 같은 update 경계)
 TOTAL_STEPS=16056320                           # 245 update (= config.YUGIOH_ARGS --steps)
 BR_WARMUP="${VESSEL_BRANCH_WARMUP:-1200}"
+# ★2026-09-25 COMM_EXT 배치는 체크포인트·trunk 이름을 분리한다(구조가 달라 EXT=0 trunk 재사용 불가).
+if [ -n "${VESSEL_RUN_PREFIX+x}" ]; then RUN_PRE="$VESSEL_RUN_PREFIX"
+elif [ "${VESSEL_COMM_EXT:-0}" = "1" ]; then RUN_PRE="x_"
+else RUN_PRE=""; fi
 if [ -n "${VESSEL_COMM_ON_AT:-}" ]; then
   echo "VESSEL_COMM_ON_AT 는 폐기됨 (2026-09-15 분기 규약). 분기점은 BRANCH_AT=$BRANCH_AT 고정 — 이 환경변수를 지울 것."
   exit 2
@@ -87,6 +106,7 @@ echo "  시드        : $SEEDS"
 echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
 echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3} crossing=${VESSEL_CROSSING:-2} radar=${VESSEL_RADAR_RANGE:-56}"
+echo "  통신 구조   : comm_ext=${VESSEL_COMM_EXT:-0}  이름 접두어='${RUN_PRE}'"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -123,7 +143,7 @@ names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARE
 # override 축 = 기본값과 달라도 되는 실험 축. 위 names 와 달리 '기본값과 같은가' 가 아니라
 #   'common_env 가 export 한 값을 config 가 실제로 그대로 읽었는가' 를 본다.
 override = [('DYN_PROFILE', 'VESSEL_DYN_PROFILE'), ('OBSTACLES_MODE', 'VESSEL_OBSTACLES'),
-            ('RADAR_RANGE', 'VESSEL_RADAR_RANGE')]
+            ('RADAR_RANGE', 'VESSEL_RADAR_RANGE'), ('COMM_EXT', 'VESSEL_COMM_EXT')]   # ★2026-09-25 COMM_EXT
 dump_names = names + [k for k, _ in override]
 def _dump(e=None):
     # ★2026-09-15: returncode/stderr 를 안 보면 환경 문제(torch 없음·config import 에러)가
@@ -141,6 +161,8 @@ a = _dump(env)   # VESSEL_* 를 전부 뺀 config 기본값
 b = _dump()      # common_env 를 적용한 실제 값
 bad = [k for k in names if a[k] != b[k]]
 def _same(want, got):
+    if str(got) in ('True', 'False'):          # ★2026-09-25 bool 상수(COMM_EXT) — env '1'/'0' 과 비교
+        got = '1' if str(got) == 'True' else '0'
     try:
         return abs(float(want) - float(got)) <= 1e-9
     except (TypeError, ValueError):
@@ -195,6 +217,11 @@ PYCHK
       || { echo "  sim 스냅샷 FAIL — $OUT/_sim_snapshot.txt 확인"; exit 1; }
     grep -q "ALL PASS" "$OUT/_sim_snapshot.txt" || { echo "  sim 스냅샷이 ALL PASS 가 아님"; exit 1; }
     echo "  sim 스냅샷 ALL PASS"
+    # ★2026-09-25: 의도·역할 통신(COMM_EXT) — 필드 정의(역할 cascade = _pairwise)·좌표 규약·미러·체크포인트 복원.
+    "$PY" -u "$HERE/verify/test_comm_ext.py" > "$OUT/_comm_ext.txt" 2>&1 \
+      || { echo "  COMM_EXT FAIL — $OUT/_comm_ext.txt 확인"; exit 1; }
+    grep -q "ALL PASS" "$OUT/_comm_ext.txt" || { echo "  COMM_EXT 가 ALL PASS 가 아님"; exit 1; }
+    echo "  COMM_EXT ALL PASS"
   fi
   echo
 }
@@ -235,7 +262,7 @@ pick_gpu() {
 #   trunk 를 주면 분기 갈래: trunk 곡선 CSV 를 복사해 이어 쓰고 --resume 으로 branch_at 부터 학습한다.
 #   ★2026-09-15: ON/OFF 비교용 런은 반드시 branch_batch(아래)를 거친다. 직접 부르는 건 trunk·옛 모드뿐.
 train_one() {
-  local nm=$1 arm=$2 dim=$3 s=$4 steps=$5 trunk=${6:-} br_at=${7:-0}
+  local nm=$1 arm=$2 dim=$3 s=$4 steps=$5 trunk=${6:-} br_at=${7:-0} variant=${8:-}
   throttle
   local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
   echo "  ${nm}_s$s → GPU $gpu"
@@ -248,6 +275,7 @@ train_one() {
     #   동작은 어차피 --arm 이 정하지만(comm_active), 이걸 안 주면 config 덤프가 두 팔 모두
     #   use_communication=True 로 찍혀 나중에 로그만 보고 어느 런이 OFF 였는지 구분이 안 된다.
     if [ "$arm" = "OFF" ]; then export VESSEL_USE_COMM=0; else export VESSEL_USE_COMM=1; fi
+    comm_variant_env "$variant"   # ★2026-09-25 팔별 통신 내용(필드·latent·파트너 반경·보조손실). trunk·옛 팔 = 기본값
     local run="${nm}_s$s"
     local extra=(--comm_on_at 0)
     if [ -n "$trunk" ]; then
@@ -302,9 +330,26 @@ arm_spec() {
     on2)   echo "ON 2" ;;
     off2)  echo "OFF 2" ;;      # on2 의 짝 — dim2 trunk 에서 분기한 OFF
     rand)  echo "RANDOM 6" ;;   # 난수 메시지 대조군 (random 모드)
+    # ★2026-09-25 의도·역할 통신 사다리 (VESSEL_COMM_EXT=1 필요) + G6 2단계
+    arpa6|onl6|ons6|oni6) echo "ON 6" ;;
+    on6a0) echo "ON 6" ;;       # ON dim6 보조손실 0 (EXT 0) — aux 비대칭 절제
     *) return 1 ;;
   esac
 }
+# ── 팔별 통신 내용 export (2026-09-25). 전부 명시 — 바깥 셸에 남은 값이 팔을 조용히 바꾸지 못하게. ──
+#   학습기가 크래시 재개 때 스냅샷과 대조하고(다르면 거부), ckpt_io·eval 이 스냅샷으로 복원한다.
+comm_variant_env() {
+  export VESSEL_COMM_FIELDS=latent VESSEL_COMM_LATENT=1.0 VESSEL_AUX_LOSS_SCALE=1.0
+  unset VESSEL_PARTNER_RANGE
+  case "${1:-}" in
+    arpa6) export VESSEL_COMM_FIELDS=state VESSEL_COMM_LATENT=0.0 VESSEL_PARTNER_RANGE=56 VESSEL_AUX_LOSS_SCALE=0.0 ;;
+    onl6)  export VESSEL_COMM_FIELDS=latent VESSEL_AUX_LOSS_SCALE=0.0 ;;
+    ons6)  export VESSEL_COMM_FIELDS=state  VESSEL_AUX_LOSS_SCALE=0.0 ;;
+    oni6)  export VESSEL_COMM_FIELDS=intent VESSEL_AUX_LOSS_SCALE=0.0 ;;
+    on6a0) export VESSEL_AUX_LOSS_SCALE=0.0 ;;
+  esac
+}
+is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6) return 0 ;; *) return 1 ;; esac; }
 off_name() { if [ "$1" = 6 ]; then echo off; else echo "off$1"; fi; }
 
 # ── 분기 검사 (verify/check_branch.py) — 결과 $OUT/_branch_check.txt, ALL PASS 아니면 1 ──
@@ -327,7 +372,10 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0)"; exit 1; }
+    if is_ext_arm "$a" && [ "${VESSEL_COMM_EXT:-0}" != "1" ]; then
+      echo "팔 $a 는 의도·역할 통신 구조가 필요함: VESSEL_COMM_EXT=1 로 배치를 돌릴 것(trunk 부터 EXT 구조)"; exit 1
+    fi
     dim=${spec#* }
     case " $dims " in *" $dim "*) ;; *) dims="$dims $dim" ;; esac
   done
@@ -351,6 +399,9 @@ branch_batch() {
     for dim in $dims; do
       t="$CK/${pre}trunk_d${dim}_s$s.pt"
       if [ -f "$t" ]; then echo "  trunk 재사용: $(basename "$t")"
+      elif [ "${VESSEL_REQUIRE_TRUNK:-0}" = "1" ]; then
+        # ★2026-09-25: 기존 trunk 에서만 분기하는 배치(G6-2 = 1차 trunk 복사본)는 trunk 가 없으면 새로 학습하지 않고 중단
+        echo "trunk 없음: $(basename "$t") — VESSEL_REQUIRE_TRUNK=1 이라 새로 학습하지 않음(복사 누락·시드 목록 확인)"; exit 1
       else train_one "${pre}trunk_d$dim" OFF "$dim" "$s" "$br_at"; fi
     done
   done
@@ -364,7 +415,7 @@ branch_batch() {
   for s in $SEEDS; do
     for a in $arms; do
       spec=$(arm_spec "$a")
-      train_one "${pre}$a" "${spec% *}" "${spec#* }" "$s" "$total" "$CK/${pre}trunk_d${spec#* }_s$s.pt" "$br_at"
+      train_one "${pre}$a" "${spec% *}" "${spec#* }" "$s" "$total" "$CK/${pre}trunk_d${spec#* }_s$s.pt" "$br_at" "$a"
     done
   done
   wait
@@ -390,7 +441,9 @@ case "$MODE" in
     SEEDS=43
     BR_WARMUP=8
     rm -f "$CK"/smoke_trunk_d*_s43.pt   # 스모크는 trunk 학습까지 매번 확인
-    branch_batch "off on6" "$UPDATE_DEC" $(( UPDATE_DEC * 2 )) smoke_
+    if [ "${VESSEL_COMM_EXT:-0}" = "1" ]; then _sm_arms="off arpa6 onl6 ons6 oni6"; else _sm_arms="off on6"; fi
+    rm -f "$CK"/smoke_${RUN_PRE}trunk_d*_s43.pt
+    branch_batch "$_sm_arms" "$UPDATE_DEC" $(( UPDATE_DEC * 2 )) "smoke_${RUN_PRE}"
     echo "스모크 완료 — $OUT/_status_train.txt 의 rc 가 전부 0 이어야 함"
     cat "$OUT/_status_train.txt"
     ;;
@@ -403,7 +456,7 @@ case "$MODE" in
     #   학습 중 통신 텔레메트리: VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 (ON 갈래만 *_comm.csv).
     preflight
     : > "$OUT/_status_train.txt"
-    branch_batch "${VESSEL_TRAIN_ARMS:-off on6 on12}" "$BRANCH_AT" "$TOTAL_STEPS"
+    branch_batch "${VESSEL_TRAIN_ARMS:-off on6 on12}" "$BRANCH_AT" "$TOTAL_STEPS" "$RUN_PRE"
     echo "학습 완료"
     cat "$OUT/_status_train.txt"
     ;;
@@ -414,7 +467,8 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2 rand; do [ -f "$CK/${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${nm}_s$s.pt"; done
+      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0; do
+        [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${RUN_PRE}${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
       echo "[eval] 분기 검사"
@@ -429,8 +483,19 @@ case "$MODE" in
     fi
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
+      if [ -n "$RUN_PRE" ]; then
+        # ★2026-09-25 접두어 배치(COMM_EXT 등): 있는 것만 평가 (팔 구분은 스냅샷 — eval 헤더 comm_ext/fields 로 확인)
+        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand; do
+          [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] || continue
+          if [ "$nm" = off ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"
+          elif [ "$nm" = rand ]; then eval_one "${RUN_PRE}$nm" RANDOM 6 "$s"
+          else eval_one "${RUN_PRE}$nm" ON 6 "$s"; fi
+        done
+        continue
+      fi
       eval_one off  OFF 6  "$s"
       eval_one on6  ON  6  "$s"
+      [ -f "$CK/on6a0_s$s.pt" ] && eval_one on6a0 ON 6 "$s"
       eval_one on12 ON  12 "$s"
       [ -f "$CK/off12_s$s.pt" ] && eval_one off12 OFF 12 "$s"
       [ -f "$CK/on2_s$s.pt" ]  && eval_one on2  ON  2  "$s"
@@ -481,6 +546,77 @@ case "$MODE" in
     cat "$OUT/_status_train.txt"
     ;;
 
+  ablate)
+    # ★2026-09-25 의도·역할 통신 절제 평가 (스펙 §5). EXT 통신 체크포인트(arpa6·onl6·ons6·oni6)마다:
+    #   msgzero(통신 입력 전부 0: --arm OFF) / latent0(학습 메시지만 0) / field-shuffle(확장필드를 다른 배 것으로) /
+    #   켜진 그룹을 하나씩 끈 평가(state·role·intent). 전부 '학습과 다른 입력' 이라 결과 파일 이름에 절제명이 붙는다.
+    preflight
+    : > "$OUT/_status_eval.txt"
+    _abl_one() {   # 이름 시드 절제명 추가인자...
+      local nm=$1 s=$2 tag=$3; shift 3
+      throttle
+      local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+      echo "  abl_${nm}_s${s}_${tag} → GPU $gpu"
+      EVAL_N=$(( EVAL_N + 1 ))
+      (
+        common_env
+        export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=2 VESSEL_MSG_DIM=6
+        "$PY" -u "$HERE/eval/eval_ckpt.py" --ckpt "$CK/${nm}_s$s.pt" \
+          --envs 256 --eval_decisions 10000 --burnin 2400 "$@" > "$OUT/abl_${nm}_s${s}_${tag}.txt" 2>&1
+        echo "abl_${nm}_s${s}_${tag} rc=$?" >> "$OUT/_status_eval.txt"
+      ) &
+      GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
+    }
+    for s in $SEEDS; do
+      for a in arpa6 onl6 ons6 oni6; do
+        nm="${RUN_PRE}$a"
+        [ -f "$CK/${nm}_s$s.pt" ] || continue
+        _abl_one "$nm" "$s" msgzero --arm OFF --allow_arm_mismatch
+        [ "$a" != arpa6 ] && _abl_one "$nm" "$s" latent0 --arm ON --latent_zero
+        [ "$a" != onl6 ] && _abl_one "$nm" "$s" shuffle --arm ON --field_shuffle
+        case "$a" in
+          ons6|arpa6) _abl_one "$nm" "$s" state0 --arm ON --comm_groups role --allow_fields_mismatch
+                      _abl_one "$nm" "$s" role0  --arm ON --comm_groups state --allow_fields_mismatch ;;
+          oni6)       _abl_one "$nm" "$s" intent0 --arm ON --comm_groups state,role --allow_fields_mismatch
+                      _abl_one "$nm" "$s" role0   --arm ON --comm_groups state,intent --allow_fields_mismatch
+                      _abl_one "$nm" "$s" state0  --arm ON --comm_groups role,intent --allow_fields_mismatch ;;
+        esac
+      done
+    done
+    wait
+    if [ "$EVAL_N" -eq 0 ]; then echo "절제 평가 0건 — EXT 통신 체크포인트(${RUN_PRE}{arpa6,onl6,ons6,oni6}_s*.pt)가 $CK 에 없음"; exit 1; fi
+    echo "절제 평가 완료 — $EVAL_N건, $OUT/abl_*.txt"
+    cat "$OUT/_status_eval.txt"
+    _abl_bad=$(grep -cv 'rc=0$' "$OUT/_status_eval.txt")
+    [ "${_abl_bad:-0}" -eq 0 ] || { echo "절제 평가 실패 ${_abl_bad}건"; exit 1; }
+    ;;
+
+  traj)
+    # ★2026-09-25 F5 궤적: 같은 eval 시드·burn-in 0 → reset 장면(스폰·목표·최대속력)이 팔 간 동일. 첫 재스폰 전 조우만 짝지을 것.
+    preflight
+    : > "$OUT/_status_eval.txt"
+    for s in $SEEDS; do
+      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0; do
+        f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
+        arm=ON; [ "$nm" = off ] && arm=OFF
+        throttle
+        gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 )); EVAL_N=$(( EVAL_N + 1 ))
+        echo "  traj_${RUN_PRE}${nm}_s$s → GPU $gpu"
+        (
+          common_env
+          export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=2 VESSEL_MSG_DIM=6
+          "$PY" -u "$HERE/eval/eval_ckpt.py" --ckpt "$f" --arm "$arm" --envs 16 --burnin 0 --eval_decisions 1500 \
+            --traj_out "$OUT/traj_${RUN_PRE}${nm}_s$s.pt" --traj_envs 16 > "$OUT/traj_${RUN_PRE}${nm}_s$s.txt" 2>&1
+          echo "traj_${RUN_PRE}${nm}_s$s rc=$?" >> "$OUT/_status_eval.txt"
+        ) &
+        GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
+      done
+    done
+    wait
+    [ "$EVAL_N" -gt 0 ] || { echo "궤적 덤프 0건 — 체크포인트 없음"; exit 1; }
+    echo "궤적 덤프 완료 — $OUT/traj_*.pt"; cat "$OUT/_status_eval.txt"
+    ;;
+
   diag)
     # ★2026-09-10: 체크포인트 진단 단일 진입점(diag_ckpt.py). 설정은 스냅샷에서, 조우율 게이트 통과 못 하면 숫자 안 냄.
     #   사용: VESSEL_DIAG_CKPTS="a.pt b.pt" bash run_repro.sh diag   (CK 아래 상대경로)
@@ -511,7 +647,7 @@ case "$MODE" in
     ;;
 
   *)
-    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | diag)"
+    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | ablate | traj | diag)"
     exit 2
     ;;
 esac

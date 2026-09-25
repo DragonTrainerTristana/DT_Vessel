@@ -88,6 +88,14 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         # ★2026-09-23: vessel_gym 이 config 에서 받는 sim 상수 전부(보상 계수·게이트·COLREGS_MODE·에피소드 길이).
         #   위 낱개 키(radar_dropout_p 등)는 구 로더 호환으로 남겨 둔다 — 값은 같다. 키 추가만.
         'sim': dict(cfg.sim_constants()),
+        # ★2026-09-25 의도·역할 통신 (스펙 2026-09-25-comm-intent-design.md). comm_ext 는 키(attn.k_proj.0.*)·shape 로도 보이지만
+        #   필드 그룹·latent 배율·파트너 반경·aux 배율은 가중치에 흔적이 없다 = 스냅샷이 유일 근거. 키 추가만.
+        'comm_ext': int(bool(net.COMM_EXT)), 'comm_ext_dim': int(net.COMM_EXT_DIM),
+        'comm_ext_layout': str(cfg.COMM_EXT_LAYOUT),
+        'comm_fields': str(net.COMM_FIELDS), 'comm_groups': list(net.COMM_GROUPS),
+        'comm_latent': float(net.COMM_LATENT),
+        'partner_range': None if net.PARTNER_RANGE is None else float(net.PARTNER_RANGE),
+        'aux_loss_scale': float(cfg.AUX_LOSS_SCALE),
     }
 
 
@@ -221,7 +229,10 @@ class Restored:
                 f"shared_enc={e.get('shared_encoder')} moe={int(e.get('use_moe', 1))}/{e.get('moe_width')}/{int(e.get('moe_shared', 0))} "
                 f"dyn={e.get('dyn_profile')} obst={e.get('obstacles')} radar={e.get('radar_range')} "
                 f"sim={e.get('sim_keys_applied', 0)}keys "
-                f"comm_range={e['comm_range']} max_partners={self.max_partners} "
+                + (f"comm_ext=1 fields={e.get('comm_fields')} groups={'+'.join(e.get('comm_groups') or []) or '-'} "
+                   f"latent={e.get('comm_latent')} partner_range={e.get('partner_range')} aux={e.get('aux_loss_scale')} "
+                   if e.get('comm_ext') else '')
+                + f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
 
 
@@ -229,8 +240,65 @@ def _say(tag, msg):
     print(f"{tag} {msg}", flush=True)
 
 
+def restore_comm_ext(_sd, snap, msg_dim, notes, tag, comm_groups=None, allow_fields_mismatch=False):
+    """★2026-09-25 의도·역할 통신 설정을 networks 모듈 전역에 복원한다 (CNNPolicy() 전에 불러야 함).
+
+    구조(COMM_EXT)는 키로 스니핑(attn.k_proj.0.weight = MLP k/v = EXT)하고 토큰 폭으로 레이아웃을 교차검증한다.
+    필드 그룹·latent 배율·파트너 반경은 스냅샷이 유일 근거 — EXT 인데 comm_fields 가 없으면 추정하지 않고 중단.
+    **항상 전부 설정한다**: 한 프로세스에서 여러 체크포인트를 열 때(diag 등) 앞 체크포인트 값이 새지 않게.
+    comm_groups: 평가 절제용 override(예: ('state','role') = intent-zero). 스냅샷과 다르면 allow_fields_mismatch 필요.
+    Returns dict(comm_ext, comm_fields, comm_groups, comm_latent, partner_range, aux_loss_scale).
+    """
+    S = snap or {}
+    ext = 'attn.k_proj.0.weight' in _sd
+    if ext:
+        tok_in = int(_sd['attn.k_proj.0.weight'].shape[1])
+        rel = tok_in - int(msg_dim)
+        want = 3 + int(cfg.COMM_EXT_DIM)
+        if rel != want:
+            raise SystemExit(f"{tag} 중단: COMM_EXT 체크포인트의 relpos 폭 {rel} != 현재 레이아웃 {want} "
+                             f"(3 + COMM_EXT_DIM {cfg.COMM_EXT_DIM}) - 레이아웃이 다른 코드")
+        lay = S.get('comm_ext_layout')
+        if lay is not None and str(lay) != str(cfg.COMM_EXT_LAYOUT):
+            raise SystemExit(f"{tag} 중단: 스냅샷 comm_ext_layout={lay!r} != 현재 {cfg.COMM_EXT_LAYOUT!r} - 필드 순서·정규화가 다른 코드")
+    if S.get('comm_ext') is not None and bool(S['comm_ext']) != ext:
+        raise SystemExit(f"{tag} 중단: 스냅샷 comm_ext={S['comm_ext']} 인데 가중치 키는 EXT={int(ext)} - 조용한 불일치")
+    if ext:
+        if S.get('comm_fields') is None:
+            raise SystemExit(f"{tag} 중단: COMM_EXT 체크포인트인데 스냅샷에 comm_fields 없음 - 어떤 필드로 학습했는지 추정하지 않음")
+        fields = str(S['comm_fields']).lower()
+        if fields not in cfg.COMM_FIELDS_TO_GROUPS:
+            raise SystemExit(f"{tag} 중단: 스냅샷 comm_fields={fields!r} 를 모름")
+    else:
+        fields = 'latent'
+    groups = tuple(cfg.COMM_FIELDS_TO_GROUPS[fields])
+    if comm_groups is not None:
+        req = tuple(g for g in ('state', 'role', 'intent') if g in set(comm_groups))
+        bad = set(comm_groups) - {'state', 'role', 'intent'}
+        if bad:
+            raise SystemExit(f"{tag} 중단: 모르는 comm_groups {sorted(bad)} (state|role|intent)")
+        if not ext and req:
+            raise SystemExit(f"{tag} 중단: EXT 가 아닌 체크포인트에 comm_groups={req} override 불가")
+        if req != groups:
+            if not allow_fields_mismatch:
+                raise SystemExit(f"{tag} 중단: 학습 필드 그룹 {groups} 와 다른 {req} 로 평가하려면 allow_fields_mismatch "
+                                 f"(의도한 절제만)")
+            notes.append(f"comm_groups override: 학습 {groups} → 평가 {req} (절제 평가 — 학습과 다른 입력)")
+            groups = req
+    net.COMM_EXT = ext
+    net.COMM_FIELDS = fields
+    net.COMM_GROUPS = groups
+    net.COMM_LATENT = float(S.get('comm_latent', 1.0))
+    _pr = S.get('partner_range')
+    net.PARTNER_RANGE = None if _pr is None else float(_pr)
+    return {'comm_ext': int(ext), 'comm_fields': fields, 'comm_groups': list(groups),
+            'comm_latent': float(net.COMM_LATENT), 'partner_range': net.PARTNER_RANGE,
+            'aux_loss_scale': S.get('aux_loss_scale', 1.0)}
+
+
 def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
-                   allow_arm_mismatch=False, allow_comm_range_mismatch=False, allow_sim_mismatch=False, tag='[ckpt]'):
+                   allow_arm_mismatch=False, allow_comm_range_mismatch=False, allow_sim_mismatch=False, tag='[ckpt]',
+                   comm_groups=None, allow_fields_mismatch=False):
     """체크포인트를 열어 학습 때와 같은 구조·설정으로 CNNPolicy 를 만든다.
 
     Args:
@@ -431,6 +499,10 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
     if net.SHARED_ENCODER != cfg.SHARED_ENCODER:
         notes.append(f"shared_encoder: ckpt {net.SHARED_ENCODER!r} 로 복원 (현재 config {cfg.SHARED_ENCODER!r} 와 다름 — ckpt 가 진실)")
 
+    # 4d) ★2026-09-25 의도·역할 통신: 구조(키)·필드 그룹·latent 배율·파트너 반경 — CNNPolicy() 전에
+    comm_eff = restore_comm_ext(_sd, snap, msg_dim, notes, tag, comm_groups=comm_groups,
+                                allow_fields_mismatch=allow_fields_mismatch)
+
     # 5) 이제 만든다 — 위 전역이 __init__ 에서 읽힌다
     policy = CNNPolicy(msg_dim, cfg.CONTINUOUS_ACTION_SIZE, cfg.FRAMES).to(device)
     policy.load_state_dict(_sd)
@@ -449,6 +521,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         'comm_range': float(cfg.COMM_RANGE), 'msg_dim': msg_dim, 'ckpt_arm': ck_arm,
         'ckpt_steps': (sd.get('steps') if isinstance(sd, dict) else None),
         **sim_eff,
+        **comm_eff,
     }
     r = Restored(policy=policy, snap=snap, raw=sd, state_dict=_sd, msg_dim=msg_dim, arm=arm,
                  max_partners=max_partners, effective=effective, notes=notes, path=path)
@@ -529,7 +602,8 @@ def describe(snap):
             'msg_ln', 'comm_range', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'seed',
             'radar_act', 'radar_head', 'msg_token_gain', 'agg_mode', 'msg_gain', 'recon_ema_floor',
             'clip_per_module', 'perpair_coef', 'farfield_coef', 'dyn_profile', 'obstacles',
-            'los_gate', 'radar_dropout_p', 'max_episode_steps')
+            'los_gate', 'radar_dropout_p', 'max_episode_steps',
+            'comm_ext', 'comm_fields', 'comm_latent', 'partner_range', 'aux_loss_scale')
     return ' '.join(f"{k}={snap[k]}" for k in keys if k in snap)
 
 
@@ -553,6 +627,10 @@ _SNAP_TO_ENV = [
     ('farfield_coef', 'VESSEL_FARFIELD_COEF', str), ('perpair_coef', 'VESSEL_PERPAIR_COEF', str),
     ('msg_random_sd', 'VESSEL_MSG_RANDOM_SD', str),
     ('dyn_profile', 'VESSEL_DYN_PROFILE', str), ('obstacles', 'VESSEL_OBSTACLES', str),
+    # ★2026-09-25 의도·역할 통신 (partner_range None = COMM_RANGE → 줄 생략)
+    ('comm_ext', 'VESSEL_COMM_EXT', lambda v: '1' if v else '0'), ('comm_fields', 'VESSEL_COMM_FIELDS', str),
+    ('comm_latent', 'VESSEL_COMM_LATENT', lambda v: repr(float(v))), ('partner_range', 'VESSEL_PARTNER_RANGE', lambda v: repr(float(v))),
+    ('aux_loss_scale', 'VESSEL_AUX_LOSS_SCALE', lambda v: repr(float(v))),
     # ★2026-09-23: radar_dropout_p/len·los_gate·max_episode_steps 는 스냅샷 'sim' 에서 나온다(아래 env_lines).
     #   여기 static 으로도 두면 export 줄이 두 번 나오므로 뺐다 — 구 스냅샷(sim 없음)은 _SIM_LEGACY_TOPLEVEL 로 폴백.
 ]
@@ -601,6 +679,18 @@ def env_lines(snap):
                 unknown.append(f"{env}(unset)")   # 키는 있으나 값이 None(예: REWARD_RANGE) — 조용히 빠뜨리지 않는다
         else:
             unknown.append(env)
+    # ★2026-09-25 의도·역할 통신 키 — 리뷰 M3 수정. partner_range=None 은 '모름' 이 아니라 'COMM_RANGE 사용' 이므로 unset 줄을 낸다
+    #   (셸에 남은 VESSEL_PARTNER_RANGE=56 이 재현 런을 ARPA 반경으로 조용히 바꾸지 않게). 2026-09-25 이전 스냅샷은 통신 키가 없지만
+    #   그때 코드는 EXT 가 없었으므로 legacy 값(EXT 0·latent·1.0·unset·aux 1.0)이 확정값이다 — restore_comm_ext 와 같은 규약.
+    _comm_env = ('VESSEL_COMM_EXT', 'VESSEL_COMM_FIELDS', 'VESSEL_COMM_LATENT', 'VESSEL_PARTNER_RANGE', 'VESSEL_AUX_LOSS_SCALE')
+    if 'comm_ext' not in snap:
+        lines = [ln for ln in lines if not any(f"export {e}=" in ln for e in _comm_env)]
+        lines += ['export VESSEL_COMM_EXT=0', 'export VESSEL_COMM_FIELDS=latent', 'export VESSEL_COMM_LATENT=1.0',
+                  'unset VESSEL_PARTNER_RANGE', 'export VESSEL_AUX_LOSS_SCALE=1.0']
+        unknown = [u for u in unknown if u not in _comm_env]
+    elif snap.get('partner_range') is None:
+        lines.append('unset VESSEL_PARTNER_RANGE')
+        unknown = [u for u in unknown if u != 'VESSEL_PARTNER_RANGE']
     args = ' '.join(f"--{a} {snap[a]}" for a in ('arm', 'max_partners', 'ring', 'crossing', 'vessels', 'envs', 'rollout', 'seed', 'comm_on_at') if snap.get(a) is not None)
     return lines, unknown, args
 

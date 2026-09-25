@@ -41,16 +41,16 @@ import config as cfg
 import vessel_gym as vg
 from ckpt_io import restore_policy, make_env_from_snapshot, describe
 from vessel_gym_train import (comm_gather, parse_obs, FrameStack, make_others_msg,
-                              comm_telemetry, COMM_TELE_COLS, msg_stats)
+                              comm_telemetry, COMM_TELE_COLS, comm_tele_cols, msg_stats)
 
 OUT_NAMES = {1: 'goal', 2: 'vColl', 3: 'oColl', 4: 'TO'}
 
 
-def _mean_rows(rows):
-    """텔레메트리 행(dict) 리스트 → 열별 평균 (nan 무시)."""
+def _mean_rows(rows, cols=COMM_TELE_COLS):
+    """텔레메트리 행(dict) 리스트 → 열별 평균 (nan 무시). cols = comm_tele_cols(policy) (EXT 정책은 열이 더 있음)."""
     import math
     out = {}
-    for k in COMM_TELE_COLS:
+    for k in cols:
         vals = [float(r[k]) for r in rows if k in r and not math.isnan(float(r[k]))]
         out[k] = sum(vals) / len(vals) if vals else float('nan')
     return out
@@ -186,10 +186,11 @@ def main():
     for n, d in rec['encoder'].items():
         print(f"[diag] 인코더[{n}] sd={d['sd']:.5f} eff_dim={d['eff_dim']:.2f} axes90={d['axes90']:.0f} dc={d['dc']:.3f}")
     if r.arm == 'ON':
-        rec['telemetry'] = _mean_rows(tele_rows)
+        _tcols = comm_tele_cols(r.policy)   # ★2026-09-25: EXT 정책이면 act_zero_state/role/intent·alpha_dext 추가
+        rec['telemetry'] = _mean_rows(tele_rows, _tcols)
         rec['telemetry_n'] = len(tele_rows)
         print(f"[diag] 텔레메트리 {len(tele_rows)}회 평균:")
-        for k in COMM_TELE_COLS:
+        for k in _tcols:
             print(f"         {k:14s} {rec['telemetry'][k]:.4f}")
         if chunks:
             M_all = torch.cat([c[0] for c in chunks], 0); S_all = torch.cat([c[1] for c in chunks], 0)
@@ -233,7 +234,8 @@ def main():
             for k in ('sd', 'eff_dim', 'axes90', 'dc'):
                 cols.append(f'enc_{n_}_{k}'); vals.append(f"{d[k]:.6g}")
         if rec.get('telemetry'):
-            cols += list(COMM_TELE_COLS); vals += [f"{rec['telemetry'][k]:.6g}" for k in COMM_TELE_COLS]
+            _tc = comm_tele_cols(r.policy)
+            cols += list(_tc); vals += [f"{rec['telemetry'][k]:.6g}" for k in _tc]
             for g in ('enc', 'non'):
                 for k, v in rec.get('msg_split', {}).get(g, {}).items():
                     cols.append(f'{g}_{k}'); vals.append(f"{v:.6g}" if isinstance(v, float) else str(v))

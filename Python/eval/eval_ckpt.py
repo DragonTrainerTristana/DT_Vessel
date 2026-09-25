@@ -62,6 +62,19 @@ def main():
     #   기본은 끄고, 대신 아래에서 '잘린 개수'를 항상 출력함.
     ap.add_argument('--drain', type=int, default=0,
                     help='창 종료 후 진행 중 에피소드를 마감하는 데 쓸 최대 결정 수 (0=끄기, 기존 동작)')
+    # ★2026-09-25 의도·역할 통신(COMM_EXT) 절제·기전 진단. 전부 기본 off = 기존 출력 불변(조율 진단 줄만 추가).
+    #   절제 이름을 섞지 말 것: msgzero(=--arm OFF --allow_arm_mismatch, latent+확장필드 전부 0) /
+    #   latent-zero(--latent_zero, 확장필드 유지) / <그룹>-zero(--comm_groups 로 남길 그룹 지정) / field-shuffle.
+    ap.add_argument('--comm_groups', default=None,
+                    help="평가에 켤 확장필드 그룹(쉼표: state,role,intent / 'none'). 학습과 다르면 --allow_fields_mismatch 필요")
+    ap.add_argument('--allow_fields_mismatch', action='store_true', help='의도한 필드 절제 평가만')
+    ap.add_argument('--latent_zero', action='store_true', help='학습 latent 메시지만 0 (확장필드·위치는 유지)')
+    ap.add_argument('--field_shuffle', action='store_true',
+                    help='확장필드를 같은 env 의 다른 수신자 것으로 섞음(분포 유지, 정보 차단)')
+    ap.add_argument('--traj_out', default=None,
+                    help='궤적 덤프 경로(.pt). 앞 --traj_envs 개 env 의 위치·침로·속력·타각·명령·상황·목표·최대속력·종료를 결정마다 저장. '
+                         "F5 '같은 조우 ON vs OFF' 는 --burnin 0 + 같은 --seed 로 돌려야 팔 간 초기 장면이 같다(run_repro.sh traj)")
+    ap.add_argument('--traj_envs', type=int, default=4)
     args = ap.parse_args()
 
     dev = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
@@ -77,10 +90,15 @@ def main():
     #   순서: 스냅샷 스니핑 → networks 전역 덮어쓰기 → CNNPolicy() → strict 로드. comm_range/arm 불일치는 기본 중단.
     #   env 는 스냅샷의 ring/crossing/perpair 를 쓴다. --ring/--crossing 을 주면 override 로 로그에 남는다.
     from ckpt_io import restore_policy, make_env_from_snapshot
+    _cg = None
+    if args.comm_groups is not None:
+        _cg = () if args.comm_groups.strip().lower() == 'none' else tuple(
+            g.strip().lower() for g in args.comm_groups.split(',') if g.strip())
     _r = restore_policy(ckpt_path, dev, arm=args.arm, max_partners=args.max_partners,
                         allow_arm_mismatch=args.allow_arm_mismatch,
                         allow_comm_range_mismatch=args.allow_comm_range_mismatch,
-                        allow_sim_mismatch=args.allow_sim_mismatch, tag='[eval]')
+                        allow_sim_mismatch=args.allow_sim_mismatch, tag='[eval]',
+                        comm_groups=_cg, allow_fields_mismatch=args.allow_fields_mismatch)
     policy = _r.policy
     args.max_partners = _r.max_partners
     env = make_env_from_snapshot(_r.snap, device=dev, num_envs=E, seed=args.seed, n_vessels=N,
@@ -94,10 +112,22 @@ def main():
     counts = torch.zeros(5, device=dev)   # RUNNING/GOAL/vColl/oColl/TO
     total = 0
 
+    # ★2026-09-25 절제 옵션 (ON 팔에서만 의미). 전용 CPU generator → 정책 샘플 RNG 와 분리.
+    if (args.latent_zero or args.field_shuffle) and args.arm != 'ON':
+        raise SystemExit('[eval] --latent_zero/--field_shuffle 은 --arm ON 에서만 의미가 있음')
+    if args.field_shuffle and getattr(policy, 'relpos_dim', 3) <= 3:
+        raise SystemExit('[eval] --field_shuffle 은 COMM_EXT 체크포인트에서만 (확장필드가 없음)')
+    _shuf_gen = torch.Generator().manual_seed(args.seed + 7) if args.field_shuffle else None
+    _zmsg = torch.zeros(E, N, _r.msg_dim, device=dev) if args.latent_zero else None
+    if args.latent_zero or args.field_shuffle or args.comm_groups is not None:
+        print(f"[eval] 절제: latent_zero={args.latent_zero} field_shuffle={args.field_shuffle} "
+              f"comm_groups={list(net.COMM_GROUPS)} (학습과 다른 입력 — 절제 결과로만 보고)", flush=True)
+
     def act(x, goal, self_s, sit):
         with torch.no_grad():
             if args.arm == 'ON':
-                om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners)
+                om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners,
+                                    msg_override=_zmsg, ext_shuffle_gen=_shuf_gen)
             else:
                 om = make_others_msg(env, args.arm, E, N, dev)
             action, _, _, _ = policy.ctr_actor(x, goal, self_s, om, sit)
@@ -223,6 +253,68 @@ def main():
     #   현재 진행 중인 조우를 enc_skip 으로 표시해 첫 1건만 집계에서 뺀다(옛 counted 게이트와 같은 취지).
     enc_sit = env.situation.clone()
     enc_skip = env.situation > 0
+
+    # ─── ★조율 진단 (2026-09-25, 스펙 2026-09-25-comm-intent-design §5) ───
+    #   저자 의도 '서로 역할·의도를 알면 상대가 보완 행동을 한다' 를 행동으로 잰다. 기전 설명용 — 사전등록 H1 판정 아님.
+    #   모든 쌍 (i,j) 의 게이트된 기하 역할(접근·dcpa<24 m·≤COMM_RANGE — comm_pair_features 와 같은 정의)과
+    #   실제 타각(쌍 지표와 같은 문턱: 우현 >0.05 / 좌현 <−0.10 / 유지 |·|<0.15)을 짝지어 센다. OFF 팔에도 같은 정의.
+    #   거리대: near = 레이더 안(≤RADAR_RANGE), far = 레이더 밖~COMM_RANGE (far 의 양보선 우현 = 레이더 밖 조기 행동).
+    _cidx = torch.arange(N, device=dev)
+    _allj = torch.stack([torch.cat([_cidx[:i], _cidx[i + 1:]]) for i in range(N)]).unsqueeze(0).expand(E, N, N - 1)
+    _bE = torch.arange(E, device=dev)[:, None, None]
+    _upper = _allj > _cidx.view(1, N, 1)                        # 무순서 쌍 1회 (HeadOn·일치율)
+    _CK = ('gwso', 'comp', 'gw_stb', 'so_hold', 'so_port', 'both_hold', 'ho', 'ho_both_stb', 'roled', 'agree')
+    coord = {band: {k: 0.0 for k in _CK} for band in ('near', 'far')}
+    # 충돌 분해 (스펙 §5): 선박 충돌로 끝난 배마다 직전 결정의 '가장 가까운 상대' 와의 역할·실제 타각으로 분류
+    _COLL_K = ('multi', 'gw_noact', 'gw_act_so_hold', 'gw_act_so_turn', 'so_act', 'so_hold_gw_noact',
+               'so_hold_gw_act', 'ho_both_stb', 'ho_not_both', 'overtaking', 'no_role')
+    coll_cat = {k: 0 for k in _COLL_K}
+    _cctx = {}                                                      # _coord_update 가 채우는 step 전 상태
+
+    def _coord_update(a):
+        f = vg.comm_pair_features(env, _allj, cfg.COMM_RANGE)   # [E,N,N-1,20], 역할 게이트 적용
+        myr = f[..., 8:13].argmax(-1)
+        thr = f[..., 13:18].argmax(-1)
+        dij = torch.linalg.norm(env.pos[_bE, _allj] - env.pos.unsqueeze(2), dim=-1)
+        # ★2026-09-25 리뷰 E2 수정: 샘플 명령(탐색 잡음·팔마다 다른 logstd 가 섞임)이 아니라 *실제 타각*(상대 배가 보는 것)으로,
+        #   쌍 지표(tex)와 같은 문턱 EPS_S/EPS_P/EPS_C 를 쓴다. 우현 δ̄>0.05 · 좌현 δ̄<−0.10 · 유지 |δ̄|<0.15.
+        _dn = env.rudder / vg.MAX_TURN_RATE                           # [E,N] 실제(슬루된) 정규화 타각
+        ci = _dn.unsqueeze(-1).expand_as(dij)
+        cj = _dn[_bE, _allj]
+        stb_i = ci > EPS_S
+        hold_i = (~stb_i) & (ci.abs() < EPS_C)
+        stb_j, hold_j, port_j = cj > EPS_S, cj.abs() < EPS_C, cj < -EPS_P
+        near = dij <= vg.RADAR_RANGE
+        GW, SO, HO, OT, NO = vg.SIT_GIVEWAY, vg.SIT_STANDON, vg.SIT_HEADON, vg.SIT_OVERTAKING, vg.SIT_NONE
+        agree = (((myr == GW) & (thr == SO)) | ((myr == SO) & (thr == GW)) | ((myr == HO) & (thr == HO))
+                 | ((myr == OT) & (thr == NO)) | ((myr == NO) & (thr == OT)))
+        roled = (myr != NO) | (thr != NO)
+        for band, bm in (('near', near), ('far', ~near)):
+            c = coord[band]
+            g = bm & (myr == GW) & (thr == SO)                     # i 양보선, j 유지선 (순서쌍이지만 방향이 정해져 1회)
+            c['gwso'] += float(g.sum())
+            c['comp'] += float((g & stb_i & hold_j).sum())
+            c['gw_stb'] += float((g & stb_i).sum())
+            c['so_hold'] += float((g & hold_j).sum())
+            c['so_port'] += float((g & port_j).sum())
+            c['both_hold'] += float((g & hold_i & hold_j).sum())
+            h = bm & (myr == HO) & (thr == HO) & _upper
+            c['ho'] += float(h.sum())
+            c['ho_both_stb'] += float((h & stb_i & stb_j).sum())
+            r = bm & roled & _upper
+            c['roled'] += float(r.sum())
+            c['agree'] += float((r & agree).sum())
+        # 충돌 분해용: 배 i 의 가장 가까운 상대 jn 과의 역할·행동 + 위험 상대 수(게이트 통과 역할이 붙은 상대)
+        jn = dij.argmin(-1, keepdim=True)                               # [E,N,1]
+        _g = lambda t: t.gather(-1, jn).squeeze(-1)                     # noqa: E731
+        _cctx.update(myr=_g(myr), thr=_g(thr), stb_i=_g(stb_i), hold_i=_g(hold_i), stb_j=_g(stb_j),
+                     hold_j=_g(hold_j), n_risky=((myr != NO) | (thr != NO)).sum(-1))
+
+    # ─── ★궤적 덤프 (2026-09-25, --traj_out) — F5 '같은 조우 ON vs OFF' 용. 앞 traj_envs 개 env, 평가 창 전체 ───
+    _traj = None
+    if args.traj_out:
+        _te = max(1, min(int(args.traj_envs), E))
+        _traj = {k: [] for k in ('pos', 'heading', 'speed', 'rudder', 'cmd', 'situation', 'goal', 'max_speed', 'outcome')}
 
     # ─── ★쌍(pair) 단위 조우 지표 (2026-08-31 사용자 승인) ───
     #   조우 = 선박 쌍 (i,j). i 관점 [e,i,j] 와 j 관점 [e,j,i] 를 각자 추적(각자 자기 역할로 판정).
@@ -378,6 +470,14 @@ def main():
                     if bool(_m.any()):
                         sit_ok[_k] += float((_viol[_m] < 0.1).float().sum())
                         sit_n[_k] += int(_m.sum())
+        # ── ★조율 진단·궤적 (2026-09-25): step 전 상태 + 이번 결정 ──
+        if _dstep < args.eval_decisions:
+            _coord_update(a)
+            if _traj is not None:
+                _traj['pos'].append(env.pos[:_te].clone()); _traj['heading'].append(env.heading[:_te].clone())
+                _traj['speed'].append(env.speed[:_te].clone()); _traj['rudder'].append(env.rudder[:_te].clone())
+                _traj['cmd'].append(a[:_te].clone()); _traj['situation'].append(env.situation[:_te].clone())
+                _traj['goal'].append(env.goal[:_te].clone()); _traj['max_speed'].append(env.max_speed[:_te].clone())
         # ── ★조우 단위 누적 (tex 정의). step *직전* = 정책이 본 situation 과 현재 타각을 짝지음 ──
         _pwe = env._last_pw
         if _pwe is not None:
@@ -482,6 +582,32 @@ def main():
         # ── step ──
         obs, rew_step, done, outcome = env.step(a)
         ep_reward += rew_step
+        if _traj is not None and _dstep < args.eval_decisions:
+            _traj['outcome'].append(outcome[:_te].clone())
+        if _dstep < args.eval_decisions and _cctx:
+            _cg_ = counted if _pending is None else (counted & _pending)
+            _hit = (outcome == vg.OUT_COLLISION_VESSEL) & _cg_
+            if bool(_hit.any()):
+                _c = {k: v[_hit] for k, v in _cctx.items()}
+                _multi = _c['n_risky'] >= 2
+                _m, _t = _c['myr'], _c['thr']
+                _one = ~_multi
+                GW, SO, HO, OT = vg.SIT_GIVEWAY, vg.SIT_STANDON, vg.SIT_HEADON, vg.SIT_OVERTAKING
+                _cls = {
+                    'multi': _multi,
+                    'gw_noact': _one & (_m == GW) & (~_c['stb_i']),
+                    'gw_act_so_hold': _one & (_m == GW) & _c['stb_i'] & _c['hold_j'],
+                    'gw_act_so_turn': _one & (_m == GW) & _c['stb_i'] & (~_c['hold_j']),
+                    'so_act': _one & (_m == SO) & (~_c['hold_i']),
+                    'so_hold_gw_noact': _one & (_m == SO) & _c['hold_i'] & (~_c['stb_j']),
+                    'so_hold_gw_act': _one & (_m == SO) & _c['hold_i'] & _c['stb_j'],
+                    'ho_both_stb': _one & (_m == HO) & _c['stb_i'] & _c['stb_j'],
+                    'ho_not_both': _one & (_m == HO) & ~(_c['stb_i'] & _c['stb_j']),
+                    'overtaking': _one & ((_m == OT) | ((_m == vg.SIT_NONE) & (_t == OT))),
+                    'no_role': _one & (_m == vg.SIT_NONE) & (_t != OT),
+                }
+                for _k, _v in _cls.items():
+                    coll_cat[_k] += int(_v.sum())
         # ── 종료 에피소드: 지표 기록 후 리셋 ──
         # ★2026-09-05 fix: drain 구간(_pending is not None)에서는 '창 끝에 걸려 있던' 에피소드만
         #   집계에 넣는다. 안 그러면 이미 마감된 배가 새로 시작한 에피소드까지 딸려 들어와
@@ -550,6 +676,38 @@ def main():
     print(f"   [run] burnin={args.burnin} dec={args.eval_decisions} drain={args.drain} "
           f"ring={args.ring} crossing={args.crossing} seed={args.seed} "
           f"envs={E} vessels={N} maxp={args.max_partners} dev={dev}", flush=True)
+
+    # ── ★조율 진단 출력 (2026-09-25) — 기전 설명용, 사전등록 H1 판정 아님 ──
+    for _band, _lbl in (('near', f'레이더 안 ≤{vg.RADAR_RANGE:g}m'), ('far', f'레이더 밖 {vg.RADAR_RANGE:g}-{cfg.COMM_RANGE:g}m')):
+        _c = coord[_band]
+        _g = _c['gwso']
+        _pc = (lambda k: f"{100 * _c[k] / _g:5.1f}%") if _g > 0 else (lambda k: '  -  ')
+        print(f"   [조율/{_lbl}] 양보-유지 쌍결정 n={int(_g)}  보완(양보 우현+유지 유지)={_pc('comp')}  "
+              f"양보 우현={_pc('gw_stb')}  유지 유지={_pc('so_hold')}  유지 좌현={_pc('so_port')}  둘 다 유지={_pc('both_hold')}")
+        _h = _c['ho']
+        _r = _c['roled']
+        print(f"   [조율/{_lbl}] HeadOn 쌍결정 n={int(_h)}  둘 다 우현="
+              + (f"{100 * _c['ho_both_stb'] / _h:5.1f}%" if _h > 0 else '  -  ')
+              + f"  | 역할 붙은 쌍 n={int(_r)}  역할 맞물림="
+              + (f"{100 * _c['agree'] / _r:5.1f}%" if _r > 0 else '  -  '))
+    _nc = sum(coll_cat.values())
+    if _nc > 0:
+        _p = lambda k: f"{100 * coll_cat[k] / _nc:4.1f}%"               # noqa: E731
+        print(f"   [조율/충돌 분해] 선박충돌 배 n={_nc} (직전 결정의 가장 가까운 상대 기준, 실제 타각)  다선(위험 상대≥2)={_p('multi')}")
+        print(f"   [조율/충돌 분해] 내가 양보선: 미행동={_p('gw_noact')} 행동+상대 유지={_p('gw_act_so_hold')} "
+              f"행동+상대도 회피={_p('gw_act_so_turn')} | 내가 유지선: 회피={_p('so_act')} "
+              f"고수+상대 미행동={_p('so_hold_gw_noact')} 고수+상대 행동={_p('so_hold_gw_act')}")
+        print(f"   [조율/충돌 분해] HeadOn 둘 다 우현={_p('ho_both_stb')} 아님={_p('ho_not_both')} | 추월={_p('overtaking')} 역할 없음={_p('no_role')}")
+    else:
+        print("   [조율/충돌 분해] 집계 창 안 선박 충돌 없음")
+    if _traj is not None and _traj['pos']:
+        _out = {k: torch.stack(v).cpu() for k, v in _traj.items() if v}
+        _out['meta'] = {'ckpt': os.path.basename(ckpt_path), 'arm': args.arm, 'comm_groups': list(net.COMM_GROUPS),
+                        'latent_zero': bool(args.latent_zero), 'field_shuffle': bool(args.field_shuffle),
+                        'seed': int(args.seed), 'dt_decision': 0.4, 'envs': int(_te), 'vessels': int(N),
+                        'radar_range': float(vg.RADAR_RANGE), 'comm_range': float(cfg.COMM_RANGE)}
+        torch.save(_out, args.traj_out)
+        print(f"   [traj] {args.traj_out} ← {tuple(_out['pos'].shape)} (결정×env×선박×2)", flush=True)
 
     if total == 0:
         print(f"{os.path.basename(ckpt_path):26s} | no terminations"); return

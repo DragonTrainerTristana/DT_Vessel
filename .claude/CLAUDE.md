@@ -118,6 +118,21 @@
 
 ---
 
+### 4-1. 의도·역할 통신 `COMM_EXT` (2026-09-25, 브랜치 feat/comm-intent — 스펙 `docs/superpowers/specs/2026-09-25-comm-intent-design.md`)
+
+저자 의도: "서로 좌표를 알고, 상대 입장에서 내가 타를 어떻게·속도를 어떻게 줄지·COLREGs 역할(나는 stand-on 너는 give-way)을 알면 상대가 보완 행동을 한다." 기본 = 끔(비트동일, 골든 5/5).
+
+| 항목 | 내용 |
+|---|---|
+| 토글 | `VESSEL_COMM_EXT`(구조, 배치 단위) · `VESSEL_COMM_FIELDS` latent/state/intent · `VESSEL_COMM_LATENT`(0 = ARPA@56) · `VESSEL_PARTNER_RANGE`(파트너 반경, 보상 반경과 분리) · `VESSEL_AUX_LOSS_SCALE`(ON 전용 보조손실 배율) — 전부 config.py, networks 전역으로 옮겨지고 ckpt_io 가 스냅샷으로 덮어씀 |
+| 필드(레이아웃 v1, 20) | `vessel_gym.comm_pair_features`. state 8 = sin/cos Δψ·sog/1.8·rot/MAX_YAW_RATE·상대속도(우현,전방)/3.6·dcpa_risk·tcpa_risk / role 10 = 내 역할(i→j)·상대 선언 역할(j→i) one-hot, `encounter_role` = `_pairwise` cascade 순수함수판 + 충돌위험 게이트(dcpa<24) / intent 2 = 상대 직전 명령 타각/30·명령 속력/1.8 |
+| 구조 | relpos_dim 3 → 23, GroundedAttention k/v 선형 → MLP(64, v 마지막 ×0.1). 키 `attn.{k,v}_proj.{0,2}.*`(EXT=0 은 `attn.k_proj.weight` 그대로). `USE_ATTENTION=1` 필수. Unity `_get_others_msg` 는 EXT 면 RuntimeError(gym 전용) |
+| 미러 | 필드는 `comm_gather` 가 env 로 계산해 prelpos 에 붙이고 **그 텐서 하나**를 집계·반환(버퍼)에 같이 씀 → update 는 저장값 재사용(재계산 경로 없음). 그룹 마스크·latent 배율·파트너 반경은 networks 전역만 읽음. 검증 `_verify_comm_mirror` EXT 9케이스·`test_comm_ext` 15개 |
+| 팔(run_repro) | off / arpa6(state, latent 0, 반경 56) / onl6 / ons6 / oni6 — 전부 dim 6, 통신 팔 aux 0, EXT 배치는 이름 접두어 `x_`. on6a0 = EXT 0 aux 0(G6 2단계) |
+| 평가 | eval `--comm_groups`(+`--allow_fields_mismatch`)·`--latent_zero`·`--field_shuffle`(유효 항목끼리·자기값 제외 = 주 영가설)·`--traj_out`. 조율 진단 `[조율/레이더 안|밖]`·`[조율/충돌 분해]`(모든 팔, **실제 타각**·tex 문턱, 기전 설명용 — H1 판정 아님). `run_repro.sh ablate` = msgzero·latent0·그룹별 0·shuffle / `run_repro.sh traj` = F5 궤적(같은 시드·burn-in 0) |
+| 텔레메트리 | EXT 런만 열 추가(뒤에): alpha_dext·act_zero_ext·act_zero_state·act_zero_role·act_zero_intent. 기존 act_zero 는 latent 만 0(정의 유지), alpha_dpos 는 relpos 3열만 섞음 |
+| 재개 | 크래시 재개는 comm_ext·fields·latent·partner_range·aux 전부 스냅샷과 같아야(다르면 거부). 분기점은 comm_ext 만 |
+
 ## 5. state_dict 키 결정자 (체크포인트 호환의 핵심)
 
 **키 생성/삭제·shape를 바꾸는 것** — 다르면 strict 로드 실패. `ckpt_io.restore_policy`가 키 스니핑으로 복원(§8).
@@ -130,6 +145,7 @@
 | `CENTRAL_CRITIC` (config :172) | :858-861 | `critic.*.glob_enc.{0,2}.*` 생성 + critic fc2 (128,47)→(128,111) |
 | `STATE_RECON_COEF>0` (config :165) | :1027 | `state_recon.net.{0,2}.*` + 버퍼 `run_mean/run_var/stat_inited/loss_ema` (조건부 생성) |
 | `VESSEL_RADAR_HEAD=bottleneck` | :47-48, :187-190 | `*.radar_encoder.reduce.*` 생성 + fc (30,2880)→(30,360) |
+| `VESSEL_COMM_EXT=1` (2026-09-25) | networks GroundedAttention(mlp_hidden) · CNNPolicy.relpos_dim | `attn.k_proj.{0,2}.*`·`attn.v_proj.{0,2}.*` 생성(선형 `attn.k_proj.weight` 사라짐) + msg_encoder.0 입력 9→29. ckpt_io 가 키로 스니핑·레이아웃 폭 교차검증 |
 | **무조건 생성(계수 0·미사용이어도 키 있음)** | `consumer_decoder` :613 · intent/threat/goal/role 디코더 :1005/:1012/:1017/:1023 · `msg_encoder` :990 · `attn` :999 | **제거 금지** — 지우면 기존 체크포인트 전부 strict 로드 깨짐 |
 | `MOE_SHARED` / `_share_radar_encoder` | :130-135 | **키 불변** — 5벌 동일 사본 저장(load 호환). 파라미터 수만 다름. RUNS.md는 텐서 동일성으로 공유 여부 판정 |
 | `VESSEL_MOE_FAST` / `_bmm_*` | :88, :91-128 | **키 불변** — 매 forward stack. 단 비트동일 아님(~1e-7) |
@@ -139,7 +155,7 @@
 `MSG_DIM` (config :53) · `MOE_WIDTH` (:244, `_w` :138) · `SITUATION_INPUT` (:264, fc2 ±5) · `ATTN_DIM` (:108) · `RADAR_FEAT_DIM` (:49) · `INTENT_K`/`THREAT_K` (디코더 out) · `COMM_CONSUMER_K` (consumer out, ≤MAX_PARTNERS) · `COMM_CONSUMER_COUPLING` (fc3 in 128→134) · `VESSEL_RADAR_BOTTLENECK_CH`.
 
 **키에 영향 없는 옵션 = "조용히 다른 실험"** (가중치에 흔적 없음, **cfg_snapshot이 유일한 근거**):
-`USE_ATTENTION` · `POS_GROUND` · `VESSEL_AGG_MODE` · `VESSEL_NEAREST_SCALE` · `VESSEL_MSG_GAIN` · `VESSEL_MSG_TOKEN_GAIN` · `VESSEL_RADAR_ACT` · `VESSEL_RECON_EMA_FLOOR/PRE/LEGACY_STAT` · `COMM_RANGE` · `MAX_COMM_PARTNERS` · 모든 손실 계수 · `USE_ORACLE` · `USE_COMMUNICATION` · `VESSEL_DYN_PROFILE` · `VESSEL_OBSTACLES` · 보상·시뮬 상수 전부.
+`USE_ATTENTION` · `POS_GROUND` · `VESSEL_COMM_FIELDS`·`VESSEL_COMM_LATENT`·`VESSEL_PARTNER_RANGE`·`VESSEL_AUX_LOSS_SCALE`(2026-09-25) · `VESSEL_AGG_MODE` · `VESSEL_NEAREST_SCALE` · `VESSEL_MSG_GAIN` · `VESSEL_MSG_TOKEN_GAIN` · `VESSEL_RADAR_ACT` · `VESSEL_RECON_EMA_FLOOR/PRE/LEGACY_STAT` · `COMM_RANGE` · `MAX_COMM_PARTNERS` · 모든 손실 계수 · `USE_ORACLE` · `USE_COMMUNICATION` · `VESSEL_DYN_PROFILE` · `VESSEL_OBSTACLES` · 보상·시뮬 상수 전부.
 
 ---
 
@@ -163,6 +179,8 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | 1 | 2026-09-04 | `comm_gather`에 attention 분기 없음 → rollout=mean / update=attention | `runs/m2_ablation/COMM_PLAN.md` :197-198 |
 | 2 | 2026-09-05 | `POS_GROUND=0`이면 rollout=pos_ground / update=sum (blocker) | `vessel_gym_train.py` :319-322 |
 | 3 | 2026-09-05 | `VESSEL_MSG_GAIN`이 update에만 걸림 | `vessel_gym_train.py` :323 |
+
+- ★2026-09-25 COMM_EXT 확장필드는 *상수 입력 경로*(env 상태 → prelpos → 버퍼 → update 재사용)라 구조적으로 미러. 규칙: prelpos 텐서 하나를 집계·반환에 같이 쓸 것, 그룹 마스크는 networks 전역에서만 읽을 것, 패딩은 torch.where(§4-1).
 
 - 배치 통계 정규화 금지(rollout E·N vs update 미니배치 통계가 달라짐) — 상수배만(:59).
 
@@ -270,6 +288,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 | sim2sim 핸드오프 | `Python/SIM2SIM_HANDOFF.md` | 07-04 작성 |
 | 신경망 층별 설명·근거 | `README.md` (git root) | 07-03 — **MoE 기본값(현재 ON)·msg_ln·CTDE·state_recon 미반영, 파라미터 수는 3망 합 기준** |
 | 재현 실행 | `Python/run_repro.sh` | 09-05 |
+| 의도·역할 통신 설계·사전등록 | `docs/superpowers/specs/2026-09-25-comm-intent-design.md` | 09-25 결과 전 |
 
 **낡은 문서 — 인용 금지:**
 

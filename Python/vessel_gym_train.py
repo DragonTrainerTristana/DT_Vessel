@@ -259,7 +259,7 @@ def compute_own_threat(x, threat_k, device):
 
 
 def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None,
-                msg_override=None, return_dist=False):
+                msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None):
     """★배치 학습형 comm (2026-08): 각 배의 COMM_RANGE 내 nearest-K 파트너 메시지를 pos_ground 집계.
     evaluate_actions(update)의 pos_ground 분기와 *동일 함수형* → PPO ratio 유효 (mirror 검증 대상).
     Returns:
@@ -272,16 +272,22 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
       recv_mask=False인 배는 받은 메시지가 0이 된다(통신 OFF 팔과 동일 입력).
     msg_override [E,N,MSG_DIM] — 텔레메트리 전용. 주면 msg_actor 를 부르지 않고 이 메시지로 집계한다
       (메시지를 0/섞기 로 바꿔 수신자 민감도를 재는 데 씀). 기본 None = 학습 동작 불변.
-    return_dist — True 면 (others_msg, partners, topd) 3-튜플. 기본 False = 반환 형태 불변."""
+    return_dist — True 면 (others_msg, partners, topd) 3-튜플. 기본 False = 반환 형태 불변.
+    ★COMM_EXT (2026-09-25): policy.relpos_dim > 3 이면 prelpos 뒤에 파트너 확장필드 20차원(vg.comm_pair_features)을 붙인다.
+      켜는 그룹은 net_mod.COMM_GROUPS(스냅샷이 덮어씀). groups 인자 = 평가·텔레메트리 절제 전용 override.
+      ext_shuffle_gen(torch.Generator) = 평가 전용 field-shuffle(같은 env 안 다른 수신자의 필드로 바꿔 정보만 끊음).
+      파트너 선택 반경 = net_mod.PARTNER_RANGE(None 이면 COMM_RANGE). relpos 거리 정규화는 항상 COMM_RANGE."""
     E, N = x.shape[0], x.shape[1]
     dev = x.device
     pos = env.pos                                              # [E,N,2]
     hdg = env.heading                                          # [E,N] deg
     COMM_R = cfg.COMM_RANGE
+    _pr = net_mod.PARTNER_RANGE                                # ★2026-09-25: 파트너 반경(ARPA@56 = 56). 보상 반경과 분리
+    PART_R = COMM_R if _pr is None else float(_pr)
     d = torch.cdist(pos, pos)                                  # [E,N,N]
     BIG = 1e9
     d = d + torch.eye(N, device=dev).unsqueeze(0) * BIG        # 자기 제외
-    d = torch.where(d <= COMM_R, d, torch.full_like(d, BIG))   # 범위 밖 제외
+    d = torch.where(d <= PART_R, d, torch.full_like(d, BIG))   # 범위 밖 제외
     if send_mask is not None:                                  # 송신 불가 선박은 파트너 후보에서 제외
         _sm = send_mask.view(1, 1, N) if send_mask.dim() == 1 else send_mask.view(E, 1, N)
         d = torch.where(_sm, d, torch.full_like(d, BIG))
@@ -307,6 +313,39 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     bearing = torch.atan2(dx, dz) - hdg[..., None] * vg.DEG
     prelpos = torch.stack([torch.sin(bearing), torch.cos(bearing),
                            (topd / COMM_R).clamp(max=1.0)], dim=-1) * pmask   # [E,N,Kc,3], padding=0
+    if policy.relpos_dim > 3:
+        # ★의도·역할 통신 확장필드 (2026-09-25). ⚠️미러 규칙: 이 prelpos 텐서 *하나*를 아래 집계와 반환(버퍼 저장)에 같이 쓴다.
+        #   update(evaluate_actions)는 저장값을 재사용하고 다시 계산하지 않으므로 rollout=update 가 구조적으로 성립한다.
+        ext = vg.comm_pair_features(env, topi, PART_R)                        # [E,N,Kc,20]
+        if ext_shuffle_gen is not None:
+            # field-shuffle(평가 전용): 같은 env 안의 *유효* (수신자,슬롯) 항목끼리만 값을 돌린다 → 유효 슬롯 값의 모음(분포)은
+            #   그대로, 짝(누가 누구에 대해)만 끊음. 무작위 순서로 늘어놓고 한 칸씩 당겨 받으므로 유효 항목이 2개 이상인 env 에서는
+            #   자기 값으로 돌아오는 슬롯이 없다(derangement). 유효 1개뿐인 env 는 자기 값 유지(끊을 상대가 없음).
+            #   ★2026-09-25 리뷰 M1/E1 수정: 예전엔 수신자 행을 통째로 섞어 패딩 슬롯의 반경 밖·자기 쌍 값이 유효 슬롯에 들어갔다.
+            _vm = (pmask.squeeze(-1) > 0).reshape(-1)                          # [E*N*Kc]
+            _F = _vm.nonzero(as_tuple=False).squeeze(-1)
+            _M = int(_F.numel())
+            if _M > 1:
+                _env = torch.div(_F, N * Kc, rounding_mode='floor')
+                _key = torch.rand(_M, generator=ext_shuffle_gen, dtype=torch.float64).to(dev)
+                _ord = torch.argsort(_env.to(torch.float64) * 2.0 + _key)      # env 별로 묶고 그 안에서 무작위 순서
+                _se = _env[_ord]
+                _pos = torch.arange(_M, device=dev)
+                _is_st = torch.ones(_M, dtype=torch.bool, device=dev); _is_st[1:] = _se[1:] != _se[:-1]
+                _is_en = torch.ones(_M, dtype=torch.bool, device=dev); _is_en[:-1] = _se[:-1] != _se[1:]
+                _st = torch.cummax(torch.where(_is_st, _pos, torch.zeros_like(_pos)), 0).values
+                _nxt = torch.where(_is_en, _st, _pos + 1)                      # 같은 env 안에서 다음 항목(끝이면 처음으로)
+                _flat = ext.reshape(E * N * Kc, -1)
+                _src = _flat.clone()
+                _flat[_F[_ord]] = _src[_F[_ord[_nxt]]]
+                ext = _flat.reshape(ext.shape)
+        _gs = net_mod.COMM_GROUPS if groups is None else tuple(groups)
+        gmask = torch.zeros(ext.shape[-1], device=dev, dtype=ext.dtype)
+        for _g in _gs:
+            _a, _b = cfg.COMM_EXT_GROUPS[_g]
+            gmask[_a:_b] = 1.0
+        ext = torch.where(pmask > 0, ext * gmask, torch.zeros_like(ext))      # 패딩은 곱이 아니라 where(NaN×0 방지)
+        prelpos = torch.cat([prelpos, ext], dim=-1)                            # [E,N,Kc,3+20]
     # others_msg: msg_actor(파트너) → msg_encoder(pos_ground) → masked mean (evaluate_actions 미러)
     prel_f = prelpos.reshape(E * N, Kc, -1); pmask_f = pmask.reshape(E * N, Kc, 1)
     # ★2026-08-31 중복 제거: 기존엔 파트너 obs 를 gather 한 뒤 msg_actor 를 E*N*Kc 개에 돌렸다.
@@ -361,6 +400,14 @@ COMM_TELE_COLS = ('msg_sd', 'msg_eff_dim', 'msg_axes90', 'msg_sat', 'msg_corr',
                   'part_n', 'part_med', 'part_out', 'enc_alive',
                   # ★2026-09-10 추가 (뒤에만 붙임): 구 _diag_msg_channel.py(→_archive, 현행 diag_ckpt.py) 의 지표 흡수 + 진단 게이트용
                   'msg_dc', 'threat_r2', 'om_erank', 'label_erank', 'sit_rate')
+# ★COMM_EXT 런 전용 열 (2026-09-25, 뒤에만 붙임 — EXT=0 런은 헤더·값 불변). 수신자가 확장필드 그룹을 읽나:
+#   alpha_dext = 확장필드만 파트너끼리 섞었을 때 α 총변동 / act_zero_<g> = 그 그룹만 0 으로 했을 때 조타 변화(자기 sd 대비)
+COMM_TELE_EXT_COLS = ('alpha_dext', 'act_zero_ext', 'act_zero_state', 'act_zero_role', 'act_zero_intent')
+
+
+def comm_tele_cols(policy):
+    """이 정책의 텔레메트리 열. EXT 정책이면 기존 열 뒤에 COMM_TELE_EXT_COLS 를 붙인다."""
+    return COMM_TELE_COLS + (COMM_TELE_EXT_COLS if getattr(policy, 'relpos_dim', 3) > 3 else ())
 
 
 def msg_stats(mf):
@@ -458,14 +505,17 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
             prel_f = prel.reshape(M, Kc, -1)
             pm_f = pmask.reshape(M, Kc, 1)
             b_ = torch.arange(E, device=x.device)[:, None, None]
-            # comm_gather 와 동일하게 파트너 인덱스를 다시 만든다(거리로 topk)
+            # comm_gather 와 동일하게 파트너 인덱스를 다시 만든다(거리로 topk). ★2026-09-25: 파트너 반경도 comm_gather 와 같게
+            _pr = net_mod.PARTNER_RANGE
             dmat = torch.cdist(env.pos, env.pos) + torch.eye(N, device=x.device).unsqueeze(0) * 1e9
-            dmat = torch.where(dmat <= cfg.COMM_RANGE, dmat, torch.full_like(dmat, 1e9))
+            dmat = torch.where(dmat <= (cfg.COMM_RANGE if _pr is None else float(_pr)), dmat, torch.full_like(dmat, 1e9))
             _, topi = torch.topk(dmat, Kc, dim=-1, largest=False)
             msg_f = (msg[b_, topi] * pmask).reshape(M, Kc, -1)
 
             def _alpha(rel, mp):
-                tok = torch.cat([rel, mp * net_mod._MSG_TOKEN_GAIN], dim=-1)
+                # aggregate_batch 와 같은 토큰 (COMM_LATENT 1.0 이면 곱하지 않음 = 기존과 비트동일)
+                _mt = mp * net_mod._MSG_TOKEN_GAIN if net_mod.COMM_LATENT == 1.0 else mp * net_mod._MSG_TOKEN_GAIN * net_mod.COMM_LATENT
+                tok = torch.cat([rel, _mt], dim=-1)
                 sc = (at.k_proj(tok) * at.q_proj(q_in)).sum(-1) / at.scale
                 sc = sc.masked_fill(pm_f.squeeze(-1) <= 0, -1e9)
                 return torch.softmax(sc, dim=1)
@@ -478,8 +528,13 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
                 p = a0.clamp(min=1e-12)
                 out['alpha_unif'] = float((-(p * p.log()).sum(1) / nval.clamp(min=2).log())[ok].mean())
                 out['alpha_dmsg'] = float(((_alpha(prel_f, msg_f[:, perm]) - a0).abs().sum(1) / 2)[ok].mean())
-                out['alpha_dpos'] = float(((_alpha(prel_f[:, perm], msg_f) - a0).abs().sum(1) / 2)[ok].mean())
+                # alpha_dpos 는 relpos 3열만 섞는다(정의 유지 — EXT=0 이면 prel_f 가 3열이라 기존과 같은 값)
+                _rp = torch.cat([prel_f[:, perm, :3], prel_f[:, :, 3:]], dim=-1)
+                out['alpha_dpos'] = float(((_alpha(_rp, msg_f) - a0).abs().sum(1) / 2)[ok].mean())
                 out['alpha_near'] = float((a0.argmax(1) == topd.reshape(M, Kc).argmin(1))[ok].float().mean())
+                if prel_f.shape[-1] > 3:
+                    _re = torch.cat([prel_f[:, :, :3], prel_f[:, perm, 3:]], dim=-1)
+                    out['alpha_dext'] = float(((_alpha(_re, msg_f) - a0).abs().sum(1) / 2)[ok].mean())
         for kk in ('alpha_unif', 'alpha_dmsg', 'alpha_dpos', 'alpha_near'):
             out.setdefault(kk, float('nan'))
 
@@ -496,6 +551,20 @@ def comm_telemetry(policy, env, x, goal, self_s, sit, K, gen, radar_range):
         out['act_zero'] = float(((a_z - a_base).reshape(M, -1).abs().mean(0) / asd)[0])
         out['act_shuf'] = float(((a_s - a_base).reshape(M, -1).abs().mean(0) / asd)[0])
         out['read_ratio'] = out['act_shuf'] / out['act_zero'] if out['act_zero'] > 1e-8 else float('nan')
+        # ★COMM_EXT (2026-09-25): 확장필드 그룹을 하나씩 끄면 조타가 얼마나 바뀌나 = 수신자가 그 그룹을 읽나
+        #   (act_zero 는 정의 유지 — latent 만 0, 확장필드는 그대로). 켜진 그룹이 아니면 nan.
+        if getattr(policy, 'relpos_dim', 3) > 3:
+            _on = tuple(net_mod.COMM_GROUPS)
+            for _col, _drop in (('act_zero_ext', _on), ('act_zero_state', ('state',)),
+                                ('act_zero_role', ('role',)), ('act_zero_intent', ('intent',))):
+                if not set(_drop) & set(_on):
+                    out[_col] = float('nan')
+                    continue
+                om_g, _ = comm_gather(policy, env, x, goal, self_s, sit, K,
+                                      groups=tuple(g for g in _on if g not in _drop))
+                _, a_g, _, _, _ = policy.ctr_actor._route(x, goal, self_s, om_g, sit)
+                out[_col] = float(((a_g - a_base).reshape(M, -1).abs().mean(0) / asd)[0])
+            out.setdefault('alpha_dext', float('nan'))
 
         # ── 인코더 건강 (dying ReLU): 배치 산포가 죽은 유닛 비율의 여집합 ──
         core = policy.msg_actor.cores()[0] if hasattr(policy.msg_actor, 'cores') else None
@@ -607,6 +676,21 @@ def main():
                 _d = ', '.join(f"{k} ckpt={_ck_sim[k]!r} 현재={_cur_sim.get(k, '<없음>')!r}" for k in _bad_sim)
                 raise SystemExit(f"[resume] 거부: 체크포인트 sim 상수 불일치 {_bad_sim} — 보상·게이트가 다른 "
                                  f"코드/env 로 재개 불가(스냅샷이 유일 근거): {_d}")
+        # ★2026-09-25 의도·역할 통신 설정 일치. 가중치에 흔적이 없는 값(필드·latent 배율·파트너 반경·aux 배율)은 스냅샷이
+        #   유일 근거라, 크래시 재개에서 env 하나를 빼먹으면 다른 팔이 조용히 이어 붙는다(예: intent 런이 latent 로).
+        #   분기점(trunk=OFF → 갈래)에서는 팔마다 필드가 다른 게 정상이므로 comm_ext(구조)만 본다. 우회 없음.
+        _cur_comm = {'comm_ext': int(cfg.COMM_EXT), 'comm_fields': cfg.COMM_FIELDS, 'comm_latent': float(cfg.COMM_LATENT),
+                     'partner_range': (None if cfg.PARTNER_RANGE is None else float(cfg.PARTNER_RANGE)),
+                     'aux_loss_scale': float(cfg.AUX_LOSS_SCALE)}
+        _legacy_comm = {'comm_ext': 0, 'comm_fields': 'latent', 'comm_latent': 1.0, 'partner_range': None, 'aux_loss_scale': 1.0}
+        _prev_comm = {k: _prev_snap.get(k, _legacy_comm[k]) for k in _cur_comm}
+        _is_branch_pt = args.comm_on_at > 0 and args.resume_at == args.comm_on_at
+        _keys_chk = ('comm_ext',) if _is_branch_pt else tuple(_cur_comm)
+        _bad_comm = [k for k in _keys_chk if _prev_comm[k] != _cur_comm[k]]
+        if _bad_comm:
+            raise SystemExit("[resume] 거부: 통신 설정 불일치 " + ', '.join(
+                f"{k} ckpt={_prev_comm[k]!r} 현재={_cur_comm[k]!r}" for k in _bad_comm)
+                + " - VESSEL_COMM_EXT/COMM_FIELDS/COMM_LATENT/PARTNER_RANGE/AUX_LOSS_SCALE 를 체크포인트와 맞출 것")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '
@@ -822,10 +906,10 @@ def main():
         _tele_mode = 'a' if (args.resume and os.path.exists(_tele_path)) else 'w'
         _tele_f = open(_tele_path, _tele_mode, encoding='utf-8')
         if _tele_mode == 'w':
-            _tele_f.write('step,' + ','.join(COMM_TELE_COLS) + '\n')
+            _tele_f.write('step,' + ','.join(comm_tele_cols(policy)) + '\n')
         _tele_gen = torch.Generator().manual_seed(args.seed + 100003)       # 학습 RNG 와 완전 분리
         print(f"[telemetry] 통신 텔레메트리 켬 → {os.path.basename(_tele_path)} "
-              f"({_tele_every} update 마다, {len(COMM_TELE_COLS)}개 열)", flush=True)
+              f"({_tele_every} update 마다, {len(comm_tele_cols(policy))}개 열)", flush=True)
 
     # ★2026-09-05 fix: 예외(KeyboardInterrupt·CUDA OOM·env 오류)로 죽으면 csv_f·aux_f 가 닫히지
     #   않아 마지막 flush 이후 최대 19 update 분 기록이 통째로 날아갔다(둘 다 20 update 마다만 flush).
@@ -841,12 +925,14 @@ def main():
             keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
             if cfg.CENTRAL_CRITIC:
                 keys += ['gf']
-            use_intent = comm_active and (cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
+            # ★2026-09-25 AUX_LOSS_SCALE=0 이면 ON 전용 보조손실을 통째로 끈다 → 라벨 버퍼·state_recon 계산도 생략
+            #   (evaluate_actions 는 own_future/own_threat 가 None 이면 state_recon 을 안 돈다). 1.0(기본)은 조건 불변 = 비트동일.
+            use_intent = comm_active and (cfg.INTENT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0) and cfg.AUX_LOSS_SCALE != 0.0
             if use_intent:
                 keys += ['pos', 'hdg']
             if comm_active:
                 keys += ['px', 'pg', 'ps', 'pmask', 'prel', 'psit']
-            use_threat = comm_active and (cfg.THREAT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0)
+            use_threat = comm_active and (cfg.THREAT_COEF > 0.0 or cfg.STATE_RECON_COEF > 0.0) and cfg.AUX_LOSS_SCALE != 0.0
             if use_threat:
                 keys += ['othr', 'othrm']
             buf = {k: [] for k in keys}
@@ -983,6 +1069,10 @@ def main():
                             for _g, _v in _sr_raw.items():
                                 _sr_log[_g] = _sr_log.get(_g, 0.0) + _v
                                 _sr_log['_n'] = _sr_log.get('_n', 0) + (1 if _g == 'goal' else 0)
+                        # ★2026-09-25 ON 전용 보조손실 배율(VESSEL_AUX_LOSS_SCALE). 0 = 목적함수를 OFF 와 대칭으로(H1a 전제).
+                        #   1.0(기본)이면 곱하지 않음 = 비트동일.
+                        if cfg.AUX_LOSS_SCALE != 1.0:
+                            aux = aux * cfg.AUX_LOSS_SCALE
                     else:
                         # ctr_actor/critic는 [batch, n_agent, dim] 기대 → n_agent=1로 unsqueeze
                         x_b = fx[mi].unsqueeze(1); g_b = fg[mi].unsqueeze(1); s_b = fsf[mi].unsqueeze(1)
@@ -1124,7 +1214,7 @@ def main():
                     _tv = comm_telemetry(policy, env, fs.get(), goal, self_s, sit,
                                          args.max_partners, _tele_gen, float(vg.RADAR_RANGE))
                     _tele_f.write(f"{total_decisions}," +
-                                  ",".join(f"{_tv.get(c, float('nan')):.6g}" for c in COMM_TELE_COLS) + "\n")
+                                  ",".join(f"{_tv.get(c, float('nan')):.6g}" for c in comm_tele_cols(policy)) + "\n")
                     if update_i % 20 == 0:
                         _tele_f.flush()
                 except Exception as _e:

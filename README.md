@@ -250,6 +250,28 @@ obs[368]의 상황 인덱스로 코어 전체(RadarEncoder 포함)를 hard-routi
 
 학습된 메시지 대신 이웃의 실제 목적지를 채널에 직접 주입하는 통제군. 통신 채널이 이상적일 때의 성능 상한을 측정한다. oracle ≈ OFF이면 해당 과제에 통신이 불필요하다는 결론의 근거가 된다.
 
+### 7.5 의도·역할 통신 (`VESSEL_COMM_EXT=1`, 2026-09-25, 브랜치 feat/comm-intent)
+
+저자 의도: 서로 좌표를 알고, 상대 입장에서 "내가 타를 어떻게·속도를 어떻게 줄지·COLREGs 역할(나는 stand-on 너는 give-way)"을 알면 상대가 보완 행동을 한다. attention 토큰의 상대위치 3D 뒤에 파트너별 확장필드 20D를 붙인다(`vessel_gym.comm_pair_features`, 레이아웃 v1). 스펙·사전등록: `docs/superpowers/specs/2026-09-25-comm-intent-design.md`.
+
+| 그룹 | 차원 | 내용 |
+|---|---|---|
+| state | 8 | 상대 침로 sin·cos(ψj−ψi) · 대지속력/1.8 · ROT/MAX_YAW_RATE · 상대속도(우현·전방)/3.6 · dcpa_risk · tcpa_risk |
+| role | 10 | 내 역할(i→j) one-hot 5 + 상대가 선언한 역할(j→i) one-hot 5. `_pairwise` situation cascade 를 통신 반경에서 상대별로 판정, 충돌위험(dcpa<24 m) 쌍에만 부여 |
+| intent | 2 | 상대 직전 명령 타각/30 · 명령 속력/1.8 (결정 t 에서 읽으면 t−1 명령 = 슬루 목표. imo 는 타속 3°/s 라 레이더로는 기동이 3–18 s 늦게 보임) |
+
+```mermaid
+flowchart LR
+    Q["자기 상태⊕목표 6D<br/>query"] --> AT["단일 헤드 attention<br/>k/v = MLP 64"]
+    K1["이웃별 토큰 29D<br/>상대위치 3 ⊕ state 8 ⊕ role 10 ⊕ intent 2 ⊕ 메시지 6"] --> AT
+    AT --> CTX["가중합 context 6D"]
+```
+
+- k/v 를 MLP(토큰→64→·)로 바꾼 이유: "상대가 give-way 이고 우현으로 틀고 있다 → 나는 유지" 같은 역할×의도 상호작용을 파트너별로 집계 전에 만들어야 함. v 마지막 층은 ×0.1 소진폭(기존 규약)
+- 필드는 env 상태로 계산해 relpos 로 버퍼에 저장 → update 가 재사용(구조적 미러). Unity 경로는 미지원(명시 에러)
+- 팔(같은 trunk): OFF / ARPA@56(state 필드를 레이더 반경 56 m 파트너에만, latent 0 = 통신 없는 최선) / ON-latent / ON-state / ON-intent. 통신 팔은 보조손실 0(`VESSEL_AUX_LOSS_SCALE=0`)
+- 키 변화: `attn.{k,v}_proj.{0,2}.*`, msg_encoder 입력 9→29. 기본(EXT 0)은 비트동일
+
 ---
 
 ## 8. 학습

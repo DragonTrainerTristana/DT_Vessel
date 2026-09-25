@@ -53,4 +53,9 @@ common_env() {
   #   preflight 드리프트 검사(names) 대상이 아니다 — 의도된 override 이므로. 학습기·check_branch 가 갈래 간 일치를 강제한다.
   export VESSEL_DYN_PROFILE="${VESSEL_DYN_PROFILE:-agile}"
   export VESSEL_OBSTACLES="${VESSEL_OBSTACLES:-grid3x3}"
+  # ★2026-09-25 의도·역할 통신 구조(COMM_EXT) — 배치 단위 실험 축(바깥 값 보존, 기본 0 = 비트동일).
+  #   1 이면 attention 토큰에 파트너 상태·역할·명령 20차원이 붙고 k/v 가 MLP → 새 trunk 필요(run_repro 가 접두어 x_ 로 분리).
+  #   팔별 내용(COMM_FIELDS·COMM_LATENT·PARTNER_RANGE·AUX_LOSS_SCALE)은 run_repro.sh comm_variant_env 가 런마다 export.
+  #   스펙: docs/superpowers/specs/2026-09-25-comm-intent-design.md
+  export VESSEL_COMM_EXT="${VESSEL_COMM_EXT:-0}"
 }
