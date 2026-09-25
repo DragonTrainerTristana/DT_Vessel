@@ -55,6 +55,8 @@
 #         VESSEL_TRAIN_ARMS="off arpa6 onl6 ons6 oni6" bash run_repro.sh train
 #   on6a0  (EXT 0) ON dim6 보조손실 0 — 계획서 G6 2단계(aux 비대칭 절제). 1차 trunk 를 새 $CK 에 복사해 "off on6a0" 로 돌릴 것
 #   bash run_repro.sh ablate  EXT 통신 체크포인트마다 절제 평가(msgzero·latent0·그룹별 0·field-shuffle)
+#   bash run_repro.sh all    ★2026-09-26 smoke → train → eval (→ EXT 면 traj → ablate) 를 한 명령으로. 실패 단계에서 멈춤
+#   preflight 는 검사 7종을 동시에 돌리고 코드·env 지문이 같으면 캐시로 건너뜀(VESSEL_FORCE_PREFLIGHT=1 로 강제)
 #   bash run_repro.sh traj   F5 '같은 조우 ON vs OFF' 궤적 덤프: 팔마다 같은 시드·burn-in 0 으로 reset 직후 장면부터
 #                            1500 결정(16 env) 기록 → traj_<이름>_s<시드>.pt. 첫 재스폰 전까지 팔 간 초기 장면이 같다
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +115,7 @@ echo
 # ★2026-09-24: common_env() 정본은 common_env.sh 한 곳이다 — smoke_mac.sh 도 같은 파일을 source 한다
 #   (예전엔 사본 두 벌이라 export 하나 고치려면 두 번 고쳐야 했음). preflight 가 그 값과 config 기본값을 대조한다.
 source "$HERE/common_env.sh"
+source "$HERE/preflight_checks.sh"   # ★2026-09-26 검사 동시 실행 + 코드·env 지문 캐시
 
 # ── 사전 검증: 미러가 깨졌으면 돌리지 말 것 ─────────────────────────────────
 preflight() {
@@ -189,40 +192,9 @@ PYCHK
     echo "  → override 축이면 VESSEL_DYN_PROFILE·VESSEL_OBSTACLES·VESSEL_RADAR_RANGE 값(오타·단위)을 볼 것"
     exit 1
   fi
-  echo "[preflight] PPO·통신 미러 검증"
-  common_env
-  "$PY" -u "$HERE/verify/_verify_ppo_mirror.py"  > "$OUT/_verify_ppo.txt"  2>&1 || { echo "  PPO 미러 FAIL — $OUT/_verify_ppo.txt 확인"; exit 1; }
-  "$PY" -u "$HERE/verify/_verify_comm_mirror.py" > "$OUT/_verify_comm.txt" 2>&1 || { echo "  통신 미러 FAIL — $OUT/_verify_comm.txt 확인"; exit 1; }
-  grep -q "ALL PASS" "$OUT/_verify_ppo.txt"  || { echo "  PPO 미러가 ALL PASS 가 아님"; exit 1; }
-  grep -q "ALL PASS" "$OUT/_verify_comm.txt" || { echo "  통신 미러가 ALL PASS 가 아님"; exit 1; }
-  echo "  둘 다 ALL PASS"
-  # ★2026-09-10: 기본값 비트동일 골든 + vessel_gym 충실도. VESSEL_SKIP_GOLDEN=1 로 건너뜀(수 분 걸림).
-  if [ "${VESSEL_SKIP_GOLDEN:-0}" != "1" ]; then
-    echo "[preflight] 골든 비트동일 검사"
-    ( env -u VESSEL_STATE_RECON_COEF -u VESSEL_CENTRAL_CRITIC -u VESSEL_USE_ATTENTION \
-        "$PY" -u "$HERE/verify/test_golden.py" --check ) > "$OUT/_golden.txt" 2>&1 \
-      || { echo "  골든 FAIL — $OUT/_golden.txt 확인 (코드가 기본값 결과를 바꿨음)"; exit 1; }
-    grep -q "ALL PASS" "$OUT/_golden.txt" || { echo "  골든이 ALL PASS 가 아님"; exit 1; }
-    echo "  골든 ALL PASS"
-    "$PY" -u "$HERE/verify/test_vessel_gym_fidelity.py" > "$OUT/_fidelity.txt" 2>&1 \
-      || { echo "  vessel_gym 충실도 FAIL — $OUT/_fidelity.txt 확인"; exit 1; }
-    echo "  충실도 PASS"
-    # ★2026-09-21: 동역학 프로필·시나리오 게이트. 지금 env(agile/grid3x3 든 imo/none 이든) 그대로 돌린다.
-    "$PY" -u "$HERE/verify/test_dyn_profile.py" > "$OUT/_dyn_profile.txt" 2>&1 \
-      || { echo "  동역학 프로필 FAIL — $OUT/_dyn_profile.txt 확인"; exit 1; }
-    grep -q "ALL PASS" "$OUT/_dyn_profile.txt" || { echo "  동역학 프로필이 ALL PASS 가 아님"; exit 1; }
-    echo "  동역학 프로필 ALL PASS"
-    # ★2026-09-23: 스냅샷 sim 상수(보상 계수·게이트·COLREGS_MODE·에피소드 길이) 기록·대조·복원 게이트.
-    "$PY" -u "$HERE/verify/test_sim_snapshot.py" > "$OUT/_sim_snapshot.txt" 2>&1 \
-      || { echo "  sim 스냅샷 FAIL — $OUT/_sim_snapshot.txt 확인"; exit 1; }
-    grep -q "ALL PASS" "$OUT/_sim_snapshot.txt" || { echo "  sim 스냅샷이 ALL PASS 가 아님"; exit 1; }
-    echo "  sim 스냅샷 ALL PASS"
-    # ★2026-09-25: 의도·역할 통신(COMM_EXT) — 필드 정의(역할 cascade = _pairwise)·좌표 규약·미러·체크포인트 복원.
-    "$PY" -u "$HERE/verify/test_comm_ext.py" > "$OUT/_comm_ext.txt" 2>&1 \
-      || { echo "  COMM_EXT FAIL — $OUT/_comm_ext.txt 확인"; exit 1; }
-    grep -q "ALL PASS" "$OUT/_comm_ext.txt" || { echo "  COMM_EXT 가 ALL PASS 가 아님"; exit 1; }
-    echo "  COMM_EXT ALL PASS"
-  fi
+  # ★2026-09-26: 검사 7종(PPO·통신 미러, 골든, 충실도, 동역학, sim 스냅샷, COMM_EXT)을 *동시에* 돌리고, 같은 코드·env 면
+  #   캐시로 건너뛴다(preflight_checks.sh). 예전의 '커밋당 1회 + 이후 VESSEL_SKIP_GOLDEN=1' 을 자동으로 — 코드가 바뀌면 다시 돈다.
+  vessel_preflight_cached 1 preflight || { echo "preflight 실패 — 위 ★FAIL 파일 확인"; exit 1; }
   echo
 }
 
@@ -456,7 +428,8 @@ case "$MODE" in
     #   학습 중 통신 텔레메트리: VESSEL_COMM_TELEMETRY=1 VESSEL_COMM_TELEMETRY_EVERY=5 (ON 갈래만 *_comm.csv).
     preflight
     : > "$OUT/_status_train.txt"
-    branch_batch "${VESSEL_TRAIN_ARMS:-off on6 on12}" "$BRANCH_AT" "$TOTAL_STEPS" "$RUN_PRE"
+    if [ "${VESSEL_COMM_EXT:-0}" = "1" ]; then _def_arms="off arpa6 onl6 ons6 oni6"; else _def_arms="off on6 on12"; fi
+    branch_batch "${VESSEL_TRAIN_ARMS:-$_def_arms}" "$BRANCH_AT" "$TOTAL_STEPS" "$RUN_PRE"
     echo "학습 완료"
     cat "$OUT/_status_train.txt"
     ;;
@@ -544,6 +517,23 @@ case "$MODE" in
     branch_batch "rand" "$BRANCH_AT" "$TOTAL_STEPS"
     echo "난수 대조군 학습 완료"
     cat "$OUT/_status_train.txt"
+    ;;
+
+  all)
+    # ★2026-09-26 한 번에: smoke → train → eval → (EXT 면) traj·ablate. 단계가 실패하면 거기서 멈춤.
+    #   preflight 는 첫 단계에서 한 번 돌고(동시 실행), 나머지 단계는 지문 캐시로 건너뛴다(코드·env 가 그대로면).
+    #   단계별 시작·끝 시각은 $OUT/_all_timeline.txt. 중간에 끊겼으면 남은 단계만 모드 이름으로 다시 부르면 됨
+    #   (trunk·갈래 체크포인트가 있으면 재사용).
+    _TL="$OUT/_all_timeline.txt"; : > "$_TL"
+    _steps="smoke train eval"
+    [ "${VESSEL_COMM_EXT:-0}" = "1" ] && _steps="$_steps traj ablate"
+    echo "[all] 단계: $_steps  (기록: $_TL)"
+    for _st in $_steps; do
+      echo "$(date '+%F %T') 시작 $_st" | tee -a "$_TL"
+      bash "$0" "$_st" || { echo "$(date '+%F %T') ★실패 $_st — 여기서 멈춤. 고친 뒤 bash $0 $_st 부터" | tee -a "$_TL"; exit 1; }
+      echo "$(date '+%F %T') 끝 $_st" | tee -a "$_TL"
+    done
+    echo "[all] 전 단계 완료 — $_TL"
     ;;
 
   ablate)
@@ -647,7 +637,7 @@ case "$MODE" in
     ;;
 
   *)
-    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | ablate | traj | diag)"
+    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | ablate | traj | diag | all)"
     exit 2
     ;;
 esac

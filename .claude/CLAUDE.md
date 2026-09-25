@@ -171,7 +171,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 - **우선순위: attention > pos_ground > sum·mean·scale**, 끝에 `msg_gain`. 세 곳 모두 같은 순서·같은 함수형.
 - MoE 라우팅도 미러 대상: 파트너 메시지는 저장된 `partner_situations`로 재생성(:1302), 자기 행동은 저장된 `situation`으로 재라우팅.
-- **검증기 둘 다 ALL PASS 필수** — `verify/_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `verify/_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`(:91-112, ALL PASS grep :96-99)가 grep으로 강제.
+- **검증기 둘 다 ALL PASS 필수** — `verify/_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `verify/_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`가 강제 — ★2026-09-26 `Python/preflight_checks.sh`: 검사 7종(PPO·통신 미러, 골든 `--jobs 5`, 충실도, 동역학, sim 스냅샷, COMM_EXT) 동시 실행 + 코드·env 지문 캐시(같으면 건너뜀, 코드 바뀌면 재검사, `VESSEL_FORCE_PREFLIGHT=1` 강제). smoke_mac 도 같은 구현(PPO 제외).
 - **"한 곳만 고치면 4번째 사고"** — 과거 3건:
 
 | # | 일자 | 사고 | 기록 |

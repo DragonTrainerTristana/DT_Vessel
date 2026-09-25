@@ -155,14 +155,43 @@ def diff(gold, cur):
     return out
 
 
-def check(names):
+def _run_all(names, jobs):
+    """케이스들을 돌려 {name: rec 또는 Exception}. ★2026-09-26: jobs>1 이면 동시에 돈다.
+    케이스마다 이미 별도 subprocess·OMP/MKL 1스레드·CPU 전용이라 동시에 돌려도 결과 바이트가 같다(케이스 간 공유 상태 없음)."""
+    if jobs <= 1 or len(names) <= 1:
+        out = {}
+        for n in names:
+            try:
+                out[n] = run_case(n, CASES[n])
+            except Exception as e:  # noqa: BLE001
+                out[n] = e
+        return out
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(jobs, len(names))) as ex:
+        futs = {n: ex.submit(run_case, n, CASES[n]) for n in names}
+    out = {}
+    for n, f in futs.items():
+        try:
+            out[n] = f.result()
+        except Exception as e:  # noqa: BLE001
+            out[n] = e
+    return out
+
+
+def check(names, jobs=1):
     ok_all = True
+    todo = [n for n in names if os.path.exists(golden_path(n, existing=True))]
+    recs = _run_all(todo, jobs)
     for name in names:
         p = golden_path(name, existing=True)
         if not os.path.exists(p):
             print(f'  ★FAIL  {name:24s} 골든 없음 → --regen 먼저'); ok_all = False; continue
         gold = json.load(open(p, encoding='utf-8'))
-        cur = run_case(name, CASES[name])
+        cur = recs[name]
+        if isinstance(cur, Exception):
+            ok_all = False
+            print(f'  ★FAIL  {name:24s} 실행 실패: {cur}')
+            continue
         d = diff(gold, cur)
         n_sd = len(cur['state_dict'])
         if d:
@@ -237,6 +266,8 @@ if __name__ == '__main__':
     ap.add_argument('--regen', action='store_true', help='골든 생성 (코드 변경 전에만)')
     ap.add_argument('--check', action='store_true', help='현재 코드 vs 골든 비트동일 검사')
     ap.add_argument('--case', default=None, choices=list(CASES), help='한 케이스만')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='케이스 동시 실행 수 (★2026-09-26, 결과 불변: 케이스마다 1스레드 별도 프로세스). preflight 는 5')
     a = ap.parse_args()
     names = [a.case] if a.case else list(CASES)
     print('=' * 78)
@@ -247,7 +278,7 @@ if __name__ == '__main__':
         sys.exit(0)
     drift = check_defaults_equal_yugioh()
     print(f"  {'PASS' if not drift else '★FAIL'}   config 기본값 == YUGIOH" + (f"  차이: {drift}" if drift else ''))
-    ok = check(names) and not drift
+    ok = check(names, jobs=a.jobs) and not drift
     print('=' * 78)
     print(f"VERDICT: {'ALL PASS' if ok else 'FAIL'}")
     sys.exit(0 if ok else 1)

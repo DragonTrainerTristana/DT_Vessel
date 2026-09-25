@@ -157,17 +157,13 @@ cd Python
 export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none VESSEL_CROSSING=0 VESSEL_COMM_EXT=1
 export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/comm_intent VESSEL_OUT_DIR=$PWD/_repro_out_intent
 export VESSEL_SEEDS="43 44 45"            # 2026-09-26 저자 확정: 3시드
-# 0) preflight(PPO 미러 포함 — Windows 에서만) + EXT 스모크: trunk 1 update → 5팔 1 update → 분기 검사
-bash run_repro.sh smoke
-# 1) 본 배치 (trunk OFF 9,043,968 → 5팔 16.06M). 통신 텔레메트리로 act_zero_state/role/intent 도 기록
-VESSEL_TRAIN_ARMS="off arpa6 onl6 ons6 oni6" VESSEL_COMM_TELEMETRY=1 VESSEL_SKIP_GOLDEN=1 bash run_repro.sh train
-# 2) 평가(분기 검사 자동)
-VESSEL_SKIP_GOLDEN=1 bash run_repro.sh eval
-#    F5 궤적: 팔마다 같은 시드·burn-in 0 → reset 장면이 같음(첫 재스폰 전 조우만 짝지을 것)
-VESSEL_SKIP_GOLDEN=1 bash run_repro.sh traj
-# 3) 절제: msgzero / latent0 / state0·role0·intent0 / field-shuffle
-VESSEL_SKIP_GOLDEN=1 bash run_repro.sh ablate
+# ★2026-09-26 한 명령: smoke → train(5팔) → eval → traj(F5) → ablate. 실패 단계에서 멈춤, 시각은 $VESSEL_OUT_DIR/_all_timeline.txt
+#   preflight 는 첫 단계에서 검사 7종을 동시에 돌리고(PPO 미러 포함), 이후 단계는 코드·env 지문 캐시로 건너뜀
+VESSEL_COMM_TELEMETRY=1 bash run_repro.sh all
+# 중간에 끊기면 남은 단계만: bash run_repro.sh train|eval|traj|ablate (trunk·갈래 체크포인트 재사용, preflight 캐시 적중)
 ```
+- 팔 기본값: `VESSEL_COMM_EXT=1` 이면 train 이 `off arpa6 onl6 ons6 oni6` 를 돈다(VESSEL_TRAIN_ARMS 로 바꿈)
+- 예전의 `VESSEL_SKIP_GOLDEN=1` 수동 skip 은 필요 없음 — 같은 코드·env 면 자동 skip, 코드가 바뀌면 자동 재검사. 강제 재검사 `VESSEL_FORCE_PREFLIGHT=1`
 
 병행 — 계획서 G6 2단계(보조손실 비대칭 절제). EXT 코드 불필요. 1차 파일럿 trunk 를 **새 폴더에 복사**해서 쓴다
 (원 폴더에서 돌리면 1차 off 갈래를 덮어씀. 복사본 trunk 의 SHA 는 같으므로 분기 검사 통과).
@@ -183,7 +179,7 @@ export VESSEL_SEEDS="43 44 45"            # 1차 파일럿 시드 (복사하는 
 export VESSEL_REQUIRE_TRUNK=1             # trunk 가 없으면 새로 학습하지 않고 중단
 mkdir -p $VESSEL_CKPT_DIR $VESSEL_OUT_DIR
 cp $P1/trunk_d6_s4{3,4,5}.pt $VESSEL_CKPT_DIR/ && cp $P1OUT/trunk_d6_s4{3,4,5}.csv $VESSEL_OUT_DIR/
-VESSEL_TRAIN_ARMS="off on6a0" VESSEL_SKIP_GOLDEN=1 bash run_repro.sh train && VESSEL_SKIP_GOLDEN=1 bash run_repro.sh eval
+VESSEL_TRAIN_ARMS="off on6a0" bash run_repro.sh train && bash run_repro.sh eval
 # 판정(결과 전 해석표): on6a0 ≥ off → aux 비대칭이 H1a 해로움 원인 / on6a0 ≈ 1차 RANDOM → aux 는 일부만 / 변화 없음 → 원인 아님
 ```
 
