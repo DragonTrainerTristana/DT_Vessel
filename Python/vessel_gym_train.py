@@ -51,9 +51,11 @@ class FrameStack:
     def push(self, radar, done):
         self.buf = torch.roll(self.buf, shifts=-1, dims=2)
         self.buf[:, :, -1, :] = radar
-        if done.any():                             # done 에이전트는 3프레임 리셋
-            d = done.unsqueeze(-1).unsqueeze(-1)
-            self.buf = torch.where(d, radar.unsqueeze(2).expand_as(self.buf), self.buf)
+        # ★2026-09-26 `if done.any():` 가드 제거 — 매 스텝 GPU→CPU sync 1회였다. where 는 산술 없는 원소 선택이라
+        #   done 이 전부 False 면 buf 값 그대로, 하나라도 True 면 예전과 같은 코드가 돈다 = 비트동일.
+        #   (버퍼 객체는 roll 이 새로 만들고 push 뒤엔 안 건드리므로 rollout 버퍼의 x 뷰도 무관)
+        d = done.unsqueeze(-1).unsqueeze(-1)       # done 에이전트는 3프레임 리셋
+        self.buf = torch.where(d, radar.unsqueeze(2).expand_as(self.buf), self.buf)
     def get(self):
         E, N = self.buf.shape[0], self.buf.shape[1]
         return self.buf.reshape(E, N, FRAMES * STATE)
@@ -759,6 +761,11 @@ def main():
     _trunc_boot = cfg.TIMEOUT_BOOTSTRAP
     _grad_tele = cfg.GRAD_TELEMETRY   # 모듈별 grad norm·clip 계수 (진단 전용)
     _gacc = {}
+    # ★2026-09-26 구간 시간 측정 (VESSEL_TIMING=1, 기본 0 = stdout 한 글자도 안 바뀜). rollout / update 벽시계를 따로 재서
+    #   5-update 로그 줄 끝에 붙인다. cuda.synchronize 는 계산·RNG 를 건드리지 않는다(측정 전용). 기본 0 이면 호출 자체가 없음.
+    _timing = cfg.TIMING
+    _tsync = (lambda: torch.cuda.synchronize()) if (_timing and device == 'cuda') else (lambda: None)
+    _t_roll = _t_upd = 0.0
     _clip_per_module = cfg.CLIP_PER_MODULE
     if _clip_per_module:
         print('[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 '
@@ -880,11 +887,60 @@ def main():
                 ema_r = float(_rows[-1].split(',')[2])
         except (OSError, ValueError, IndexError):
             ema_r = None
-    # 붕괴 검출기 상태 (위 [blind] 참조)
-    _blind_run = 0
+    # 붕괴 검출기 상태 (아래 [blind] 참조)
     _BLIND_WARN = cfg.BLIND_WARN_AFTER
+    # ★2026-09-26 검출기 상태를 GPU 텐서로. 예전엔 미니배치마다 ctr_actor 70개 + 인코더 5×10개 텐서를 float() 로 하나씩
+    #   호스트로 내렸다(120 sync/미니배치 = 30,720 sync/update — update 시간의 절반 이상, explore_train_loop.md 실측).
+    #   이제 판정(연속 0 카운터)은 GPU 에서 매 미니배치 그대로 하고, 호스트 동기화는 update 당 1회(.tolist())만.
+    #   MOE_SHARED=1 이면 전문가 5벌이 RadarEncoder *한 객체*를 공유해 같은 10개 텐서를 5번 세던 것도 id() 로 뗀다
+    #   (합이 0 인지는 중복·덧셈 순서와 무관 — 음수 아닌 항의 합이라 상쇄가 없음). 정책은 여기서 확정된 상태
+    #   (load_state_dict 는 in-place 복사라 파라미터 객체 동일성 유지).
+    _blind_dev = next(policy.parameters()).device
+    _enc_params = list({id(p): p for _c in policy.ctr_actor.cores() for p in _c.radar_encoder.parameters()}.values())
+    _ctr_params = list(policy.ctr_actor.parameters())          # nn.Module.parameters() 는 이미 중복 제거
+    _blind_run_t = torch.zeros((), dtype=torch.int64, device=_blind_dev)   # 연속 0 미니배치 수 (구 _blind_run, update 경계 넘어 이어짐)
+    _blind_hit_t = torch.zeros((), dtype=torch.bool, device=_blind_dev)    # 이번 update 안에 임계 도달했나
+    _blind_rg_t = torch.zeros((), dtype=torch.float64, device=_blind_dev)  # 도달한 미니배치의 ctr_actor 전체 grad (경고문용)
+    _i64_zero = torch.zeros((), dtype=torch.int64, device=_blind_dev)
+    _foreach_l1 = getattr(torch, '_foreach_norm', None)          # 비공개 API — 없으면 텐서별 abs().sum() (sync 는 여전히 0)
+
+    def _l1_sum(gs, dtype):
+        """grad 텐서 목록의 L1 합(0-d, dtype). 텐서별 L1 은 float32 로 재고 dtype 으로 올린 뒤 합친다."""
+        if not gs:
+            return torch.zeros((), dtype=dtype, device=_blind_dev)
+        _n = _foreach_l1(gs, 1) if _foreach_l1 is not None else [g.abs().sum() for g in gs]
+        return torch.stack(_n).to(dtype).sum()
+
+    # ★2026-09-26 모듈별 clip 그룹을 루프 밖에서 한 번만 만든다(예전엔 미니배치마다 id() 집합을 다시 만들었다).
+    #   순서·구성원 동일(공유 인코더 그룹 먼저 — 2026-09-10 메모 — 그다음 msg/ctr/critic/나머지) → clip 결과 비트동일.
+    #   clip_grad_norm_ 은 호출마다 grad=None 파라미터를 걸러내므로 grad 유무는 예전과 같이 호출 시점에 반영된다.
+    _clip_groups = []
+    if _clip_per_module:
+        _seen = set()
+        if getattr(policy, 'shared_encoder', '0') != '0':
+            # ★2026-09-10 공유 인코더는 세 망에 걸쳐 있으므로 자기 그룹으로 먼저 뗀다
+            #   (안 그러면 순서상 msg_actor 그룹이 가져가 그 그룹 norm 을 인코더가 지배함)
+            _enc = [p for _c in policy.ctr_actor.cores() for p in _c.radar_encoder.parameters()
+                    if id(p) not in _seen]
+            _seen.update(id(p) for p in _enc)
+            _clip_groups.append(_enc)
+        for _m in (policy.msg_actor, policy.ctr_actor, policy.critic):
+            _ps = [p for p in _m.parameters() if id(p) not in _seen]
+            _seen.update(id(p) for p in _ps)
+            _clip_groups.append(_ps)
+        _rest = [p for p in policy.parameters() if id(p) not in _seen]
+        if _rest:
+            _clip_groups.append(_rest)
+        del _seen
     # ★상태복원 그룹별 손실 감시 CSV (2026-09-04): gradient 쏠림을 학습 '도중에' 본다
-    _sr_log = {}
+    #   2026-09-26: 그룹별 원손실을 python float dict 대신 float64 [5] 텐서로 *같은 순서로* 누적한다 — networks.StateReconDecoder
+    #   .loss 가 raw[g] 를 float() 대신 0-d 텐서로 주면(미니배치당 sync 5회 제거) 여기서 한 번(update 당 .tolist() 1회)만 내린다.
+    #   float() 는 float32→float64 정확 변환이고 .to(float64) 도 같다. 예전엔 python float64 로 0.0+v1+v2+… 순차 덧셈이었고
+    #   지금은 device 에서 같은 순차 float64 덧셈(IEEE-754 double add 는 CPU/GPU 동일) → aux CSV 바이트 동일.
+    #   raw 값이 python float 여도 as_tensor(dtype=float64) 가 받으므로 두 버전의 networks.py 와 다 맞는다.
+    _SR_GROUPS = ('goal', 'self', 'sit', 'threat', 'future')   # aux CSV 열 순서 = StateReconDecoder.GROUPS
+    _sr_acc = None
+    _sr_n = 0
     aux_f = None
     if cfg.STATE_RECON_COEF > 0.0 and csv_path:
         _aux_path = os.path.splitext(csv_path)[0] + '_aux.csv'
@@ -936,6 +992,7 @@ def main():
             if use_threat:
                 keys += ['othr', 'othrm']
             buf = {k: [] for k in keys}
+            _tsync(); _t0 = time.perf_counter()
             for _ in range(T):
                 x = fs.get()
                 with torch.no_grad():
@@ -961,8 +1018,9 @@ def main():
                 if use_intent:
                     buf['pos'].append(env.pos.clone()); buf['hdg'].append(env.heading.clone())
                 obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
-                for oc in range(5):
-                    outcome_counts[oc] += (outcome == oc).sum()
+                # ★2026-09-26 5회 루프(커널 ~15개) → bincount 1회. outcome 은 long 0..4(vessel_gym OUT_*)라 bincount 가 정확히
+                #   (outcome==oc).sum() 과 같은 정수. float32 로 옮겨 더해도 5-update 창 합이 2^24 미만이라 예전처럼 정확한 정수.
+                outcome_counts += torch.bincount(outcome.reshape(-1), minlength=5)[:5].to(outcome_counts.dtype)
                 buf['x'].append(x); buf['goal'].append(goal); buf['self'].append(self_s)
                 # ★act = pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
                 buf['sit'].append(sit); buf['om'].append(om); buf['act'].append(action_raw)
@@ -1000,9 +1058,11 @@ def main():
                 last_v = vnorm.denormalize(policy.critic(
                     fs.get(), goal, self_s, om, sit,
                     global_feat=build_global_feat(env) if cfg.CENTRAL_CRITIC else None).squeeze(-1))
+            _tsync(); _t_roll += time.perf_counter() - _t0; _t1 = time.perf_counter()
 
             # stack [T,E,N,...]
             S = {k: torch.stack(v) for k, v in buf.items()}
+            del buf     # ★2026-09-26 stack 뒤엔 안 씀 — update 내내 잡고 있던 rollout 리스트(~1.5 GB, E=128 ON)를 놓는다. 메모리만.
             returns, adv = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v,
                                        cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
@@ -1066,9 +1126,12 @@ def main():
                         if cfg.STATE_RECON_COEF > 0.0:
                             _sr_l, _sr_raw = policy._last_state_recon
                             aux = aux + cfg.STATE_RECON_COEF * _sr_l
-                            for _g, _v in _sr_raw.items():
-                                _sr_log[_g] = _sr_log.get(_g, 0.0) + _v
-                                _sr_log['_n'] = _sr_log.get('_n', 0) + (1 if _g == 'goal' else 0)
+                            if _sr_raw:   # {} = state_recon 을 안 돈 미니배치(라벨 없음) → 예전처럼 집계 제외
+                                # float 또는 0-d 텐서 둘 다 float64 로 정확 변환. 순차 덧셈(update 당 1회 .tolist(), 위 _sr_acc 메모)
+                                _v = torch.stack([torch.as_tensor(_sr_raw.get(_g, 0.0), dtype=torch.float64, device=_blind_dev)
+                                                  for _g in _SR_GROUPS])
+                                _sr_acc = _v if _sr_acc is None else _sr_acc + _v
+                                _sr_n += 1
                         # ★2026-09-25 ON 전용 보조손실 배율(VESSEL_AUX_LOSS_SCALE). 0 = 목적함수를 OFF 와 대칭으로(H1a 전제).
                         #   1.0(기본)이면 곱하지 않음 = 비트동일.
                         if cfg.AUX_LOSS_SCALE != 1.0:
@@ -1099,22 +1162,20 @@ def main():
                     #   장애물을 알려주는 채널은 레이더가 유일하므로 장애물 충돌로 터진다(oColl 57~74%).
                     #   같은 지문을 3건 찾음(m2_S_off_s45 / m2_F1base_s42 / tb_s46) = 재현되는 실패 모드.
                     #   조용히 16M 을 태우고 나중에 '학습 실패 시드'로 버려지던 것을 *학습 중에* 잡는다.
-                    _rg = 0.0
-                    for _p in policy.ctr_actor.parameters():
-                        if _p.grad is not None:
-                            _rg += float(_p.grad.detach().abs().sum())
-                    _radar_g = 0.0
-                    for _c in policy.ctr_actor.cores():
-                        for _p in _c.radar_encoder.parameters():
-                            if _p.grad is not None:
-                                _radar_g += float(_p.grad.detach().abs().sum())
-                    _blind_now = (_radar_g == 0.0)
-                    _blind_run = _blind_run + 1 if _blind_now else 0
-                    if _blind_run == _BLIND_WARN:
-                        print(f'[blind] ControlActor 레이더 인코더 gradient 가 {_BLIND_WARN} 미니배치 연속 0 임. '
-                              f'정책이 레이더를 못 보는 상태(dying ReLU)로 굳는 중일 수 있음 — '
-                              f'2026-09-04 off_s45 붕괴와 같은 지문. ctr_actor 전체 grad={_rg:.3e}. '
-                              f'장애물 충돌률(oColl)을 확인할 것.', flush=True)
+                    # ★2026-09-26 GPU 상주 판정(sync 0, 커널 ~11개/미니배치). 의미 변화는 정확히 두 가지 —
+                    #   ① 경고 출력 시점: 임계 도달 미니배치 즉시 → 그 update 가 끝난 뒤(지연 ≤ 미니배치 수 = 1 update 이내).
+                    #      한 update 안에서 두 번 도달하면 한 줄만 찍힌다(W=200·update 당 256 미니배치면 불가능, W<128 에서만 가능).
+                    #   ② 경고문의 'ctr_actor 전체 grad': 텐서별 float32 L1 을 float64 로 합친 값. 예전엔 python float64 순차합.
+                    #      .3e 표기에선 병적인 경우 빼곤 같은 숫자. 카운터 규칙(연속 0, 0 아니면 리셋, update 경계 넘어 이어짐)은 그대로.
+                    #   grad 는 읽기만 한다 → 가중치·Adam·곡선(골든)에 영향 없음.
+                    _g_enc = [_p.grad for _p in _enc_params if _p.grad is not None]
+                    _g_ctr = [_p.grad for _p in _ctr_params if _p.grad is not None]
+                    _radar_g = _l1_sum(_g_enc, torch.float32)
+                    _rg = _l1_sum(_g_ctr, torch.float64)
+                    _blind_run_t = torch.where(_radar_g == 0.0, _blind_run_t + 1, _i64_zero)
+                    _now_hit = (_blind_run_t == _BLIND_WARN)
+                    _blind_rg_t = torch.where(_now_hit, _rg, _blind_rg_t)     # 도달 미니배치의 값을 스냅샷
+                    _blind_hit_t = _blind_hit_t | _now_hit
                     # ★2026-09-07 진단 텔레메트리(opt-in, VESSEL_GRAD_TELEMETRY=1 · 기본 off = 비트동일):
                     #   clip_grad_norm_ 은 policy.parameters() *전체*를 한 벡터로 자른다. 통신 ON 팔에만 있는
                     #   보조 손실(MSG_L2·StateRecon 등) 기울기가 그 벡터에 얹히면 clip 계수가 작아져
@@ -1146,29 +1207,24 @@ def main():
                     #     StateRecon 만 끄면 ON 도 0.115 로 회복 → 원인 확정.
                     #   해법 — 세 망을 각각 MAX_GRAD_NORM 으로 자른다. 한 망이 커도 다른 망의 스텝이 안 줄어든다.
                     #     나머지(통신 집계·보조 디코더)는 한 덩어리로 묶어 같은 한도를 건다.
+                    #   (2026-09-26: 그룹 목록 _clip_groups 는 루프 밖에서 한 번 만듦 — 위 메모. 순서·구성원 동일)
                     if _clip_per_module:
-                        _seen = set()
-                        _groups = []
-                        if getattr(policy, 'shared_encoder', '0') != '0':
-                            # ★2026-09-10 공유 인코더는 세 망에 걸쳐 있으므로 자기 그룹으로 먼저 뗀다
-                            #   (안 그러면 순서상 msg_actor 그룹이 가져가 그 그룹 norm 을 인코더가 지배함)
-                            _enc = [p for _c in policy.ctr_actor.cores() for p in _c.radar_encoder.parameters()
-                                    if id(p) not in _seen]
-                            _seen.update(id(p) for p in _enc)
-                            _groups.append(_enc)
-                        for _m in (policy.msg_actor, policy.ctr_actor, policy.critic):
-                            _ps = [p for p in _m.parameters() if id(p) not in _seen]
-                            _seen.update(id(p) for p in _ps)
-                            _groups.append(_ps)
-                        _rest = [p for p in policy.parameters() if id(p) not in _seen]
-                        if _rest:
-                            _groups.append(_rest)
-                        for _ps in _groups:
+                        for _ps in _clip_groups:
                             if _ps:
                                 nn.utils.clip_grad_norm_(_ps, cfg.MAX_GRAD_NORM)
                     else:
                         nn.utils.clip_grad_norm_(policy.parameters(), cfg.MAX_GRAD_NORM)
                     opt.step()
+            _tsync(); _t_upd += time.perf_counter() - _t1
+
+            # [blind] update 당 1회 호스트 동기화 — 이번 update 안에 임계 도달했으면 경고 (문구 불변, 위 메모 ①②)
+            _hit, _rg_hit = torch.stack([_blind_hit_t.double(), _blind_rg_t]).tolist()
+            if _hit:
+                print(f'[blind] ControlActor 레이더 인코더 gradient 가 {_BLIND_WARN} 미니배치 연속 0 임. '
+                      f'정책이 레이더를 못 보는 상태(dying ReLU)로 굳는 중일 수 있음 — '
+                      f'2026-09-04 off_s45 붕괴와 같은 지문. ctr_actor 전체 grad={_rg_hit:.3e}. '
+                      f'장애물 충돌률(oColl)을 확인할 것.', flush=True)
+                _blind_hit_t.zero_()
 
             if _grad_tele and _gacc.get('n'):
                 _n = _gacc['n']
@@ -1201,11 +1257,11 @@ def main():
                 csv_f.write(f"{total_decisions},{raw_r:.5f},{ema_r:.5f}\n")
                 if update_i % 20 == 0:
                     csv_f.flush()
-            if aux_f and _sr_log.get('_n', 0) > 0:
-                _n = _sr_log.pop('_n')
-                aux_f.write(f"{total_decisions}," + ",".join(
-                    f"{_sr_log.get(g, 0.0) / _n:.6f}" for g in ('goal', 'self', 'sit', 'threat', 'future')) + "\n")
-                _sr_log = {}
+            if aux_f and _sr_n > 0:
+                _vals = _sr_acc.tolist()          # update 당 1회 sync. 나눗셈·.6f 는 예전과 같이 python 에서
+                aux_f.write(f"{total_decisions}," + ",".join(f"{_v / _sr_n:.6f}" for _v in _vals) + "\n")
+                _sr_acc = None
+                _sr_n = 0
                 if update_i % 20 == 0:
                     aux_f.flush()
             # ★통신 텔레메트리: comm 이 실제로 켜져 있을 때만. 실패해도 학습은 계속한다.
@@ -1229,9 +1285,12 @@ def main():
                 # ★재개 보정(2026-08-31): t_start 는 재시작하는데 total_decisions 는 이어받아
                 #   그대로 나누면 dec/s 가 수십배로 부풀려 진행이 정상인 것처럼 보임.
                 sps = (total_decisions - args.resume_at) / max(time.time() - t_start, 1e-6)
+                # ★2026-09-26 VESSEL_TIMING=1 일 때만 창(5 update) 평균 rollout/update 초를 뒤에 붙임. 0 이면 빈 문자열 = 줄 불변.
+                _tsfx = f" | roll={_t_roll/5:.1f}s upd={_t_upd/5:.1f}s" if _timing else ""
                 print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
                       f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
-                      f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s")
+                      f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s" + _tsfx)
+                _t_roll = _t_upd = 0.0
                 outcome_counts.zero_()
 
     finally:

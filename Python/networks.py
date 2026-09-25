@@ -148,6 +148,33 @@ def _moe_fast_on(wrapper):
     return len({id(c.radar_encoder) for c in cs}) == 1
 
 
+def _moe_buckets(sit, num_experts):
+    """Drop-in for 'for k: mask = (sit == k); if mask.any(): ... x[mask] ...' with ONE GPU->CPU sync.
+
+    Yields (k, idx) for every expert k that owns at least one row; idx is the int64 row-index vector of
+    that expert, ascending. Experts with 0 rows are skipped exactly like the mask loop did.
+    """
+    # ★2026-09-26 sync-free MoE 라우팅 (design_trainer.md T2). 기본 루프 경로(MOE_FAST=0)의 비트동일 대체.
+    #   왜 — 옛 루프는 전문가마다 mask.any()(sync 1) + x[mask](내부 nonzero, sync 1) 를 돌아
+    #     3망×5전문가 = 미니배치당 ~15회 GPU→CPU 동기화. 여기선 bincount().tolist() 한 번만 동기화.
+    #   비트동일 근거 — (sit==k).nonzero() 는 행 인덱스를 오름차순으로 주고, *stable* argsort 는 버킷 k 를
+    #     같은 오름차순으로 나열한다 → x[idx_k] 는 x[mask_k] 와 같은 행·같은 순서·같은 shape.
+    #     bool 인덱싱은 내부적으로 nonzero → 같은 int64 index 커널이므로 forward·backward(IndexBackward /
+    #     index_put_) 노드도 동일. 빈 전문가는 건너뛰어 grad=None 유지(Adam 이 그 전문가를 안 건드림 —
+    #     0행으로 돌리면 zeros grad 가 생겨 모멘트 감쇠·step 증가로 의미가 달라짐. 절대 "0행 실행"으로 단순화 금지).
+    #   ⚠️stable=True 가 빠지면 조용히 1e-7 차이가 남 — verify/test_moe_route.py 가 torch.equal 로 잡는다.
+    #   ⚠️CUDA bincount 는 weights 없이는 결정론 모드에서도 안 던진다(torch 2.10). 바뀌면
+    #     (sit.unsqueeze(0) == torch.arange(K).unsqueeze(1)).sum(1).tolist() 로 대체(정수 합 = 순서 무관).
+    order = torch.argsort(sit, stable=True)
+    counts = torch.bincount(sit, minlength=num_experts).tolist()     # 유일한 동기화
+    off = 0
+    for k in range(num_experts):
+        c = counts[k]
+        if c:
+            yield k, order[off:off + c]
+        off += c
+
+
 def _share_radar_encoder(experts):
     """★공유지각 MoE(MOE_SHARED=1): 전문가들의 radar_encoder를 experts[0] 것으로 통일(모듈 공유).
     지각(코어 파라미터 ~82.5%)은 전체 데이터로 학습, 상황별 특화는 결정부(fc2~head)만.
@@ -319,7 +346,8 @@ class StateReconDecoder(nn.Module):
 
     def loss(self, msg, goal, self_state, situation, own_threat, own_threat_mask,
              own_future, own_future_mask):
-        """msg [N,1,msg_dim] → (총손실 스칼라, 그룹별 원손실 dict[float] — 로깅용)."""
+        """msg [N,1,msg_dim] → (총손실 스칼라, 그룹별 원손실 dict[str, 0-d tensor(detached)] — 로깅용).
+        ★2026-09-26: 값이 float 에서 0-d tensor 로 바뀜(sync 제거). 키·순서는 GROUPS 그대로."""
         N = msg.shape[0]
         sit_oh = F.one_hot(situation.reshape(N).long().clamp(0, self.num_sit - 1),
                            self.num_sit).float().unsqueeze(1)               # [N,1,5]
@@ -349,15 +377,18 @@ class StateReconDecoder(nn.Module):
                 #   통신 ON + STATE_RECON_COEF>0 경로에서만 실행돼 OFF 스모크·OFF 진단배치는 안 걸렸음.
                 if _RECON_LEGACY_STAT:
                     valid = torch.ones_like(valid)
-                if float(self.stat_inited) == 0.0:
-                    self.run_mean.copy_(torch.where(valid, bm, self.run_mean))
-                    self.run_var.copy_(torch.where(valid, bv.clamp(min=1e-8), self.run_var))
-                    self.stat_inited.fill_(1.0)
-                else:
-                    new_m = self.run_mean * (1 - self.momentum) + self.momentum * bm
-                    new_v = self.run_var * (1 - self.momentum) + self.momentum * bv.clamp(min=1e-8)
-                    self.run_mean.copy_(torch.where(valid, new_m, self.run_mean))
-                    self.run_var.copy_(torch.where(valid, new_v, self.run_var))
+                # ★2026-09-26 동기화 제거 (design_trainer.md T3e): float(self.stat_inited) 가 미니배치마다 GPU→CPU
+                #   sync 였음. 첫 호출 분기를 device 위 torch.where 로 바꿈 — 비트동일:
+                #     첫 호출: _first=True → new_m=bm·new_v=bv.clamp 그대로(where 는 산술 없는 선택) = 옛 if 분기.
+                #     이후: _first=False → 옛 else 와 같은 EMA 식(같은 연산 순서). fill_(1.0) 은 이미 1.0 이라 값 불변.
+                #   EMA 식은 첫 호출에도 계산되지만 버려지고(no_grad, 부작용 없음) 버퍼·state_dict 키는 그대로.
+                _first = (self.stat_inited == 0.0)
+                _bvc = bv.clamp(min=1e-8)
+                new_m = torch.where(_first, bm, self.run_mean * (1 - self.momentum) + self.momentum * bm)
+                new_v = torch.where(_first, _bvc, self.run_var * (1 - self.momentum) + self.momentum * _bvc)
+                self.run_mean.copy_(torch.where(valid, new_m, self.run_mean))
+                self.run_var.copy_(torch.where(valid, new_v, self.run_var))
+                self.stat_inited.fill_(1.0)
         sd = self.run_var.clamp(min=1e-6).sqrt()
         z = ((tf - self.run_mean) / sd) * mf                                 # 표준화 타깃
         pred = self.net(msg).reshape(N, -1)
@@ -365,7 +396,10 @@ class StateReconDecoder(nn.Module):
         raw, total = {}, 0.0
         for gi, (g, (a, b)) in enumerate(self._slices().items()):
             gl = se[:, a:b].sum() / mf[:, a:b].sum().clamp(min=1.0)
-            raw[g] = float(gl.detach())
+            # ★2026-09-26 (T3e): float() 은 그룹마다 sync 였음 → 0-d tensor 로 넘긴다. 키·순서(GROUPS) 불변.
+            #   소비자 = vessel_gym_train(aux.csv 누적, update 당 1회 .tolist()) 뿐. float32→float64 변환은
+            #   trainer 쪽 .double() 이 float() 과 같은 정확한 변환이라 aux.csv 바이트 동일.
+            raw[g] = gl.detach()
             w_pre = self.loss_ema[gi].detach().clone()          # 갱신 *전* 값(교정 경로용)
             if self.training:
                 with torch.no_grad():
@@ -618,11 +652,10 @@ class MessageActor(nn.Module):
                     a = _bmm_layernorm(cs, sit, a, 'msg_ln')
                 return torch.tanh(_bmm_linear(cs, sit, a, 'msg_out')).reshape(batch_size, n_agent, -1)
             msg = x_f.new_zeros(M, self.msg_dim)
-            for k in range(self.num_experts):
-                mask = (sit == k)
-                if mask.any():
-                    msg[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask],
-                                                sit_oh[mask] if sit_oh is not None else None)
+            # ★2026-09-26 _moe_buckets: 옛 mask 루프와 비트동일, 동기화 15→1 (근거는 helper 주석)
+            for k, idx in _moe_buckets(sit, self.num_experts):
+                msg[idx] = self.experts[k](x_f[idx], goal_f[idx], self_f[idx],
+                                           sit_oh[idx] if sit_oh is not None else None)
         return msg.view(batch_size, n_agent, self.msg_dim)
 
 
@@ -779,19 +812,18 @@ class ControlActor(nn.Module):
         mean = x_f.new_zeros(M, self.action_size)
         logstd = x_f.new_zeros(M, self.action_size)
         dec_full = None
-        for k in range(self.num_experts):
-            mask = (sit == k)
-            if mask.any():
-                zk = self.experts[k].backbone(x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
-                                              sit_oh[mask] if sit_oh is not None else None)
-                mk, lk, dk = self.experts[k].head(zk)
-                z[mask] = zk
-                mean[mask] = mk
-                logstd[mask] = lk
-                if dk is not None:   # coupling: 코어별 복원값을 전체 배치로 재조립(모든 행이 정확히 한 코어 소속)
-                    if dec_full is None:
-                        dec_full = x_f.new_zeros(M, dk.shape[-1])
-                    dec_full[mask] = dk
+        # ★2026-09-26 _moe_buckets: 옛 mask 루프와 비트동일, 동기화 15→1 (근거는 helper 주석)
+        for k, idx in _moe_buckets(sit, self.num_experts):
+            zk = self.experts[k].backbone(x_f[idx], goal_f[idx], self_f[idx], om_f[idx],
+                                          sit_oh[idx] if sit_oh is not None else None)
+            mk, lk, dk = self.experts[k].head(zk)
+            z[idx] = zk
+            mean[idx] = mk
+            logstd[idx] = lk
+            if dk is not None:   # coupling: 코어별 복원값을 전체 배치로 재조립(모든 행이 정확히 한 코어 소속)
+                if dec_full is None:
+                    dec_full = x_f.new_zeros(M, dk.shape[-1])
+                dec_full[idx] = dk
         self._cache_dec(z, dec_full)
         return z, mean, logstd, batch_size, n_agent
 
@@ -819,10 +851,9 @@ class ControlActor(nn.Module):
         else:
             sit = torch.zeros(M, dtype=torch.long, device=z.device)
         out = z.new_zeros(M, out_dim)
-        for k in range(self.num_experts):
-            mask = (sit == k)
-            if mask.any():
-                out[mask] = self.experts[k].consumer_decoder(z[mask])
+        # ★2026-09-26 _moe_buckets: 옛 mask 루프와 비트동일 (근거는 helper 주석)
+        for k, idx in _moe_buckets(sit, self.num_experts):
+            out[idx] = self.experts[k].consumer_decoder(z[idx])
         return out
 
     def forward(self, x, goal, self_state, others_msg, situation=None):
@@ -992,12 +1023,11 @@ class Critic(nn.Module):
                 h = F.relu(_bmm_linear(cs, sit, torch.cat(parts, dim=-1), 'fc2'))
                 return _bmm_linear(cs, sit, h, 'value_out').reshape(batch_size, n_agent, 1)
             v = x_f.new_zeros(M, 1)
-            for k in range(self.num_experts):
-                mask = (sit == k)
-                if mask.any():
-                    v[mask] = self.experts[k](x_f[mask], goal_f[mask], self_f[mask], om_f[mask],
-                                              sit_oh[mask] if sit_oh is not None else None,
-                                              gf_f[mask] if gf_f is not None else None)
+            # ★2026-09-26 _moe_buckets: 옛 mask 루프와 비트동일, 동기화 15→1 (근거는 helper 주석)
+            for k, idx in _moe_buckets(sit, self.num_experts):
+                v[idx] = self.experts[k](x_f[idx], goal_f[idx], self_f[idx], om_f[idx],
+                                         sit_oh[idx] if sit_oh is not None else None,
+                                         gf_f[idx] if gf_f is not None else None)
         return v.view(batch_size, n_agent, 1)
 
 

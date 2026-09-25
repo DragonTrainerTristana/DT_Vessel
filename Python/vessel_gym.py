@@ -426,7 +426,8 @@ class VesselBatchEnv:
         self.spawn_idx = torch.zeros(E, N, device=self.device, dtype=torch.long)
 
         if OBSTACLES_MODE == 'none':
-            # ★2026-09-21 open-sea: 장애물 0 → [0,2]. _radar 루프·_obb_circle_hit(.any 빈 축)·LOS 게이트(shape[0]>0 가드) 전부 안전.
+            # ★2026-09-21 open-sea: 장애물 0 → [0,2]. _radar 원 청크 루프(0회)·_obb_circle_hit(2026-09-26 부터 shape[0]>0 가드로
+            #   생략, 빈 축 any 와 동일)·LOS 게이트(shape[0]>0 가드) 전부 안전.
             self.obstacles = torch.zeros(0, 2, device=self.device, dtype=self.dtype)
         else:
             # 정적 장애물 9개 (원점 중심 3×3, 반지름 20) — [9,2]
@@ -467,11 +468,19 @@ class VesselBatchEnv:
         self._update_situation()
         return self._build_obs()
 
-    def _respawn(self, mask, initial=False):
-        """mask=True인 (env,vessel)만 리스폰 (비동기). initial=True면 전 선박 고유 spawn point 배정."""
+    def _respawn(self, mask, initial=False, col_any=None):
+        """mask=True인 (env,vessel)만 리스폰 (비동기). initial=True면 전 선박 고유 spawn point 배정.
+
+        col_any: mask.any(dim=0).tolist() (길이 N 파이썬 bool). step() 이 done 열 플래그를 한 번의 전송으로
+        만들어 넘긴다(2026-09-26 호스트 동기 1회/스텝). None 이면 여기서 한 번 전송(reset()·외부 호출자).
+        """
         E, N = self.E, self.N
-        n_reset = int(mask.sum().item())
-        if n_reset == 0:
+        # ★2026-09-26 perf(비트동일): 호출당 호스트 동기 33회(.item() 1 + 루프 .any() 32 + bool 인덱싱 nonzero)
+        #   → col_any 한 번. 아래 두 루프의 분기 결정은 전부 mask[:, i].any() == col_any[i] 에서 나온다.
+        if col_any is None:
+            col_any = mask.any(dim=0).tolist()
+        # 조기 return 은 난수 소비에 관여한다(뒤의 torch.rand 4회를 안 뽑음) — 유지. `not any(col_any)` == (mask.sum()==0).
+        if not any(col_any):
             return
         # spawn point 배정: 각 env에서 N개 선박에 서로 다른 point (근사 — Unity는 미사용 랜덤/최원거리)
         # 배치 근사: env마다 spawn_pts를 셔플해 앞 N개 사용. 리셋된 배만 갱신.
@@ -488,13 +497,14 @@ class VesselBatchEnv:
             #   ⚠️이전의 순수 randint는 timeout 동기화 후 같은 포인트에 중복 스폰 → 즉사 vColl 연쇄
             #   (2026-07-05 eval 실측: 종료의 97%가 이 아티팩트 = Stage1 판정지표 오염) → 점유 제외 필수.
             #   같은 스텝 다중 리셋은 척당 순차 배정으로 상호 중복도 방지 (N<=n_spawn 전제, __init__ assert).
-            arangeE = torch.arange(E, device=self.device)
-            used = torch.zeros(E, self.n_spawn, dtype=torch.bool, device=self.device)
             keep = ~mask
-            for i in range(N):
-                k = keep[:, i]
-                if k.any():
-                    used[arangeE[k], self.spawn_idx[k, i]] = True
+            # ★2026-09-26 perf(비트동일): 옛 루프 `for i: used[arangeE[k], spawn_idx[k, i]] = True` 는 keep[e,i] 인
+            #   (e,i) 마다 used[e, spawn_idx[e,i]] 에 True 만 쓴다 → 결과는 합집합이고 순서 무관.
+            #   3-D one-hot([E,N,n_spawn], (e,i) 당 True 하나 = 중복 인덱스 없음) & keep → i 축 any = 같은 합집합.
+            #   (2-D scatter_(1, spawn_idx, keep) 은 한 행 안 중복 인덱스에서 False 가 True 를 덮을 수 있어 안 씀.)
+            used = torch.zeros(E, N, self.n_spawn, dtype=torch.bool, device=self.device)
+            used.scatter_(2, self.spawn_idx.unsqueeze(-1), True)
+            used = (used & keep.unsqueeze(-1)).any(dim=1)                          # [E,n_spawn]
             # ★2026-09-05 fix(opt-in, 위 RESPAWN_RNG_CONST 주석): 아래 루프가 `if not m.any(): continue`
             #   뒤에서 난수를 뽑아 한 호출의 난수 소비량이 리셋 패턴(=정책)에 의존했음.
             #   1 번에 full-size 로 뽑아두면 소비량이 호출당 상수가 돼 시드만 같으면 무엇이
@@ -503,15 +513,19 @@ class VesselBatchEnv:
                                 device=self.device, dtype=self.dtype)
                      if RESPAWN_RNG_CONST else None)
             for i in range(N):
-                m = mask[:, i]
-                if not m.any():
+                # ★2026-09-26: 분기 결정 = col_any[i] (== 옛 `not mask[:, i].any()`). torch.rand 가 같은 i 집합에서
+                #   같은 순서·같은 shape 로 호출되므로 generator 소비(shape·호출 순서만 의존)와 모든 값이 비트동일.
+                if not col_any[i]:
                     continue
+                m = mask[:, i]
                 r = (r_all[:, i] if RESPAWN_RNG_CONST else
                      torch.rand(E, self.n_spawn, generator=self.gen, device=self.device, dtype=self.dtype))
                 r = torch.where(used, torch.full_like(r, -1.0), r)   # 점유 인덱스 제외
                 pick = r.argmax(dim=1)                                # free 중 랜덤 (전부 점유는 N<=20이라 불발)
                 self.spawn_idx[:, i] = torch.where(m, pick, self.spawn_idx[:, i])
-                used[arangeE[m], pick[m]] = True
+                # 옛 `used[arangeE[m], pick[m]] = True` (bool 인덱싱 = nonzero 동기 2회) → 행당 인덱스 하나인 scatter 를
+                #   OR. m[e] 인 행의 used[e, pick[e]] 에만 True 가 더해지고 나머지는 그대로 = 다음 i 가 보는 used 동일.
+                used = used | torch.zeros_like(used).scatter_(1, pick.unsqueeze(1), m.unsqueeze(1))
 
         base = self.spawn_pts[self.spawn_idx]                  # [E,N,2]
         base = base * self.ring_scale                          # ring homothety (중심=원점, C# ApplyRingScale)
@@ -598,10 +612,30 @@ class VesselBatchEnv:
         self.speed = self.speed * (1 - drag_effect)
 
     # ─────────────────────────── 레이더 (360 ray, batched) ───────────────────────────
-    def _radar(self):
-        """[E,N,360] 정규화 거리 (dist/56-0.5, 미감지 +0.5). ray vs 원(장애물)+OBB(타선)+벽."""
-        E, N, R = self.E, self.N, RADAR_RAYS
-        h_rad = self.heading * DEG                                  # [E,N]
+    # ★2026-09-26 perf(비트동일): 타깃 j 루프(N회)·원 ci 루프(K회)를 타깃 축으로 배치하고 amin 으로 접는다.
+    #   옛 코드는 후보마다 `valid = hit & (t > 1e-4) & (t < best); best = where(valid, t, best)` 를 순차 적용
+    #   = 누적 최소값. 귀납: best 는 항상 min(RADAR_RANGE, 지금까지의 유효 후보 t) 이고 `t < best` 는 갱신 여부만
+    #   정하지 값을 못 바꾼다(동률이면 같은 값). 최종 best = min(RADAR_RANGE, 모든 유효 후보) 로 순서 무관.
+    #   min 은 정확(반올림 없음, 입력 중 하나를 그대로 반환) → amin·torch.minimum 으로 어떤 순서로 접어도 같은 float.
+    #   유효 후보에 NaN 은 없다: valid 에 (t > 1e-4) 가 들어 있고 NaN 비교는 False → where 가 +inf 로 바꾼다.
+    #   원소별 연산(mul/sub/abs/where/reciprocal/sqrt/min/max/비교)은 broadcast 축이 하나 늘어도 원소마다 같은
+    #   입력에 같은 커널 순서(eager, FMA 융합 없음) → 값 동일. 초월함수는 cos/sin(heading·DEG) 뿐이고 [E,N] 에서
+    #   한 번 계산한 것을 타깃 헤딩에도 재사용한다(옛 코드는 j 마다 [E] 로 다시 계산 — CUDA 는 구조상 원소별 동일
+    #   함수, 이 CPU 는 [k,16] 슬라이스 == 전체 [E,N] 실측 0 차이. 게이트: verify/test_sim_equiv.py·test_golden).
+    #   pos/heading 인자: step() 이 리셋된 env 행만 다시 계산할 때 슬라이스를 넘긴다(행 e 의 radar 는 pos[e]·heading[e]
+    #   에만 의존 — 타깃 루프도 같은 env 안 선박뿐).
+    #   ⚠ 쌍 컬링(_obb_min_culled, E>=256 전용 설계안 §3.3)은 이번 패스에서 뺐다 — 호스트 동기 1회와 두 번째 코드 경로가
+    #     추가되어서. 값은 같으므로(반경 64m 밖 쌍은 후보 없음) 필요해지면 별도로 붙인다.
+    _RADAR_CHUNK_BYTES = 12 << 20   # perf 전용: [E,N,Jc,360] fp32 임시 하나를 ~12 MB(L2 48 MB) 로 제한. 값엔 무관
+
+    def _radar(self, pos=None, heading=None):
+        """[E,N,360] 정규화 거리 (dist/56-0.5, 미감지 +0.5). ray vs 원(장애물)+OBB(타선)+벽.
+
+        pos [E',N,2] / heading [E',N] 를 주면 그 행만 계산(None = self.pos/self.heading 전체)."""
+        pos = self.pos if pos is None else pos
+        heading = self.heading if heading is None else heading
+        E, N, R = pos.shape[0], self.N, RADAR_RAYS
+        h_rad = heading * DEG                                       # [E,N]
         cos_h, sin_h = torch.cos(h_rad), torch.sin(h_rad)
         # world ray dir: rotate local by heading. Unity: worldDir = R(h)*localDir.
         # local (lx,lz), world (wx,wz): wx = lx*cos + lz*sin ; wz = -lx*sin + lz*cos  (Unity Y-up 시계회전)
@@ -609,25 +643,77 @@ class VesselBatchEnv:
         lz = self.ray_local[:, 1]
         wx = lx[None, None] * cos_h[..., None] + lz[None, None] * sin_h[..., None]   # [E,N,R]
         wz = -lx[None, None] * sin_h[..., None] + lz[None, None] * cos_h[..., None]
-        origin = self.pos                                            # [E,N,2]
+        origin = pos                                                 # [E,N,2]
 
         best = torch.full((E, N, R), RADAR_RANGE, device=self.device, dtype=self.dtype)
+        # 타깃 축 청크 폭(원·타선 공통): 임시 텐서 [E,N,Jc,R] 이 _RADAR_CHUNK_BYTES 안. E=8→16, 128→4, 256→2, 1024→1(옛 루프와 동일)
+        chunk = max(1, self._RADAR_CHUNK_BYTES // (E * N * R * 4))
 
-        # (a) ray vs 장애물 원 9개 — 각 원 [9,2]
+        # (a) ray vs 장애물 원 K개 [K,2] — K 축으로 배치, 청크마다 amin. K=0(open-sea)이면 통째로 생략(옛 루프 0회와 동일)
         # 원점 o=origin, 방향 d=(wx,wz) 단위. 원 중심 c, 반지름 r. t = closest hit.
-        for ci in range(self.obstacles.shape[0]):
-            c = self.obstacles[ci]                                   # [2]
-            best = self._ray_circle(origin, wx, wz, c, self.obstacle_r, best)
+        K = self.obstacles.shape[0]
+        for k0 in range(0, K, chunk):
+            best = torch.minimum(best, self._ray_circles_min(origin, wx, wz, self.obstacles[k0:k0 + chunk],
+                                                             self.obstacle_r))
 
-        # (b) ray vs 타선 OBB (선박 box world 14.18(len,Z)×1.93(beam,X), heading 회전)
-        for j in range(N):
-            best = self._ray_obb_batch(origin, wx, wz, j, best)
+        # (b) ray vs 타선 OBB (선박 box world 14.18(len,Z)×1.93(beam,X), heading 회전) — j 축 청크, 자기자신은 eye 로 제외
+        eye = torch.eye(N, dtype=torch.bool, device=self.device)   # 옛 self_mask(j 마다 zeros+[j]=True) 를 한 번에
+        o4, wx4, wz4 = origin[:, :, None, :], wx[:, :, None, :], wz[:, :, None, :]    # [E,N,1,·]
+        for j0 in range(0, N, chunk):
+            j1 = min(N, j0 + chunk)
+            cand = self._obb_cand(o4, wx4, wz4, pos[:, None, j0:j1, :],
+                                  cos_h[:, None, j0:j1, None], sin_h[:, None, j0:j1, None],
+                                  eye[None, :, j0:j1, None])                             # [E,N,Jc,R], 무효 = +inf
+            best = torch.minimum(best, cand.amin(dim=2))
 
         # (c) ray vs 벽 (아레나 경계 4개 축평행 선분) — 축평행 box라 간단히 경계 평면 교차
         best = self._ray_walls(origin, wx, wz, best)
 
         return best / RADAR_RANGE - 0.5
 
+    def _ray_circles_min(self, origin, wx, wz, circles, r):
+        """_ray_circle 의 원 축 배치판. origin[E,N,2], dir(wx,wz)[E,N,R], circles[Kc,2] r → [E,N,R] 유효 최근 t 의
+        원별 최소(무효 = +inf). 원소별 식은 _ray_circle 과 글자 그대로 같다(broadcast 축만 추가)."""
+        ox = origin[:, :, None, 0:1] - circles[None, None, :, 0:1]  # [E,N,Kc,1]
+        oz = origin[:, :, None, 1:2] - circles[None, None, :, 1:2]
+        # |o + t d|^2 = r^2 → t^2 + 2(o·d)t + (|o|^2-r^2)=0, d 단위
+        b = ox * wx[:, :, None, :] + oz * wz[:, :, None, :]         # [E,N,Kc,R]
+        cc = ox * ox + oz * oz - r * r                               # [E,N,Kc,1]
+        disc = b * b - cc
+        hit = disc >= 0
+        sq = torch.sqrt(torch.clamp(disc, min=0))
+        t = -b - sq                                                  # 가까운 근
+        valid = hit & (t > 1e-4)                                     # `(t < best)` 는 min 이 대신한다
+        return torch.where(valid, t, torch.full_like(t, float('inf'))).amin(dim=2)
+
+    def _obb_cand(self, o, wx, wz, cj, c, s, self_mask):
+        """_ray_obb_batch 의 slab 판정을 타깃 축 broadcast 로. o[..,2] caster 원점, wx/wz[..,R] 방향, cj[..,2] 타깃 중심,
+        c/s 타깃 heading 의 cos/sin, self_mask bool(자기자신). 유효 hit 의 t_entry, 무효 = +inf. 원소별 식 동일."""
+        hx, hz = SHIP_HALF_BEAM, SHIP_HALF_LEN                      # box 반폭·반길이
+        # ray origin을 box-local로 (rel 회전 -h)
+        rx = o[..., 0:1] - cj[..., 0:1]                             # [E,N,Jc,1]
+        rz = o[..., 1:2] - cj[..., 1:2]
+        ox_l = rx * c - rz * s                                      # local x(beam)
+        oz_l = rx * s + rz * c                                      # local z(len)
+        dx_l = wx * c - wz * s                                      # [E,N,Jc,R]
+        dz_l = wx * s + wz * c
+        eps = 1e-9
+        # slab X (반폭 hx)
+        invx = 1.0 / torch.where(dx_l.abs() < eps, torch.full_like(dx_l, eps), dx_l)
+        tx1 = (-hx - ox_l) * invx; tx2 = (hx - ox_l) * invx
+        txmin = torch.minimum(tx1, tx2); txmax = torch.maximum(tx1, tx2)
+        # slab Z (반길이 hz)
+        invz = 1.0 / torch.where(dz_l.abs() < eps, torch.full_like(dz_l, eps), dz_l)
+        tz1 = (-hz - oz_l) * invz; tz2 = (hz - oz_l) * invz
+        tzmin = torch.minimum(tz1, tz2); tzmax = torch.maximum(tz1, tz2)
+        tmin = torch.maximum(txmin, tzmin)
+        tmax = torch.minimum(txmax, tzmax)
+        hit = tmax >= torch.clamp(tmin, min=0)                      # 교차 존재
+        t_entry = torch.where(tmin > 1e-4, tmin, tmax)              # 내부면 tmax
+        valid = hit & (t_entry > 1e-4) & (~self_mask)               # `(t_entry < best)` 는 min 이 대신한다
+        return torch.where(valid, t_entry, torch.full_like(t_entry, float('inf')))
+
+    # ── 아래 둘은 옛 타깃당 판정(참조형). _radar 는 더 이상 안 쓰지만 fidelity/radar_fidelity_compare.py 가 호출한다 ──
     def _ray_circle(self, origin, wx, wz, c, r, best):
         """origin[E,N,2], dir(wx,wz)[E,N,R], 원 c[2] r → best[E,N,R] 갱신 (static 원)."""
         ox = origin[..., 0:1] - c[0]                                 # [E,N,1]
@@ -681,12 +767,14 @@ class VesselBatchEnv:
         """축평행 아레나 경계(벽 내면 [-A,A]×[-A,A])와 ray 교차 (내부→경계 거리)."""
         A = ARENA_INNER
         ox, oz = origin[..., 0:1], origin[..., 1:2]
-        for (axis_o, axis_d, lim) in [(ox, wx, A), (ox, wx, -A), (oz, wz, A), (oz, wz, -A)]:
-            with torch.no_grad():
-                denom = torch.where(axis_d.abs() < 1e-9, torch.full_like(axis_d, 1e-9), axis_d)
-            t = (lim - axis_o) / denom
-            valid = (t > 1e-4) & (t < best)
-            best = torch.where(valid, t, best)
+        # ★2026-09-26 perf(비트동일): 축당 denom 을 한 번만(옛 코드는 +A/-A 평면에서 같은 식을 두 번 계산 — 결정적
+        #   원소별 연산이라 값 동일). torch.no_grad() 는 env 에 grad 텐서가 없어 무의미했음 → 제거. 순차 갱신은 그대로.
+        for (axis_o, axis_d) in ((ox, wx), (oz, wz)):
+            denom = torch.where(axis_d.abs() < 1e-9, torch.full_like(axis_d, 1e-9), axis_d)
+            for lim in (A, -A):
+                t = (lim - axis_o) / denom
+                valid = (t > 1e-4) & (t < best)
+                best = torch.where(valid, t, best)
         return best
 
     # ─────────────────────────── COLREGs 상황판정 + risk (batched [E,N,N]) ───────────────────────────
@@ -798,13 +886,23 @@ class VesselBatchEnv:
         risk = torch.where(invalid, torch.zeros_like(risk), risk)
 
         # far-field risk (56m~riskRange 띠, 상황곱 없음) — commgate far-field 보상용
-        far_dist_risk = 1.0 - torch.clamp(dist / max(self.risk_range, 1e-6), 0, 1)
-        far_risk = torch.clamp(far_dist_risk * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3, 0, 1)
-        far_invalid = eye | (dist <= DETECTION_RANGE) | (dist > self.risk_range) | (raw_tcpa < 0)
-        far_risk = torch.where(far_invalid, torch.zeros_like(far_risk), far_risk)
+        # ★2026-09-26 perf(비트동일): 읽는 곳이 _reward #7-b(farpair_coef≠0)·#8(farfield_coef>0) 뿐 — 둘 다 0 이면
+        #   [E,N,N] 연산 ~20회가 쓰이지 않는 값이었음. 그때는 키만 None 으로 남긴다(키 집합 불변, 외부 독자
+        #   eval_ckpt/eval_mixed/eval_astar_global 은 far_risk 를 읽지 않음 — grep 확인).
+        if self._far_field_on():
+            far_dist_risk = 1.0 - torch.clamp(dist / max(self.risk_range, 1e-6), 0, 1)
+            far_risk = torch.clamp(far_dist_risk * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3, 0, 1)
+            far_invalid = eye | (dist <= DETECTION_RANGE) | (dist > self.risk_range) | (raw_tcpa < 0)
+            far_risk = torch.where(far_invalid, torch.zeros_like(far_risk), far_risk)
+        else:
+            far_risk = None
 
         return {'dist': dist, 'risk': risk, 'near_risk': near_risk, 'sit': sit,
                 'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk}
+
+    def _far_field_on(self):
+        """far_risk 가 보상에 쓰이는가 (#7-b farpair / #8 farfield PBRS). 호출 시점 계수로 판정."""
+        return self.farfield_coef > 0.0 or self.farpair_coef != 0.0
 
     def _update_situation(self):
         """obs[368]용: argmax-risk 상대의 situation을 캐시 (Unity: 1-step stale)."""
@@ -888,9 +986,11 @@ class VesselBatchEnv:
         r = r - FUEL_COEF * (speed_ratio ** 2 + 0.5 * turn01 ** 2)
         # 5. proximity -2.0×(1-d/19.6), ±135° 전방 섹터 최소거리 <19.6m
         THR = RADAR_RANGE_BASE * 0.35  # 19.6 — 안개(radar 축소)에서도 보상 불변
-        front = torch.cat([radar[..., 0:135], radar[..., 225:360]], dim=-1)  # ±135°
-        front_dist = (front + 0.5) * RADAR_RANGE  # 정규화 복원(m)
-        fmin = front_dist.min(dim=-1).values
+        # ★2026-09-26 perf(비트동일): 옛 cat([0:135],[225:360]) → (x+0.5)*RANGE → min 은 [E,N,270] 복사(E=128 에서 2.2 MB)
+        #   였음. 두 슬라이스를 따로 복원해 각각 min, 그 둘의 minimum = 합집합의 min(원소별 값 동일, min 은 정확).
+        fx_ = ((radar[..., 0:135] + 0.5) * RADAR_RANGE).min(dim=-1).values     # ±135° 전방 섹터, 정규화 복원(m)
+        bx_ = ((radar[..., 225:360] + 0.5) * RADAR_RANGE).min(dim=-1).values
+        fmin = torch.minimum(fx_, bx_)
         # ★reward#1 fix: 근접벌점 계수↓(-2.0→-1.0)+제곱 → 중간거리 통과 허용, 접촉부근만 강함(fmin=0서 -10).
         _pnorm = torch.clamp(1 - fmin / THR, min=0.0)
         prox = torch.where(fmin < THR, -1.0 * _pnorm * _pnorm, torch.zeros_like(fmin))
@@ -916,13 +1016,16 @@ class VesselBatchEnv:
                                 torch.zeros_like(fr)).sum(dim=-1)
             r = r + self.farpair_coef * fcost
         # 8. far-field PBRS (commgate): coef×(prevFar - curFar), 첫스텝(prev<0) 스킵
-        cur_far = pw['far_risk'].sum(dim=-1)
-        if self.farfield_coef > 0.0:
-            pbrs = torch.where(self.prev_far_risk >= 0,
-                               self.farfield_coef * (self.prev_far_risk - cur_far),
-                               torch.zeros_like(cur_far))
-            r = r + pbrs
-        self.prev_far_risk = cur_far
+        # ★2026-09-26 perf(비트동일): far_risk 가 None(계수 둘 다 0, _pairwise 참고)이면 cur_far·prev_far_risk 를
+        #   건너뛴다. prev_far_risk 는 여기(#8, farfield_coef>0)서만 읽히므로 보상·obs 에 영향 없음.
+        if self._far_field_on():
+            cur_far = pw['far_risk'].sum(dim=-1)
+            if self.farfield_coef > 0.0:
+                pbrs = torch.where(self.prev_far_risk >= 0,
+                                   self.farfield_coef * (self.prev_far_risk - cur_far),
+                                   torch.zeros_like(cur_far))
+                r = r + pbrs
+            self.prev_far_risk = cur_far
         # ─── 최고위험 상대의 기하 (C# cachedDangerousVessel 미러 — 아래 3항이 *같은 한 척*을 쓴다) ───
         _j = self.danger_idx                                    # [E,N]
         _g2 = lambda t: torch.gather(t, 1, _j.unsqueeze(-1).expand(-1, -1, 2))
@@ -1090,9 +1193,9 @@ class VesselBatchEnv:
         stb = torch.stack([torch.cos(h), -torch.sin(h)], dim=-1)    # x-axis(beam)
         return fwd, stb
 
-    def _obb_circle_hit(self, circles, r):
-        """선박 OBB vs 원(장애물). circles[K,2] r 스칼라 → [E,N] hit."""
-        fwd, stb = self._obb_axes()                                 # [E,N,2]
+    def _obb_circle_hit(self, circles, r, axes=None):
+        """선박 OBB vs 원(장애물). circles[K,2] r 스칼라 → [E,N] hit. axes=(fwd,stb) 를 주면 _obb_axes 재계산 생략."""
+        fwd, stb = self._obb_axes() if axes is None else axes       # [E,N,2]
         rel = circles[None, None] - self.pos[:, :, None, :]         # [E,N,K,2]
         # box-local 좌표
         lx = (rel * stb[:, :, None, :]).sum(-1)                     # beam축 [E,N,K]
@@ -1103,10 +1206,10 @@ class VesselBatchEnv:
         closest_d = torch.sqrt((lx - cx) ** 2 + (lz - cz) ** 2)     # [E,N,K]
         return (closest_d < r).any(dim=-1)
 
-    def _obb_obb_hit(self):
-        """모든 선박 쌍 OBB-OBB SAT → [E,N] (자기 제외, 하나라도 겹치면 True)."""
+    def _obb_obb_hit(self, axes=None):
+        """모든 선박 쌍 OBB-OBB SAT → [E,N] (자기 제외, 하나라도 겹치면 True). axes=(fwd,stb) 재사용 가능."""
         E, N = self.E, self.N
-        fwd, stb = self._obb_axes()                                 # [E,N,2]
+        fwd, stb = self._obb_axes() if axes is None else axes       # [E,N,2]
         c = self.pos                                                # [E,N,2]
         # 축 4개(각 박스 forward,stb). i=caster, j=target
         ci = c[:, :, None, :]; cj = c[:, None, :, :]                # [E,N,N,2]
@@ -1137,16 +1240,22 @@ class VesselBatchEnv:
         # goal 도달
         d = torch.linalg.norm(self.goal - self.pos, dim=-1)
         goal_hit = d < GOAL_REACHED
+        # ★2026-09-26 perf(비트동일): _obb_axes 는 같은 heading 에서 세 번(원·벽·SAT) 계산되던 것 → 한 번 계산해 넘김.
+        _axes = self._obb_axes()                                               # (fwd, stb) [E,N,2]
         # 장애물 충돌 (선박 OBB vs 원): 선박 중심~원중심 최근접거리(box-local) < obstacle_r
-        obs_hit = self._obb_circle_hit(self.obstacles, self.obstacle_r)   # [E,N]
+        #   장애물 0개(open-sea)면 빈 K 축 any = 전부 False 이므로 ~23 dispatch 를 통째로 생략(값 동일).
+        if self.obstacles.shape[0] > 0:
+            obs_hit = self._obb_circle_hit(self.obstacles, self.obstacle_r, axes=_axes)   # [E,N]
+        else:
+            obs_hit = torch.zeros(E, N, dtype=torch.bool, device=self.device)
         # 벽 충돌: 선박 OBB 를 world x/z 축에 투영한 실제 반extent 사용 (벽이 축정렬이라 이게 정확).
         #   ★2026-08-27 fix: 기존 대각반경(7.157) 근사는 정횡 자세에서 최대 6.19m 조기 종료였음.
         #   ring 0.7 은 스폰~벽 117m 라 사실상 미발화였으나 ring 1.0 은 42m 라 실제로 발동한다.
-        _fwd, _stb = self._obb_axes()                                          # [E,N,2]
+        _fwd, _stb = _axes                                                     # [E,N,2]
         _ext = SHIP_HALF_LEN * _fwd.abs() + SHIP_HALF_BEAM * _stb.abs()        # [E,N,2] x/z 반extent
         wall_hit = ((self.pos.abs() + _ext) > ARENA_INNER).any(dim=-1)
         # 선박끼리 충돌: OBB-OBB SAT
-        vessel_hit = self._obb_obb_hit()                            # [E,N]
+        vessel_hit = self._obb_obb_hit(axes=_axes)                  # [E,N]
         # timeout
         timeout = self.step_count >= MAX_EPISODE_STEPS
         # 우선순위: goal > collision_vessel > collision_obstacle(벽 포함) > timeout
@@ -1178,9 +1287,14 @@ class VesselBatchEnv:
         #   리셋이 있을 때만 재계산하고 없으면 위에서 만든 radar·situation 을 그대로 쓴다.
         #   (같은 상태·같은 연산 → 결과 비트동일, 비용만 감소. dropout 마스킹은 _build_obs 안에서
         #   현재 dropout_left 로 적용되므로 원본(보상용) radar 를 넘겨도 동일.)
-        _had_reset = bool(done.any())
+        # ★2026-09-26 perf(비트동일): 스텝당 호스트 동기 1회. done 의 열 플래그[N](= _respawn 루프 분기)와 행 플래그[E]
+        #   (= 리셋된 env 행)를 한 텐서로 이어 한 번에 가져온다. any(_col_any) == bool(done.any()).
+        _rowflag = done.any(dim=1)                                           # [E] 리셋이 있는 env 행
+        _flags = torch.cat([done.any(dim=0), _rowflag]).tolist()             # 한 번의 D2H ([N+E] bool)
+        _col_any, _row_any = _flags[:self.N], _flags[self.N:]
+        _had_reset = any(_col_any)
         if _had_reset:
-            self._respawn(done, initial=False)
+            self._respawn(done, initial=False, col_any=_col_any)
         if RADAR_DROPOUT_P > 0:
             # 센서고장 상태 전이(결정당 1회): 재스폰 초기화 → 잔여 감소 → 신규 진입 추첨
             self.dropout_left = torch.where(done, torch.zeros_like(self.dropout_left), self.dropout_left)
@@ -1190,8 +1304,16 @@ class VesselBatchEnv:
             self.dropout_left = torch.where(enter, torch.full_like(self.dropout_left, RADAR_DROPOUT_LEN),
                                             self.dropout_left)
         if _had_reset:
-            self._update_situation()                   # 리셋 후 obs용 상황 재계산
-            obs = self._build_obs()
+            self._update_situation()                   # 리셋 후 obs용 상황 재계산 (전체 — situation/danger_idx/_last_pw 는 옛 코드 그대로)
+            # 레이더는 리셋된 env 행만 다시 계산해 끼워 넣는다. radar[e] 는 pos[e,:]·heading[e,:] 만의 함수(원소별 연산 +
+            #   같은 env 안 ray/타깃 축 min)이고, 리셋 없는 행은 _respawn 이 where(m, new, old) 로 옛 값을 그대로 두므로
+            #   그 행의 재계산 결과 == 위 :radar 값(같은 입력·같은 커널). 리셋 행은 같은 식을 슬라이스에 적용.
+            #   → index_copy 결과 == self._radar() 전체 재계산과 비트동일. 행 인덱스는 int8 stable argsort 로(동기 없음).
+            k = sum(_row_any)
+            rows = torch.argsort(_rowflag.to(torch.int8), descending=True, stable=True)[:k]   # 리셋 행, 오름차순
+            radar = radar.index_copy(0, rows, self._radar(self.pos.index_select(0, rows),
+                                                          self.heading.index_select(0, rows)))
+            obs = self._build_obs(radar)
         else:
             obs = self._build_obs(radar)               # 상태 불변 → 재계산 불필요(위 주석)
         return obs, reward, done, outcome

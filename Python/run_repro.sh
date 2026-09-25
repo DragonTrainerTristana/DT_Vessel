@@ -33,7 +33,13 @@
 #   VESSEL_OUT_DIR   CSV·로그 저장 위치. 기본 이 파일 옆 _repro_out/
 #   VESSEL_SEEDS     시드 목록. 기본 "43 44 45"
 #   VESSEL_NGPU      쓸 GPU 수. 기본은 torch 로 자동 감지(0장이면 1로 두고 CPU)
-#   VESSEL_JOBS      동시 실행 프로세스 수. 기본 = NGPU × 2 (VRAM 프로세스당 ~5.2GB 기준)
+#   VESSEL_JOBS      동시 실행 프로세스 수. 기본 = NGPU × 2. ★2026-09-26 실측 VRAM(프로세스당, torch reserved):
+#                    학습 OFF ~1.5GB · 학습 ON(EXT) ~4.5-5GB · eval envs 256 ~0.6GB · envs 1024 ~2.9GB.
+#                    pick_gpu 가 남은 VRAM 을 보고 안 맞는 GPU 는 건너뛰므로(VESSEL_VRAM_MARGIN) 16 까지 올려도 OOM 은 안 남.
+#   VESSEL_EVAL_ENVS / VESSEL_EVAL_DEC  eval·ablate 창. 기본 256 / 10000 (에이전트당 결정 = env step 수, 총 40.96M 결정).
+#                    ★2026-09-26 저자 허용: 같은 총 결정 수로 창을 바꿔도 됨(예 1024 / 2500 = 같은 40.96M, 다른 몬테카를로 추첨).
+#                    바꾸면 eval 숫자가 오차 범위 안에서 움직이므로 전 팔 동일 적용·헤더에 기록(eval_ckpt 가 [run] 줄에 찍음).
+#   VESSEL_VRAM_MARGIN  pick_gpu 여유(MiB). 기본 1200. 작업이 요구 VRAM+여유보다 남은 게 없는 GPU 는 건너뜀
 #   VESSEL_TRAIN_ARMS  학습 팔. 기본 "off on6 on12" — 통신 팔은 같은 dim 의 OFF 짝이 있어야 시작(on12 ↔ off12, on2/off2(dim 2 짝))
 #   VESSEL_BRANCH_WARMUP  갈래 재개 직후 통신 OFF 로 굴리는 에이전트당 결정 수. 기본 1200 (모든 갈래 동일)
 #   VESSEL_ALLOW_UNBRANCHED=1  eval 의 분기 검사 FAIL 을 무시 — 규약 이전 옛 배치 재평가 전용, 짝 비교 금지
@@ -99,6 +105,9 @@ except Exception:
 " 2>/dev/null || echo 1)
 fi
 JOBS="${VESSEL_JOBS:-$(( NGPU * 2 ))}"
+# ★2026-09-26 eval·ablate 창 (에이전트당 결정 수 = env step 수). 기본 = 옛 값 그대로(256 / 10000 = 40.96M 결정).
+EVAL_ENVS="${VESSEL_EVAL_ENVS:-256}"
+EVAL_DEC="${VESSEL_EVAL_DEC:-10000}"
 
 echo "재현 실행 [$MODE]"
 echo "  python      : $PY"
@@ -109,6 +118,7 @@ echo "  GPU 수      : $NGPU   동시 실행: $JOBS"
 echo "  분기점      : $BRANCH_AT 결정 (trunk → 갈래, 워밍업 $BR_WARMUP)"
 echo "  프로필      : dyn=${VESSEL_DYN_PROFILE:-agile} obstacles=${VESSEL_OBSTACLES:-grid3x3} crossing=${VESSEL_CROSSING:-2} radar=${VESSEL_RADAR_RANGE:-56}"
 echo "  통신 구조   : comm_ext=${VESSEL_COMM_EXT:-0}  이름 접두어='${RUN_PRE}'"
+echo "  eval 창     : envs=$EVAL_ENVS × 결정/에이전트=$EVAL_DEC (+burn-in 2400) = $(( EVAL_ENVS * 16 * EVAL_DEC / 1000000 ))M 결정/건"
 echo
 
 # ── 학습·평가 공통 설정 = YUGIOH (config.py 끝 `YUGIOH` 표와 1:1) ──────────────
@@ -214,19 +224,33 @@ throttle() { while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null
 #   결과 영향 없음 — 어느 물리 GPU 에 붙느냐만 바뀐다(갈래 뒤 GPU 비결정성은 §8-1 에서 이미 감수).
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 declare -a GPU_PIDS=()
+# ★2026-09-26 인자 = 이 작업이 쓸 VRAM(MiB, 위 실측표). 남은 VRAM 이 need+VESSEL_VRAM_MARGIN 미만인 GPU 는 건너뛰고,
+#   맞는 GPU 가 하나도 없으면 20 초 간격으로 기다린다(JOBS 를 8→16 으로 올렸을 때 한 GPU 에 5GB 짜리가 4개 몰려 OOM 나는 것 방지).
+#   결과 영향 없음 — 어느 물리 GPU 에 붙느냐·언제 시작하느냐만 바뀐다.
 pick_gpu() {
+  local need=${1:-0} margin=${VESSEL_VRAM_MARGIN:-1200}
   if [ "${VESSEL_GPU_PICK:-free}" = "rr" ]; then echo $(( GPU_I % NGPU )); return; fi
-  local g n f p best=0 best_n=999999 best_f=-1
+  local g n f p best best_n best_f
   local -a free=()
-  mapfile -t free < <(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null)
-  for (( g=0; g<NGPU; g++ )); do
-    n=0; for p in ${GPU_PIDS[$g]:-}; do kill -0 "$p" 2>/dev/null && n=$(( n + 1 )); done
-    f=${free[$g]:-0}; f=${f//[^0-9]/}; f=${f:-0}
-    if [ "$n" -lt "$best_n" ] || { [ "$n" -eq "$best_n" ] && [ "$f" -gt "$best_f" ]; }; then
-      best=$g; best_n=$n; best_f=$f
-    fi
+  while :; do
+    best=-1; best_n=999999; best_f=-1
+    mapfile -t free < <(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null)
+    for (( g=0; g<NGPU; g++ )); do
+      n=0; for p in ${GPU_PIDS[$g]:-}; do kill -0 "$p" 2>/dev/null && n=$(( n + 1 )); done
+      f=${free[$g]:-99999}; f=${f//[^0-9]/}; f=${f:-99999}     # nvidia-smi 없으면 제한 없음(옛 동작)
+      [ "$f" -ge $(( need + margin )) ] || continue
+      if [ "$n" -lt "$best_n" ] || { [ "$n" -eq "$best_n" ] && [ "$f" -gt "$best_f" ]; }; then
+        best=$g; best_n=$n; best_f=$f
+      fi
+    done
+    [ "$best" -ge 0 ] && { echo "$best"; return; }
+    sleep 20
   done
-  echo "$best"
+}
+# 작업 종류별 VRAM 요구(MiB) — 실측(2026-09-26, torch reserved 최대) 에 여유를 둔 값
+VRAM_TRAIN_OFF=2000; VRAM_TRAIN_ON=5500
+eval_vram() {   # envs → MiB (256: 0.6GB, 1024: 2.9GB 실측 → 선형 근사 + 여유)
+  local e=${1:-256}; echo $(( 400 + e * 3 ))
 }
 
 # ── 학습 한 런 ──────────────────────────────────────────────────────────────
@@ -236,7 +260,8 @@ pick_gpu() {
 train_one() {
   local nm=$1 arm=$2 dim=$3 s=$4 steps=$5 trunk=${6:-} br_at=${7:-0} variant=${8:-}
   throttle
-  local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+  local gpu; if [ "$arm" = "OFF" ]; then gpu=$(pick_gpu "$VRAM_TRAIN_OFF"); else gpu=$(pick_gpu "$VRAM_TRAIN_ON"); fi
+  GPU_I=$(( GPU_I + 1 ))
   echo "  ${nm}_s$s → GPU $gpu"
   (
     common_env
@@ -273,19 +298,19 @@ eval_one() {
   local nm=$1 arm=$2 dim=$3 s=$4
   [ -f "$CK/${nm}_s$s.pt" ] || { echo "  건너뜀(체크포인트 없음): ${nm}_s$s"; EVAL_MISS="$EVAL_MISS ${nm}_s$s.pt"; return; }
   throttle
-  local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+  local gpu; gpu=$(pick_gpu "$(eval_vram "$EVAL_ENVS")"); GPU_I=$(( GPU_I + 1 ))
   echo "  eval_${nm}_s$s → GPU $gpu"
   EVAL_N=$(( EVAL_N + 1 ))
   (
     common_env
     export CUDA_VISIBLE_DEVICES=$gpu
-    export OMP_NUM_THREADS=2
+    export OMP_NUM_THREADS=1     # ★2026-09-26 GPU 경로라 CPU 스레드는 안 씀(2→1). JOBS 16 에서 코어 초과 방지. 결과 불변
     export VESSEL_MSG_DIM=$dim
     # 집계 방식·중앙critic 등은 eval_ckpt 가 체크포인트의 cfg_snapshot 에서 복원한다(2026-09-05).
     # 그래도 학습과 같은 env 를 주는 편이 안전하다 — 구 체크포인트엔 스냅샷이 없다.
     "$PY" -u "$HERE/eval/eval_ckpt.py" \
       --ckpt "$CK/${nm}_s$s.pt" --arm "$arm" \
-      --envs 256 --eval_decisions 10000 --burnin 2400 \
+      --envs "$EVAL_ENVS" --eval_decisions "$EVAL_DEC" --burnin 2400 \
       > "$OUT/eval_${nm}_s$s.txt" 2>&1
     echo "eval_${nm}_s$s rc=$?" >> "$OUT/_status_eval.txt"
   ) &
@@ -387,6 +412,11 @@ branch_batch() {
   for s in $SEEDS; do
     for a in $arms; do
       spec=$(arm_spec "$a")
+      # ★2026-09-26 VESSEL_REUSE_ARMS=1: 완성된 갈래 .pt 가 있으면 다시 학습하지 않음(중단된 배치 재개용).
+      #   같은 trunk 에서 갈라진 것인지는 뒤의 check_branch 가 확인한다. 기본 0 = 옛 동작(항상 학습).
+      if [ "${VESSEL_REUSE_ARMS:-0}" = "1" ] && [ -f "$CK/${pre}${a}_s$s.pt" ]; then
+        echo "  갈래 재사용: ${pre}${a}_s$s.pt"; echo "${pre}${a}_s$s rc=0(reuse)" >> "$OUT/_status_train.txt"; continue
+      fi
       train_one "${pre}$a" "${spec% *}" "${spec#* }" "$s" "$total" "$CK/${pre}trunk_d${spec#* }_s$s.pt" "$br_at" "$a"
     done
   done
@@ -545,14 +575,14 @@ case "$MODE" in
     _abl_one() {   # 이름 시드 절제명 추가인자...
       local nm=$1 s=$2 tag=$3; shift 3
       throttle
-      local gpu; gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 ))
+      local gpu; gpu=$(pick_gpu "$(eval_vram "$EVAL_ENVS")"); GPU_I=$(( GPU_I + 1 ))
       echo "  abl_${nm}_s${s}_${tag} → GPU $gpu"
       EVAL_N=$(( EVAL_N + 1 ))
       (
         common_env
-        export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=2 VESSEL_MSG_DIM=6
+        export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=1 VESSEL_MSG_DIM=6
         "$PY" -u "$HERE/eval/eval_ckpt.py" --ckpt "$CK/${nm}_s$s.pt" \
-          --envs 256 --eval_decisions 10000 --burnin 2400 "$@" > "$OUT/abl_${nm}_s${s}_${tag}.txt" 2>&1
+          --envs "$EVAL_ENVS" --eval_decisions "$EVAL_DEC" --burnin 2400 "$@" > "$OUT/abl_${nm}_s${s}_${tag}.txt" 2>&1
         echo "abl_${nm}_s${s}_${tag} rc=$?" >> "$OUT/_status_eval.txt"
       ) &
       GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
@@ -590,11 +620,11 @@ case "$MODE" in
         f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
         arm=ON; [ "$nm" = off ] && arm=OFF
         throttle
-        gpu=$(pick_gpu); GPU_I=$(( GPU_I + 1 )); EVAL_N=$(( EVAL_N + 1 ))
+        gpu=$(pick_gpu 800); GPU_I=$(( GPU_I + 1 )); EVAL_N=$(( EVAL_N + 1 ))
         echo "  traj_${RUN_PRE}${nm}_s$s → GPU $gpu"
         (
           common_env
-          export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=2 VESSEL_MSG_DIM=6
+          export CUDA_VISIBLE_DEVICES=$gpu OMP_NUM_THREADS=1 VESSEL_MSG_DIM=6
           "$PY" -u "$HERE/eval/eval_ckpt.py" --ckpt "$f" --arm "$arm" --envs 16 --burnin 0 --eval_decisions 1500 \
             --traj_out "$OUT/traj_${RUN_PRE}${nm}_s$s.pt" --traj_envs 16 > "$OUT/traj_${RUN_PRE}${nm}_s$s.txt" 2>&1
           echo "traj_${RUN_PRE}${nm}_s$s rc=$?" >> "$OUT/_status_eval.txt"

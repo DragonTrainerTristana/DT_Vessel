@@ -464,6 +464,7 @@ FARFIELD_COEF = _env_float('VESSEL_FARFIELD_COEF', 0.0)            # far-field P
 PERPAIR_COEF = _env_float('VESSEL_PERPAIR_COEF', -0.15)            # ⚠️C# VesselAgent 기본은 0(off) — 경로별 불일치, 저자 결정 대기
 TIMEOUT_BOOTSTRAP = _env_str('VESSEL_TIMEOUT_BOOTSTRAP', '0') == '1'
 GRAD_TELEMETRY = _env_str('VESSEL_GRAD_TELEMETRY', '0') == '1'     # 모듈별 grad norm·clip 계수 기록 (진단)
+TIMING = _env_str('VESSEL_TIMING', '0') == '1'                     # ★2026-09-26 rollout/update 벽시계를 5-update 로그 끝에 붙임 (측정 전용, 0 = stdout 불변)
 CLIP_PER_MODULE = _env_str('VESSEL_CLIP_PER_MODULE', '1') == '1'   # msg_actor/ctr_actor/critic/나머지 각각 clip
 MSG_GATE_APPLY = _env_str('VESSEL_MSG_GATE_APPLY', '0') == '1'     # 게이트 개방 페널티를 loss 에 실제로 가산 (기본 0 = 안 함)
 NOCOMM_SWEEP = _env_str('VESSEL_NOCOMM_SWEEP', '').strip()         # 혼합 함대: 통신 불가 선박 지정
