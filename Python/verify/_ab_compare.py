@@ -29,8 +29,13 @@ def load(d):
     flat = {}
     for key in ('model_state_dict', 'optimizer_state_dict', 'value_norm', 'steps'):
         _flat(key, ck.get(key), flat)
-    with open(os.path.join(d, 'm_curve.csv'), 'rb') as f:
-        csv = f.read()
+    # 곡선 CSV + (있으면) aux/comm CSV 를 바이트로 (2026-09-26 리뷰: aux 는 state_recon 누적 변경의 영향 파일)
+    csv = {}
+    for name in ('m_curve.csv', 'm_curve_aux.csv', 'm_curve_comm.csv'):
+        fp = os.path.join(d, name)
+        if os.path.exists(fp):
+            with open(fp, 'rb') as f:
+                csv[name] = f.read()
     return flat, csv
 
 
@@ -51,7 +56,8 @@ def main():
             if not same:
                 diff.append(k)
         csv_same = base_csv == other_csv
-        print(f'{dirs[0]} vs {d}: tensors {len(keys)} differing {len(diff)}; curve_csv {"same" if csv_same else "DIFFERENT"}')
+        csv_desc = ','.join(sorted(set(base_csv) | set(other_csv)))
+        print(f'{dirs[0]} vs {d}: tensors {len(keys)} differing {len(diff)}; csv[{csv_desc}] {"same" if csv_same else "DIFFERENT"}')
         for k in diff[:20]:
             print('   ', k)
         if diff or not csv_same:

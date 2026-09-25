@@ -149,10 +149,12 @@ def _moe_fast_on(wrapper):
 
 
 def _moe_buckets(sit, num_experts):
-    """Drop-in for 'for k: mask = (sit == k); if mask.any(): ... x[mask] ...' with ONE GPU->CPU sync.
+    """Drop-in for 'for k: mask = (sit == k); if mask.any(): ... x[mask] ...' with one host transfer.
 
     Yields (k, idx) for every expert k that owns at least one row; idx is the int64 row-index vector of
     that expert, ascending. Experts with 0 rows are skipped exactly like the mask loop did.
+    Requires torch >= 1.13 (argsort stable=True). Measured host syncs per call on CUDA: 3 (bincount sizes its
+    histogram with an internal max().item(), plus .tolist()) vs 10 for the old 5-expert mask loop.
     """
     # ★2026-09-26 sync-free MoE 라우팅 (design_trainer.md T2). 기본 루프 경로(MOE_FAST=0)의 비트동일 대체.
     #   왜 — 옛 루프는 전문가마다 mask.any()(sync 1) + x[mask](내부 nonzero, sync 1) 를 돌아
