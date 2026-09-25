@@ -165,6 +165,35 @@ def main():
     # ★상황별 준수율 (1=HeadOn, 2=CrossingStandOn, 3=CrossingGiveWay, 4=Overtaking)
     sit_ok = {k: 0.0 for k in (1, 2, 3, 4)}; sit_n = {k: 0 for k in (1, 2, 3, 4)}
 
+    # ★2026-09-26 (T5) 평가 루프의 GPU→CPU 동기화 제거 — 실측 스텝당 ~100회(bool(any())·int(sum())·float(sum())·tolist)가
+    #   호스트 바운드의 주범이었다. 루프 안 누적기는 전부 device 텐서로 두고 루프 뒤에 위 호스트 변수로 되돌린다
+    #   (출력부는 글자 하나 안 바뀜). 비트동일 규칙:
+    #   · 정수 카운트(0/1 합) → int64 마스크 합. 순서·dtype 무관하게 정확.
+    #   · 연속 합: 옛 코드 `float(x[mask].sum())` = 행우선으로 압축된 float32 벡터를 reduce 커널로 합산 → 호스트 float64 누적.
+    #     nonzero(동기화) 없이 같은 벡터를 만들려고 stable argsort 로 mask 의 True 원소를 행우선 순서로 모은 뒤
+    #     (advanced index → 새 할당, 같은 numel → 같은 커널 구성·같은 덧셈 순서) 합산하고 .double() 로 device 에서 누적.
+    #     슬라이스 길이(호스트 int)만 스텝당 2회(step 전·후)의 packed .tolist() 로 받는다.
+    #   · 히스토그램은 torch.bincount 가 아니라 index_add_ — bincount 는 CUDA 에서 max() 로 동기화한다(실측 3회/호출).
+    #   · 리스트 수집기(pair_res·null_*)는 device 텐서 리스트로 모아 루프 뒤 한 번에 .tolist() — 붙는 순서는 옛 append 순서 그대로.
+    #   · 제어흐름·난수를 정하는 호스트값(pr_active.any()·_new.any() → torch.randint)은 그대로 호스트에서 판단하되 같은 전송에 싣는다.
+    _f64 = dict(dtype=torch.float64, device=dev)
+    _i64 = dict(dtype=torch.long, device=dev)
+    _acc_comp_sum = torch.zeros((), **_f64)
+    _acc_sit_n = torch.zeros(5, **_i64); _acc_sit_ok = torch.zeros(5, **_i64)      # [0] = 게이트 밖(미사용), 합 = comp_n / comp_bin
+    _acc_msum = torch.zeros(5, 5, **_f64)                                           # [outcome, (fuel, head, minsep, length, reward)]
+    _acc_all_minsep = torch.zeros((), **_f64)
+    _ones_en = torch.ones(E * N, **_i64); _ones_enn = torch.ones(E * N * N, **_i64)
+
+    def _hist5(key, ones):
+        """key [n] long ∈ 0..4 → 개수 [5] (== torch.bincount(key, minlength=5) 값, 동기화 없음. 정수 원자합이라 정확)."""
+        return torch.zeros(5, **_i64).index_add_(0, key, ones)
+
+    def _compact(vals_flat, order, off, c):
+        """stable argsort 압축: order[off:off+c] 가 가리키는 원소를 행우선 순서 그대로 새 텐서 [c] 로 뽑는다
+        (== vals[mask] 의 원소·순서). 새 할당(정렬된 포인터)이라 .sum() 의 커널 구성이 옛 masked_select 결과와 같다 —
+        큰 벡터의 슬라이스 뷰를 바로 합산하면 안 된다(reduce 커널이 포인터 정렬에 따라 머리 원소를 따로 더한다)."""
+        return vals_flat[order[off:off + c]]
+
     # ─── ★조우(encounter) 단위 COLREGs 준수도 — colregs_compliance_metric.tex 정의 구현 ───
     #   기존 스텝별 지표(colregs/colregsOK)는 *그대로 두고* 추가 산출한다(옛 run 과의 비교 보존).
     #   정의: 같은 COLREGs 상황이 연속 ENC_MIN_STEPS(5) 이상 유지된 구간 = 조우 1건.
@@ -186,31 +215,39 @@ def main():
     enc_tot = {k: 0 for k in (1, 2, 3, 4)}
     enc_ok = {'act': {k: 0 for k in (1, 2, 3, 4)}, 'cmd': {k: 0 for k in (1, 2, 3, 4)}}
     enc_dsum = {k: 0.0 for k in (1, 2, 3, 4)}
+    _acc_enc_tot = torch.zeros(5, **_i64)                                   # [k] = 조우 수 (루프 뒤 enc_tot)
+    _acc_enc_ok = {'act': torch.zeros(5, **_i64), 'cmd': torch.zeros(5, **_i64)}
+    _acc_enc_dsum = torch.zeros(5, **_f64)
 
-    def enc_finalize(mask):
-        """mask [E,N]: 방금 끝난 조우를 tex 기준으로 판정·집계 (5스텝 미만·burn-in 잔여는 제외)."""
+    def enc_prepare(mask):
+        """mask [E,N]: 방금 끝난 조우를 tex 기준으로 판정·집계 (5스텝 미만·burn-in 잔여는 제외) — 옛 enc_finalize 의
+        동기화 없는 판. 조우 수·판정 통과 수는 여기서 device 에 바로 누적(0/1 합 = 정확). 최소통과거리 합만 압축 길이가
+        필요하므로 (압축용 벡터, order, 역할별 개수) 를 돌려주고 packed 전송 뒤 enc_apply 가 더한다.
+        판정은 옛 코드처럼 mk 로 뽑은 뒤 나누지 않고 전체 텐서에서 나눈 뒤 mk 로 센다 — 원소별 나눗셈·비교라 값이 같고,
+        mk 밖의 0/0=NaN 은 비교에서 False 인 데다 mk 로 걸러진다."""
         m = mask & (enc_len >= ENC_MIN_STEPS) & (~enc_skip)
-        if not bool(m.any()):
-            return
+        _z = torch.zeros_like(enc_sit)
+        key = torch.where(m, enc_sit, _z).view(-1)                          # 0 = 집계 제외, 1..4 = 역할
+        cnt = _hist5(key, _ones_en)                                         # cnt[k] == 옛 int(mk.sum())
+        _acc_enc_tot.add_(cnt)
+        for src in ('act', 'cmd'):
+            stb = enc_c[src][0] / enc_len
+            port = enc_c[src][1] / enc_len
+            ck = enc_c[src][2] / enc_len
+            ok = torch.where(enc_sit == 2, ck > 0.6,
+                             torch.where(enc_sit == 4, stb > 0.3, (stb > 0.5) & (port < 0.2)))   # k∈{1,3}: 우현·좌현 기준
+            _acc_enc_ok[src].add_(_hist5(torch.where(m & ok, enc_sit, _z).view(-1), _ones_en))
+        return enc_mind.clamp(max=vg.RADAR_RANGE * 4).view(-1), torch.argsort(key, stable=True), cnt
+
+    def enc_apply(prep, cnt):
+        """prep = enc_prepare 반환값, cnt = 그 개수의 호스트 사본. 옛 `float(enc_mind[mk].clamp().sum())` 과 같은 압축 합."""
+        vals, order, _ = prep
+        off = cnt[0]
         for k in (1, 2, 3, 4):
-            mk = m & (enc_sit == k)
-            nk = int(mk.sum())
-            if nk == 0:
-                continue
-            enc_tot[k] += nk
-            enc_dsum[k] += float(enc_mind[mk].clamp(max=vg.RADAR_RANGE * 4).sum())
-            L = enc_len[mk]
-            for src in ('act', 'cmd'):
-                stb = enc_c[src][0][mk] / L
-                port = enc_c[src][1][mk] / L
-                ck = enc_c[src][2][mk] / L
-                if k in (1, 3):
-                    ok = (stb > 0.5) & (port < 0.2)
-                elif k == 2:
-                    ok = ck > 0.6
-                else:
-                    ok = stb > 0.3
-                enc_ok[src][k] += int(ok.sum())
+            c = cnt[k]
+            if c:
+                _acc_enc_dsum[k].add_(_compact(vals, order, off, c).sum().double())
+            off += c
 
     # ★2026-09-15: 진행 표시. 기존엔 burn-in 200 에서 ETA 한 줄만 찍고 끝까지 무출력이라
     #   몇 분짜리인지 몇 십 분짜리인지 알 수 없었다(실측: 그 ETA 25분 → 실제 38분).
@@ -265,10 +302,12 @@ def main():
     _upper = _allj > _cidx.view(1, N, 1)                        # 무순서 쌍 1회 (HeadOn·일치율)
     _CK = ('gwso', 'comp', 'gw_stb', 'so_hold', 'so_port', 'both_hold', 'ho', 'ho_both_stb', 'roled', 'agree')
     coord = {band: {k: 0.0 for k in _CK} for band in ('near', 'far')}
+    _acc_coord = {band: torch.zeros(len(_CK), **_i64) for band in ('near', 'far')}   # _CK 순서, 루프 뒤 coord 로
     # 충돌 분해 (스펙 §5): 선박 충돌로 끝난 배마다 직전 결정의 '가장 가까운 상대' 와의 역할·실제 타각으로 분류
     _COLL_K = ('multi', 'gw_noact', 'gw_act_so_hold', 'gw_act_so_turn', 'so_act', 'so_hold_gw_noact',
                'so_hold_gw_act', 'ho_both_stb', 'ho_not_both', 'overtaking', 'no_role')
     coll_cat = {k: 0 for k in _COLL_K}
+    _acc_coll = torch.zeros(len(_COLL_K), **_i64)                    # _COLL_K 순서, 루프 뒤 coll_cat 으로
     _cctx = {}                                                      # _coord_update 가 채우는 step 전 상태
 
     def _coord_update(a):
@@ -290,20 +329,13 @@ def main():
                  | ((myr == OT) & (thr == NO)) | ((myr == NO) & (thr == OT)))
         roled = (myr != NO) | (thr != NO)
         for band, bm in (('near', near), ('far', ~near)):
-            c = coord[band]
             g = bm & (myr == GW) & (thr == SO)                     # i 양보선, j 유지선 (순서쌍이지만 방향이 정해져 1회)
-            c['gwso'] += float(g.sum())
-            c['comp'] += float((g & stb_i & hold_j).sum())
-            c['gw_stb'] += float((g & stb_i).sum())
-            c['so_hold'] += float((g & hold_j).sum())
-            c['so_port'] += float((g & port_j).sum())
-            c['both_hold'] += float((g & hold_i & hold_j).sum())
             h = bm & (myr == HO) & (thr == HO) & _upper
-            c['ho'] += float(h.sum())
-            c['ho_both_stb'] += float((h & stb_i & stb_j).sum())
             r = bm & roled & _upper
-            c['roled'] += float(r.sum())
-            c['agree'] += float((r & agree).sum())
+            # _CK 순서 (gwso comp gw_stb so_hold so_port both_hold ho ho_both_stb roled agree). 0/1 합 → int64 로 device 누적
+            _acc_coord[band].add_(torch.stack([
+                g.sum(), (g & stb_i & hold_j).sum(), (g & stb_i).sum(), (g & hold_j).sum(), (g & port_j).sum(),
+                (g & hold_i & hold_j).sum(), h.sum(), (h & stb_i & stb_j).sum(), r.sum(), (r & agree).sum()]))
         # 충돌 분해용: 배 i 의 가장 가까운 상대 jn 과의 역할·행동 + 위험 상대 수(게이트 통과 역할이 붙은 상대)
         jn = dij.argmin(-1, keepdim=True)                               # [E,N,1]
         _g = lambda t: t.gather(-1, jn).squeeze(-1)                     # noqa: E731
@@ -360,6 +392,7 @@ def main():
     pr_off_cnt = _z3()      # 조우 스텝 수 -> 평균|오프셋| (창 길이에 불변)
     # null 기준선: 조우가 없는 배의 같은 통계(배경 잡음 크기 확인용)
     null_off_abs = []
+    _null_off_dev = []; _null_off_n = 0        # ★T5: device 조각 리스트 + 호스트 길이(옛 len(null_off_abs) 상한 검사용)
     # ★Rule 17 매칭 null 대조 (2026-09-04): '조우가 없는 배'가 같은 길이 창에서 침로를 얼마나 트는가.
     #   배는 조우와 무관하게 목표를 향해 계속 돈다 → 절대 문턱은 그 배경분을 못 뺀다
     #   (실측: 조우 없는 배의 |목표대비 오프셋| 중앙 9.6°, 10° 이내는 51.8%뿐).
@@ -367,6 +400,7 @@ def main():
     #   무조우 |Δψ| 분포를 기준선으로 삼는다. 길이 버킷별로 모아 길이 교란을 제거한다.
     NULLW_BUCKETS = ((0, 20), (20, 40), (40, 80), (80, 10 ** 9))
     null_dpsi = {i: [] for i in range(len(NULLW_BUCKETS))}   # 버킷 → [|Δψ|, ...]
+    _null_dpsi_dev = {i: [] for i in range(len(NULLW_BUCKETS))}; _null_dpsi_n = {i: 0 for i in range(len(NULLW_BUCKETS))}
     nq_h0 = torch.zeros(E, N, device=dev)      # 무조우 연속구간 시작 침로
     nq_len = torch.zeros(E, N, device=dev)     # 그 구간 길이(결정)
     nq_tgt = torch.zeros(E, N, device=dev)     # 이번에 채울 목표 길이(조우 길이 분포에서 표집)
@@ -385,35 +419,74 @@ def main():
     pr_skip = ((_pw0['near_risk'] > PAIR_ENTRY_RISK) & (_pw0['sit'] > 0)) if _pw0 is not None \
         else torch.zeros(E, N, N, dtype=torch.bool, device=dev)   # burn-in 을 걸친 쌍은 1회 제외
     pair_res = {k: [] for k in (1, 2, 3, 4)}            # role → [(ok, 최소거리, 첫변침스텝|-1), ...]
+    # ★T5: 쌍 조우 레코드 [P,10] float32 (역할, ok, 최소거리, 첫변침, 평균|오프셋|, 최대우현오프셋, |Δψ|, 길이, 감속률, 진입DCPA)
+    #   device 리스트로 모아 루프 뒤 한 번에 .tolist() → pair_res / hd_res / sd_dpsi / r8_res 를 옛 append 순서로 채운다.
+    _pair_recs = []
 
-    def pair_finalize(mask):
-        """mask [E,N,N]: 방금 끝난 쌍 조우를 판정·집계 (5스텝 미만·burn-in 잔여 제외)."""
-        m = mask & (pr_len >= PAIR_MIN_LEN) & (~pr_skip)
-        if not bool(m.any()):
+    def _pr_state():
+        """현재 commit 된 쌍 상태(활성 쌍 갱신이 바꾸는 텐서만). _pair_advance 가 같은 키의 후보 dict 를 돌려준다."""
+        return dict(len=pr_len, stb=pr_stb, port=pr_port, ck=pr_ck, mind=pr_mind, fm=pr_fm,
+                    dpsi=pr_dpsi, dpsi_min=pr_dpsi_min, dpsi_max=pr_dpsi_max, off_max=pr_off_max, off_abs=pr_off_abs,
+                    off_sum=pr_off_sum, off_cnt=pr_off_cnt, spmin=pr_spmin, cpa=pr_cpa, far=pr_far)
+
+    def _pair_advance(_pa, _pwe, sr, goal):
+        """활성 쌍 _pa [E,N,N] 의 이번 결정 누적 — 옛 `if bool(pr_active.any()):` 블록 안의 순수 계산. 새 텐서만 만들어
+        dict 로 돌려주고 이름 재바인딩(commit)은 호출자가 옛 코드와 같은 호스트 게이트(pr_active.any()) 뒤에 한다
+        → 게이트가 False 인 스텝에는 옛 코드처럼 쌍 상태가 하나도 안 바뀐다(pr_cpa/pr_far 의 잔존값까지)."""
+        _nr3 = (env.rudder / vg.MAX_TURN_RATE).unsqueeze(-1)      # [E,N,1] → broadcast
+        _d3 = _pwe['dist']; _rt3 = _pwe['raw_tcpa']
+        n_len = pr_len + _pa.to(pr_len.dtype)
+        n_stb = pr_stb + ((_nr3 > EPS_S) & _pa).to(pr_len.dtype)
+        n_port = pr_port + ((_nr3 < -EPS_P) & _pa).to(pr_len.dtype)
+        n_ck = pr_ck + ((_nr3.abs() < EPS_C) & _pa).to(pr_len.dtype)
+        _hnow = env.heading.unsqueeze(-1).expand(-1, -1, N)
+        _dps = torch.remainder(_hnow - pr_hd0 + 180.0, 360.0) - 180.0   # [-180,180]
+        n_dpsi = torch.where(_pa, _dps, pr_dpsi)
+        n_dpsi_min = torch.where(_pa, torch.minimum(pr_dpsi_min, _dps), pr_dpsi_min)
+        n_dpsi_max = torch.where(_pa, torch.maximum(pr_dpsi_max, _dps), pr_dpsi_max)
+        _off = (-goal[..., 1] * 180.0).unsqueeze(-1).expand(-1, -1, N)   # [E,N,N] 목표 대비 우현 오프셋
+        n_off_max = torch.where(_pa, torch.maximum(pr_off_max, _off), pr_off_max)
+        n_off_abs = torch.where(_pa, torch.maximum(pr_off_abs, _off.abs()), pr_off_abs)
+        n_off_sum = torch.where(_pa, pr_off_sum + _off.abs(), pr_off_sum)
+        n_off_cnt = torch.where(_pa, pr_off_cnt + 1.0, pr_off_cnt)
+        _sr3n = sr.unsqueeze(-1).expand(-1, -1, N)
+        n_spmin = torch.where(_pa, torch.minimum(pr_spmin, _sr3n), pr_spmin)
+        n_mind = torch.where(_pa, torch.minimum(pr_mind, _d3), pr_mind)
+        _man = _pa & (pr_fm < 0) & (_nr3.abs() > PAIR_MANEUVER_THR)
+        n_fm = torch.where(_man, n_len, pr_fm)
+        n_cpa = torch.where(_pa & (_rt3 < 0), pr_cpa + 1.0, torch.zeros_like(pr_cpa))
+        n_far = torch.where(_pa & (_d3 > PAIR_FAR_DIST), pr_far + 1.0, torch.zeros_like(pr_far))
+        return dict(len=n_len, stb=n_stb, port=n_port, ck=n_ck, mind=n_mind, fm=n_fm,
+                    dpsi=n_dpsi, dpsi_min=n_dpsi_min, dpsi_max=n_dpsi_max, off_max=n_off_max, off_abs=n_off_abs,
+                    off_sum=n_off_sum, off_cnt=n_off_cnt, spmin=n_spmin, cpa=n_cpa, far=n_far)
+
+    def pair_prepare(mask, S):
+        """mask [E,N,N]: 방금 끝난 쌍 조우를 판정·집계 (5스텝 미만·burn-in 잔여 제외) — 옛 pair_finalize 의 동기화 없는 판.
+        S = 쌍 상태 dict(_pr_state 또는 _pair_advance 후보). 역할별 개수는 packed 전송에 싣고, 호스트 사본이 오면
+        pair_apply 가 레코드를 뽑는다."""
+        m = mask & (S['len'] >= PAIR_MIN_LEN) & (~pr_skip)
+        key = torch.where(m, pr_role, torch.zeros_like(pr_role)).view(-1)   # 0 = 집계 제외, 1..4 = 역할
+        return key, torch.argsort(key, stable=True), _hist5(key, _ones_enn), S
+
+    def pair_apply(prep, cnt):
+        """prep = pair_prepare 반환값, cnt = 그 개수의 호스트 사본. [P,10] 레코드(역할 1,2,3,4 블록 순 — 옛 for k 루프와
+        같은 순서, 블록 안은 행우선 = 옛 마스크 인덱싱 순서)를 device 리스트에 붙인다."""
+        key, order, _, S = prep
+        P = cnt[1] + cnt[2] + cnt[3] + cnt[4]
+        if P == 0:
             return
-        for k in (1, 2, 3, 4):
-            mk = m & (pr_role == k)
-            if not bool(mk.any()):
-                continue
-            L = pr_len[mk]
-            stb = pr_stb[mk] / L; port = pr_port[mk] / L; ck = pr_ck[mk] / L
-            if k in (1, 3):
-                ok = (stb > 0.5) & (port < 0.2)
-            elif k == 2:
-                ok = ck > 0.6
-            else:
-                ok = stb > 0.3
-            for o, d_, f_ in zip(ok.tolist(), pr_mind[mk].tolist(), pr_fm[mk].tolist()):
-                pair_res[k].append((o, d_, f_))
-            if k == 2:   # 유지역할(R17): 목표 방위에서 얼마나 벗어났나
-                hd_res[k] += (pr_off_sum / pr_off_cnt.clamp(min=1.0))[mk].tolist()
-                # ★null 대조용: StandOn 조우의 순 침로변화 |Δψ| 와 창 길이를 같이 남긴다
-                sd_dpsi.extend(zip(pr_dpsi[mk].abs().tolist(), pr_len[mk].tolist()))
-            else:        # 양보역할: 목표 방위 대비 최대 우현 오프셋
-                hd_res[k] += pr_off_max[mk].tolist()
-            # ★규칙8: (우현 오프셋, 감속률, 진입DCPA) — 양보역할만 판정에 씀
-            _drop = (1.0 - pr_spmin / pr_sp0.clamp(min=1e-3)).clamp(min=0.0)
-            r8_res[k] += list(zip(pr_off_max[mk].tolist(), _drop[mk].tolist(), pr_dcpa0[mk].tolist()))
+        idx = order[cnt[0]:cnt[0] + P]
+        L = S['len']
+        # 옛 코드는 mk 로 뽑은 뒤 나눴고 여기선 전체에서 나눈 뒤 뽑는다 — 원소별 나눗셈·비교라 동일(mk 밖은 안 뽑힘)
+        stb = S['stb'] / L; port = S['port'] / L; ck = S['ck'] / L
+        ok = torch.where(pr_role == 2, ck > 0.6,                                     # 유지역할(R17)
+                         torch.where(pr_role == 4, stb > 0.3, (stb > 0.5) & (port < 0.2)))   # 추월 / HeadOn·GiveWay
+        off_avg = S['off_sum'] / S['off_cnt'].clamp(min=1.0)                        # 유지역할: 목표 방위 평균 이탈
+        # ★규칙8: (우현 오프셋, 감속률, 진입DCPA) — 양보역할만 판정에 씀
+        _drop = (1.0 - S['spmin'] / pr_sp0.clamp(min=1e-3)).clamp(min=0.0)
+        cols = (pr_role.to(L.dtype), ok.to(L.dtype), S['mind'], S['fm'], off_avg, S['off_max'],
+                S['dpsi'].abs(), L, _drop, pr_dcpa0)
+        _pair_recs.append(torch.stack([c.reshape(-1)[idx] for c in cols], dim=1))   # [P,10]
 
     # 평가: 완주 outcome pooling + 지표
     # ★2026-09-05 fix: 창 끝 절단(censoring).
@@ -451,25 +524,24 @@ def main():
         ep_minsep = torch.minimum(ep_minsep, sep)
         ep_len += 1.0
         # ── ★COLREGs 준수도 (step 전 상황·행동으로 판정; 보상 게이트와 동일 max_risk>0.3) ──
+        #   ★T5: 옛 `if bool(_gate.any())` 게이트는 뺐다 — 마스크 합은 게이트가 비면 0 을 더할 뿐이고, 압축 합은
+        #   아래 전송 뒤 길이 0 이면 건너뛴다(옛 코드와 같은 덧셈 순서).
         _pw = env._last_pw
         if _pw is not None:
             _mrisk = _pw['risk'].max(dim=-1).values                  # [E,N]
             _sit = env.situation                                     # [E,N] 0~4
             _rud = a[..., 0]                                         # [-1,1] >0=우현
             _gate = (_mrisk > 0.3) & (_sit > 0)                      # 조우 + 위험
-            if bool(_gate.any()):
-                _star = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r_dtype := ep_fuel.dtype)
-                _hold = (_sit == 2).to(r_dtype)
-                _viol = _star * torch.clamp(-_rud, min=0.0) + _hold * _rud.abs()
-                _comp = (1.0 - _viol).clamp(0.0, 1.0)                # 1=완전준수
-                comp_sum += float(_comp[_gate].sum())
-                comp_bin += float((_viol[_gate] < 0.1).float().sum())
-                comp_n += int(_gate.sum())
-                for _k in (1, 2, 3, 4):
-                    _m = _gate & (_sit == _k)
-                    if bool(_m.any()):
-                        sit_ok[_k] += float((_viol[_m] < 0.1).float().sum())
-                        sit_n[_k] += int(_m.sum())
+            _star = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r_dtype := ep_fuel.dtype)
+            _hold = (_sit == 2).to(r_dtype)
+            _viol = _star * torch.clamp(-_rud, min=0.0) + _hold * _rud.abs()
+            _comp = (1.0 - _viol).clamp(0.0, 1.0)                # 1=완전준수
+            _okv = _viol < 0.1
+            _zs = torch.zeros_like(_sit)
+            _sit_cnt = _hist5(torch.where(_gate, _sit, _zs).view(-1), _ones_en)   # [k] == 옛 int(_m.sum()); [0] = 게이트 밖
+            _acc_sit_n.add_(_sit_cnt)
+            _acc_sit_ok.add_(_hist5(torch.where(_gate & _okv, _sit, _zs).view(-1), _ones_en))
+            _gorder = torch.argsort(_gate.view(-1).to(torch.int8), stable=True)   # False 앞, True 뒤(각각 행우선)
         # ── ★조율 진단·궤적 (2026-09-25): step 전 상태 + 이번 결정 ──
         if _dstep < args.eval_decisions:
             _coord_update(a)
@@ -479,24 +551,23 @@ def main():
                 _traj['cmd'].append(a[:_te].clone()); _traj['situation'].append(env.situation[:_te].clone())
                 _traj['goal'].append(env.goal[:_te].clone()); _traj['max_speed'].append(env.max_speed[:_te].clone())
         # ── ★조우 단위 누적 (tex 정의). step *직전* = 정책이 본 situation 과 현재 타각을 짝지음 ──
-        _pwe = env._last_pw
+        _pwe = _pw                                   # env._last_pw 그대로(사이에 env 를 바꾸는 호출 없음 — comm_pair_features 는 읽기만)
         if _pwe is not None:
             _sn = env.situation
             _cont = (_sn == enc_sit) & (_sn > 0)
             _fin = (enc_sit > 0) & (~_cont)          # 방금 끝난 조우
             _new = (_sn > 0) & (~_cont)              # 방금 시작한 조우
-            if bool(_fin.any()):
-                enc_finalize(_fin)
+            _encF = enc_prepare(_fin)                # 옛 enc_finalize(_fin): 수·판정은 device 누적, 최소거리 합은 전송 뒤 enc_apply
+            # 리셋: 옛 `if bool(_rst.any())` 게이트는 뺐다 — where 는 마스크가 비면 항등
             _rst = _fin | _new
-            if bool(_rst.any()):
-                _z = torch.zeros_like(enc_len)
-                enc_len = torch.where(_rst, _z, enc_len)
-                for _src in ('act', 'cmd'):
-                    for _i in range(3):
-                        enc_c[_src][_i] = torch.where(_rst, _z, enc_c[_src][_i])
-                enc_mind = torch.where(_rst, torch.full_like(enc_mind, BIG), enc_mind)
-                enc_skip = enc_skip & (~_rst)        # 새로 시작한 조우는 온전함
-                enc_sit = torch.where(_new, _sn, torch.where(_fin, torch.zeros_like(enc_sit), enc_sit))
+            _z = torch.zeros_like(enc_len)
+            enc_len = torch.where(_rst, _z, enc_len)
+            for _src in ('act', 'cmd'):
+                for _i in range(3):
+                    enc_c[_src][_i] = torch.where(_rst, _z, enc_c[_src][_i])
+            enc_mind = torch.where(_rst, torch.full_like(enc_mind, BIG), enc_mind)
+            enc_skip = enc_skip & (~_rst)        # 새로 시작한 조우는 온전함
+            enc_sit = torch.where(_new, _sn, torch.where(_fin, torch.zeros_like(enc_sit), enc_sit))
             _act_on = _sn > 0
             _f = _act_on.to(enc_len.dtype)
             enc_len = enc_len + _f
@@ -509,75 +580,93 @@ def main():
 
             # ── ★쌍 단위 조우 갱신 (역할 고정, CPA/이탈 종료) ──
             _nrk3 = _pwe['near_risk']; _sit3 = _pwe['sit']
-            _d3 = _pwe['dist']; _rt3 = _pwe['raw_tcpa']
             _cand = (_nrk3 > PAIR_ENTRY_RISK) & (_sit3 > 0)
             pr_in = torch.where(_cand & (~pr_active), pr_in + 1.0, torch.zeros_like(pr_in))
             _start = (pr_in >= PAIR_DEBOUNCE) & (~pr_active)
-            if bool(_start.any()):
-                pr_active = pr_active | _start
-                pr_role[_start] = _sit3[_start]
-                pr_len[_start] = 0.0; pr_stb[_start] = 0.0; pr_port[_start] = 0.0; pr_ck[_start] = 0.0
-                pr_mind[_start] = BIG; pr_fm[_start] = -1.0
-                pr_hd0[_start] = env.heading.unsqueeze(-1).expand(-1, -1, N)[_start]
-                pr_dpsi[_start] = 0.0; pr_dpsi_min[_start] = 0.0; pr_dpsi_max[_start] = 0.0
-                pr_off_max[_start] = -999.0; pr_off_abs[_start] = 0.0
-                _sr3 = sr.unsqueeze(-1).expand(-1, -1, N)
-                pr_sp0[_start] = _sr3[_start]; pr_spmin[_start] = _sr3[_start]
-                pr_dcpa0[_start] = _pwe['dcpa'][_start]
-                pr_off_sum[_start] = 0.0; pr_off_cnt[_start] = 0.0
-                pr_cpa[_start] = 0.0; pr_far[_start] = 0.0; pr_in[_start] = 0.0
-            if bool(pr_active.any()):
-                _nr3 = (env.rudder / vg.MAX_TURN_RATE).unsqueeze(-1)      # [E,N,1] → broadcast
-                pr_len = pr_len + pr_active.to(pr_len.dtype)
-                pr_stb = pr_stb + ((_nr3 > EPS_S) & pr_active).to(pr_len.dtype)
-                pr_port = pr_port + ((_nr3 < -EPS_P) & pr_active).to(pr_len.dtype)
-                pr_ck = pr_ck + ((_nr3.abs() < EPS_C) & pr_active).to(pr_len.dtype)
-                _hnow = env.heading.unsqueeze(-1).expand(-1, -1, N)
-                _dps = torch.remainder(_hnow - pr_hd0 + 180.0, 360.0) - 180.0   # [-180,180]
-                pr_dpsi = torch.where(pr_active, _dps, pr_dpsi)
-                pr_dpsi_min = torch.where(pr_active, torch.minimum(pr_dpsi_min, _dps), pr_dpsi_min)
-                pr_dpsi_max = torch.where(pr_active, torch.maximum(pr_dpsi_max, _dps), pr_dpsi_max)
-                _off = (-goal[..., 1] * 180.0).unsqueeze(-1).expand(-1, -1, N)   # [E,N,N] 목표 대비 우현 오프셋
-                pr_off_max = torch.where(pr_active, torch.maximum(pr_off_max, _off), pr_off_max)
-                pr_off_abs = torch.where(pr_active, torch.maximum(pr_off_abs, _off.abs()), pr_off_abs)
-                pr_off_sum = torch.where(pr_active, pr_off_sum + _off.abs(), pr_off_sum)
-                pr_off_cnt = torch.where(pr_active, pr_off_cnt + 1.0, pr_off_cnt)
-                _sr3n = sr.unsqueeze(-1).expand(-1, -1, N)
-                pr_spmin = torch.where(pr_active, torch.minimum(pr_spmin, _sr3n), pr_spmin)
-                pr_mind = torch.where(pr_active, torch.minimum(pr_mind, _d3), pr_mind)
-                _man = pr_active & (pr_fm < 0) & (_nr3.abs() > PAIR_MANEUVER_THR)
-                pr_fm = torch.where(_man, pr_len, pr_fm)
-                pr_cpa = torch.where(pr_active & (_rt3 < 0), pr_cpa + 1.0, torch.zeros_like(pr_cpa))
-                pr_far = torch.where(pr_active & (_d3 > PAIR_FAR_DIST), pr_far + 1.0, torch.zeros_like(pr_far))
+            # 시작 쌍 초기화: 옛 `x[_start] = v` (in-place, `if _start.any()` 게이트) → where 재바인딩. 같은 위치에 같은 값,
+            #   마스크가 비면 항등이라 게이트 불요. (in-place 를 버려야 아래 prepare 가 잡아둔 텐서가 뒤에 안 바뀐다)
+            _z3f = torch.zeros_like(pr_len)
+            pr_role = torch.where(_start, _sit3, pr_role)
+            pr_len = torch.where(_start, _z3f, pr_len); pr_stb = torch.where(_start, _z3f, pr_stb)
+            pr_port = torch.where(_start, _z3f, pr_port); pr_ck = torch.where(_start, _z3f, pr_ck)
+            pr_mind = torch.where(_start, torch.full_like(pr_mind, BIG), pr_mind)
+            pr_fm = torch.where(_start, torch.full_like(pr_fm, -1.0), pr_fm)
+            pr_hd0 = torch.where(_start, env.heading.unsqueeze(-1), pr_hd0)
+            pr_dpsi = torch.where(_start, _z3f, pr_dpsi); pr_dpsi_min = torch.where(_start, _z3f, pr_dpsi_min)
+            pr_dpsi_max = torch.where(_start, _z3f, pr_dpsi_max)
+            pr_off_max = torch.where(_start, torch.full_like(pr_off_max, -999.0), pr_off_max)
+            pr_off_abs = torch.where(_start, _z3f, pr_off_abs)
+            _sr3 = sr.unsqueeze(-1)
+            pr_sp0 = torch.where(_start, _sr3, pr_sp0); pr_spmin = torch.where(_start, _sr3, pr_spmin)
+            pr_dcpa0 = torch.where(_start, _pwe['dcpa'], pr_dcpa0)
+            pr_off_sum = torch.where(_start, _z3f, pr_off_sum); pr_off_cnt = torch.where(_start, _z3f, pr_off_cnt)
+            pr_cpa = torch.where(_start, _z3f, pr_cpa); pr_far = torch.where(_start, _z3f, pr_far)
+            pr_in = torch.where(_start, _z3f, pr_in)
+            pr_active = pr_active | _start
+            # 활성 쌍 갱신 *후보* (commit 은 전송 뒤 호스트 게이트 안에서) + 종료 판정·집계 준비
+            _adv = _pair_advance(pr_active, _pwe, sr, goal)
+            _endp = pr_active & ((_adv['cpa'] >= PAIR_END_CPA) | (_adv['far'] >= PAIR_END_FAR))
+            _pairP = pair_prepare(_endp, _adv)
+            # null 기준선·매칭 null 창 — 호스트 게이트값과 압축 길이만 준비(순수 계산). 상태 commit 은 전송 뒤.
+            _noenc = ~pr_active.any(dim=-1)                       # [E,N] 활성 조우 0
+            _h1 = env.heading                                     # [E,N]
+            _nqnew = _noenc & (nq_len <= 0)
+            _nql = torch.where(_noenc, nq_len + 1.0, torch.zeros_like(nq_len))      # 옛 :567 의 새 nq_len
+            # _nhit 는 randint 로 갱신되기 *전* nq_tgt 로 계산해도 같다: _nqnew 행은 _nql=1 < 8 ≤ 새 목표이고
+            #   옛 목표는 0(→ nq_tgt>0 실패) 또는 ≥8 이라 어느 쪽이든 False.
+            _nhit = _noenc & (_nql >= nq_tgt) & (nq_tgt > 0)
+            _bkt = (_nql >= 20.0).long() + (_nql >= 40.0).long() + (_nql >= 80.0).long()   # NULLW_BUCKETS 인덱스 0..3
+            _nkey = torch.where(_nhit, _bkt + 1, torch.zeros_like(_bkt)).view(-1)          # 0 = 미도달
+            _norder = torch.argsort(_nkey, stable=True)
+            # ★20스텝마다·상한 5만개만 표집 (매 스텝 GPU→CPU 전송은 평가를 3배 느리게 만든다)
+            _samp = (_dstep % 20 == 0) and _null_off_n < 50000
+            if _samp:
+                _goff = (-goal[..., 1] * 180.0).abs()
+                _oorder = torch.argsort(_noenc.view(-1).to(torch.int8), stable=True)
+            # ── ★step 전 packed 전송 (스텝당 1회). 제어흐름·난수 게이트 2개 + 압축 길이들을 한 번에 ──
+            _parts = [_sit_cnt, _encF[2], pr_active.any().reshape(1).long(), _nqnew.any().reshape(1).long(),
+                      _pairP[2], _hist5(_nkey, _ones_en)]
+            if _samp:
+                _parts.append(_noenc.sum().reshape(1))
+            _h = torch.cat(_parts).tolist()
+            _sitc, _encc, _pa_any, _nq_any, _pairc, _nullc = _h[0:5], _h[5:10], _h[10], _h[11], _h[12:17], _h[17:22]
+            _n_noenc = _h[22] if _samp else 0
+            # ── 전송 뒤: 압축 합·commit — 옛 코드와 같은 순서 (comp → enc → 쌍 → null → 쌍 종료) ──
+            _ng = E * N - _sitc[0]                                # == 옛 int(_gate.sum()) (게이트 ⇒ _sit∈1..4)
+            if _ng:
+                _acc_comp_sum.add_(_compact(_comp.view(-1), _gorder, E * N - _ng, _ng).sum().double())
+            enc_apply(_encF, _encc)
+            if _pa_any:                                           # == 옛 `if bool(pr_active.any())`: False 면 쌍·null 상태 전부 불변
+                pr_len, pr_stb, pr_port, pr_ck = _adv['len'], _adv['stb'], _adv['port'], _adv['ck']
+                pr_mind, pr_fm = _adv['mind'], _adv['fm']
+                pr_dpsi, pr_dpsi_min, pr_dpsi_max = _adv['dpsi'], _adv['dpsi_min'], _adv['dpsi_max']
+                pr_off_max, pr_off_abs, pr_off_sum, pr_off_cnt = _adv['off_max'], _adv['off_abs'], _adv['off_sum'], _adv['off_cnt']
+                pr_spmin, pr_cpa, pr_far = _adv['spmin'], _adv['cpa'], _adv['far']
                 # null 기준선: 활성 조우가 하나도 없는 배의 |오프셋| (배경 잡음)
-                # ★20스텝마다·상한 5만개만 표집 (매 스텝 GPU→CPU 전송은 평가를 3배 느리게 만든다)
-                _noenc = ~pr_active.any(dim=-1)                       # [E,N] 활성 조우 0
-                if (_dstep % 20 == 0) and len(null_off_abs) < 50000:
-                    if bool(_noenc.any()):
-                        null_off_abs += (-goal[..., 1] * 180.0)[_noenc].abs().tolist()
+                if _samp and _n_noenc:                            # == 옛 `if bool(_noenc.any())`
+                    _null_off_dev.append(_compact(_goff.view(-1), _oorder, E * N - _n_noenc, _n_noenc))
+                    _null_off_n += _n_noenc
                 # ★매칭 null 창: 무조우 상태가 이어지는 동안 침로변화를 누적, 목표길이에 닿으면 기록.
                 #   목표길이는 실제 조우 길이 분포(pr_len)에서 표집 → 창 길이 교란 제거.
-                _h1 = env.heading                                     # [E,N]
-                _new = _noenc & (nq_len <= 0)
-                if bool(_new.any()):
-                    nq_h0 = torch.where(_new, _h1, nq_h0)
+                if _nq_any:                                       # == 옛 `if bool(_new.any())` — randint(기본 CUDA generator =
+                    nq_h0 = torch.where(_nqnew, _h1, nq_h0)       #   정책 샘플과 공유)는 정확히 옛 조건·옛 위치(act 뒤, env.step 앞)에서만
                     # 관측된 조우 길이에서 표집(없으면 30). 버킷을 고르게 채우려 지수분포 근사
                     _t = torch.randint(8, 140, (E, N), device=dev).to(nq_tgt.dtype)
-                    nq_tgt = torch.where(_new, _t, nq_tgt)
-                nq_len = torch.where(_noenc, nq_len + 1.0, torch.zeros_like(nq_len))
-                _hit = _noenc & (nq_len >= nq_tgt) & (nq_tgt > 0)
-                if bool(_hit.any()):
-                    _dp = (torch.remainder(_h1 - nq_h0 + 180.0, 360.0) - 180.0).abs()
-                    for _bi, (_lo, _hi) in enumerate(NULLW_BUCKETS):
-                        _bm = _hit & (nq_len >= _lo) & (nq_len < _hi)
-                        if bool(_bm.any()) and len(null_dpsi[_bi]) < 60000:
-                            null_dpsi[_bi] += _dp[_bm].tolist()
-                    nq_len = torch.where(_hit, torch.zeros_like(nq_len), nq_len)
-                _endp = pr_active & ((pr_cpa >= PAIR_END_CPA) | (pr_far >= PAIR_END_FAR))
-                if bool(_endp.any()):
-                    pair_finalize(_endp)
-                    pr_active = pr_active & (~_endp)
-                    pr_skip = pr_skip & (~_endp)
+                    nq_tgt = torch.where(_nqnew, _t, nq_tgt)
+                nq_len = _nql
+                if _nullc[1] or _nullc[2] or _nullc[3] or _nullc[4]:      # == 옛 `if bool(_hit.any())`
+                    _dpn = (torch.remainder(_h1 - nq_h0 + 180.0, 360.0) - 180.0).abs().view(-1)
+                    _off = _nullc[0]
+                    for _bi in range(len(NULLW_BUCKETS)):
+                        _c = _nullc[_bi + 1]
+                        # 옛 규칙 그대로: 붙이기 *전* 길이 < 60000 이면 버킷 전체를 붙인다(상한을 조금 넘겨 끝남)
+                        if _c and _null_dpsi_n[_bi] < 60000:
+                            _null_dpsi_dev[_bi].append(_compact(_dpn, _norder, _off, _c)); _null_dpsi_n[_bi] += _c
+                        _off += _c
+                    nq_len = torch.where(_nhit, torch.zeros_like(nq_len), nq_len)
+                pair_apply(_pairP, _pairc)
+                pr_active = pr_active & (~_endp)
+                pr_skip = pr_skip & (~_endp)
 
         # ── step ──
         obs, rew_step, done, outcome = env.step(a)
@@ -587,79 +676,117 @@ def main():
         if _dstep < args.eval_decisions and _cctx:
             _cg_ = counted if _pending is None else (counted & _pending)
             _hit = (outcome == vg.OUT_COLLISION_VESSEL) & _cg_
-            if bool(_hit.any()):
-                _c = {k: v[_hit] for k, v in _cctx.items()}
-                _multi = _c['n_risky'] >= 2
-                _m, _t = _c['myr'], _c['thr']
-                _one = ~_multi
-                GW, SO, HO, OT = vg.SIT_GIVEWAY, vg.SIT_STANDON, vg.SIT_HEADON, vg.SIT_OVERTAKING
-                _cls = {
-                    'multi': _multi,
-                    'gw_noact': _one & (_m == GW) & (~_c['stb_i']),
-                    'gw_act_so_hold': _one & (_m == GW) & _c['stb_i'] & _c['hold_j'],
-                    'gw_act_so_turn': _one & (_m == GW) & _c['stb_i'] & (~_c['hold_j']),
-                    'so_act': _one & (_m == SO) & (~_c['hold_i']),
-                    'so_hold_gw_noact': _one & (_m == SO) & _c['hold_i'] & (~_c['stb_j']),
-                    'so_hold_gw_act': _one & (_m == SO) & _c['hold_i'] & _c['stb_j'],
-                    'ho_both_stb': _one & (_m == HO) & _c['stb_i'] & _c['stb_j'],
-                    'ho_not_both': _one & (_m == HO) & ~(_c['stb_i'] & _c['stb_j']),
-                    'overtaking': _one & ((_m == OT) | ((_m == vg.SIT_NONE) & (_t == OT))),
-                    'no_role': _one & (_m == vg.SIT_NONE) & (_t != OT),
-                }
-                for _k, _v in _cls.items():
-                    coll_cat[_k] += int(_v.sum())
+            # ★T5: 옛 코드는 _hit 로 뽑은 뒤 분류했고 여기선 전체에서 분류해 마스크 합 — 0/1 합이라 동일, 동기화 없음
+            _multi = _hit & (_cctx['n_risky'] >= 2)
+            _one = _hit & ~(_cctx['n_risky'] >= 2)
+            _m, _t = _cctx['myr'], _cctx['thr']
+            _si, _hi, _sj, _hj = _cctx['stb_i'], _cctx['hold_i'], _cctx['stb_j'], _cctx['hold_j']
+            GW, SO, HO, OT = vg.SIT_GIVEWAY, vg.SIT_STANDON, vg.SIT_HEADON, vg.SIT_OVERTAKING
+            _acc_coll.add_(torch.stack([                                   # _COLL_K 순서
+                _multi.sum(),
+                (_one & (_m == GW) & (~_si)).sum(),                         # gw_noact
+                (_one & (_m == GW) & _si & _hj).sum(),                      # gw_act_so_hold
+                (_one & (_m == GW) & _si & (~_hj)).sum(),                   # gw_act_so_turn
+                (_one & (_m == SO) & (~_hi)).sum(),                         # so_act
+                (_one & (_m == SO) & _hi & (~_sj)).sum(),                   # so_hold_gw_noact
+                (_one & (_m == SO) & _hi & _sj).sum(),                      # so_hold_gw_act
+                (_one & (_m == HO) & _si & _sj).sum(),                      # ho_both_stb
+                (_one & (_m == HO) & ~(_si & _sj)).sum(),                   # ho_not_both
+                (_one & ((_m == OT) | ((_m == vg.SIT_NONE) & (_t == OT)))).sum(),   # overtaking
+                (_one & (_m == vg.SIT_NONE) & (_t != OT)).sum()]))          # no_role
         # ── 종료 에피소드: 지표 기록 후 리셋 ──
         # ★2026-09-05 fix: drain 구간(_pending is not None)에서는 '창 끝에 걸려 있던' 에피소드만
         #   집계에 넣는다. 안 그러면 이미 마감된 배가 새로 시작한 에피소드까지 딸려 들어와
         #   창이 팔마다 다른 길이로 늘어난다. drain 이 꺼져 있으면 _pending is None → 기존 동작 그대로.
         _cnt_gate = counted if _pending is None else (counted & _pending)
-        for oc in range(1, 5):
-            mask = (outcome == oc) & _cnt_gate     # 경계 걸친 첫 에피소드 제외
-            c = int(mask.sum())
-            if c:
-                counts[oc] += c; total += c
-                msum[oc]['fuel'] += float(ep_fuel[mask].sum())
-                msum[oc]['head'] += float(ep_head[mask].sum())
-                msum[oc]['minsep'] += float(ep_minsep[mask].clamp(max=vg.RADAR_RANGE * 4).sum())
-                msum[oc]['length'] += float(ep_len[mask].sum())
-                msum[oc]['reward'] += float(ep_reward[mask].sum())
-                msum[oc]['n'] += c
+        _okey = torch.where(_cnt_gate, outcome, torch.zeros_like(outcome)).view(-1)   # 0 = 진행 중 또는 게이트 밖
+        _ocnt = _hist5(_okey, _ones_en)                                     # [oc] == 옛 int(mask.sum())
+        _oorder2 = torch.argsort(_okey, stable=True)
         term = (outcome != 0)
-        if int(term.sum()):
-            _rec = term & _cnt_gate
-            if int(_rec.sum()):
-                ms = ep_minsep[_rec].clamp(max=vg.RADAR_RANGE * 4)
-                all_minsep_sum += float(ms.sum()); all_minsep_n += int(_rec.sum())
-            ep_fuel = torch.where(term, torch.zeros_like(ep_fuel), ep_fuel)
-            ep_head = torch.where(term, torch.zeros_like(ep_head), ep_head)
-            ep_len = torch.where(term, torch.zeros_like(ep_len), ep_len)
-            ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)
-            ep_reward = torch.where(term, torch.zeros_like(ep_reward), ep_reward)
-            counted = counted | term          # 기록 *후* 갱신 → 첫 종료는 제외, 이후부터 집계
-            if _pending is not None:
-                _pending = _pending & (~term)   # ★2026-09-05 fix: drain — 마감된 에이전트는 대기에서 제외
-            # ★조우: 종료(충돌 포함)로 끊긴 조우도 5스텝 이상이면 집계한다.
-            #   버리면 '충돌로 끝난 비준수 조우'가 통째로 빠져 준수율이 낙관 편향됨.
-            enc_finalize(term & (enc_sit > 0))
-            _z = torch.zeros_like(enc_len)
-            enc_len = torch.where(term, _z, enc_len)
-            for _src in ('act', 'cmd'):
-                for _i in range(3):
-                    enc_c[_src][_i] = torch.where(term, _z, enc_c[_src][_i])
-            enc_mind = torch.where(term, torch.full_like(enc_mind, BIG), enc_mind)
-            enc_sit = torch.where(term, torch.zeros_like(enc_sit), enc_sit)
-            enc_skip = enc_skip & (~term)
-            # ★쌍: i 또는 j 가 종료(도착·충돌·시간초과)한 쌍도 마감 — 충돌로 끝난 비준수 조우를 버리면
-            #   준수율이 낙관 편향되므로 반드시 집계에 넣는다.
-            _t3 = term.unsqueeze(-1) | term.unsqueeze(1)          # [E,N,N]
-            _endt = pr_active & _t3
-            if bool(_endt.any()):
-                pair_finalize(_endt)
-                pr_active = pr_active & (~_endt)
-            pr_skip = pr_skip & (~_t3)
-            pr_in = torch.where(_t3, torch.zeros_like(pr_in), pr_in)
+        _rec = term & _cnt_gate
+        _rorder = torch.argsort(_rec.view(-1).to(torch.int8), stable=True)
+        # ★조우·쌍 마감 준비는 리셋(아래 where 재바인딩) *전* 값으로 — apply 는 전송 뒤(잡아둔 텐서는 안 바뀜)
+        _encT = enc_prepare(term & (enc_sit > 0))
+        _t3 = term.unsqueeze(-1) | term.unsqueeze(1)          # [E,N,N]
+        _endt = pr_active & _t3
+        _pairT = pair_prepare(_endt, _pr_state())
+        # ── ★step 후 packed 전송 (스텝당 1회): outcome 별 개수 + 조우·쌍 역할별 개수 ──
+        _h = torch.cat([_ocnt, _encT[2], _pairT[2]]).tolist()
+        _oc, _encc, _pairc = _h[0:5], _h[5:10], _h[10:15]
+        # counts 는 옛대로 float32 텐서에 정수를 더한다(0 을 더하면 항등이라 c==0 인 oc 도 같음)
+        counts[1:].add_(_ocnt[1:].to(counts.dtype))
+        _msc = ep_minsep.clamp(max=vg.RADAR_RANGE * 4).reshape(-1)
+        _off = _oc[0]
+        for oc in range(1, 5):
+            c = _oc[oc]                                # (outcome == oc) & _cnt_gate — 경계 걸친 첫 에피소드 제외
+            if c:
+                total += c; msum[oc]['n'] += c
+                for _fi, _fv in enumerate((ep_fuel, ep_head, _msc, ep_len, ep_reward)):
+                    _acc_msum[oc, _fi].add_(_compact(_fv.reshape(-1), _oorder2, _off, c).sum().double())
+            _off += c
+        # 옛 `if int(term.sum())` 게이트는 뺐다 — 안의 where·마스크 합·prepare 는 term 이 비면 전부 항등/0
+        _nrec = _oc[1] + _oc[2] + _oc[3] + _oc[4]      # == 옛 int(_rec.sum()) (outcome≠0 ⇔ oc∈1..4)
+        if _nrec:
+            _acc_all_minsep.add_(_compact(_msc, _rorder, E * N - _nrec, _nrec).sum().double()); all_minsep_n += _nrec
+        ep_fuel = torch.where(term, torch.zeros_like(ep_fuel), ep_fuel)
+        ep_head = torch.where(term, torch.zeros_like(ep_head), ep_head)
+        ep_len = torch.where(term, torch.zeros_like(ep_len), ep_len)
+        ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)
+        ep_reward = torch.where(term, torch.zeros_like(ep_reward), ep_reward)
+        counted = counted | term          # 기록 *후* 갱신 → 첫 종료는 제외, 이후부터 집계
+        if _pending is not None:
+            _pending = _pending & (~term)   # ★2026-09-05 fix: drain — 마감된 에이전트는 대기에서 제외
+        # ★조우: 종료(충돌 포함)로 끊긴 조우도 5스텝 이상이면 집계한다.
+        #   버리면 '충돌로 끝난 비준수 조우'가 통째로 빠져 준수율이 낙관 편향됨.
+        enc_apply(_encT, _encc)
+        _z = torch.zeros_like(enc_len)
+        enc_len = torch.where(term, _z, enc_len)
+        for _src in ('act', 'cmd'):
+            for _i in range(3):
+                enc_c[_src][_i] = torch.where(term, _z, enc_c[_src][_i])
+        enc_mind = torch.where(term, torch.full_like(enc_mind, BIG), enc_mind)
+        enc_sit = torch.where(term, torch.zeros_like(enc_sit), enc_sit)
+        enc_skip = enc_skip & (~term)
+        # ★쌍: i 또는 j 가 종료(도착·충돌·시간초과)한 쌍도 마감 — 충돌로 끝난 비준수 조우를 버리면
+        #   준수율이 낙관 편향되므로 반드시 집계에 넣는다.
+        pair_apply(_pairT, _pairc)
+        pr_active = pr_active & (~_endt)
+        pr_skip = pr_skip & (~_t3)
+        pr_in = torch.where(_t3, torch.zeros_like(pr_in), pr_in)
         radar, goal, self_s, sit = parse_obs(obs); fs.push(radar, done)
         prev_head = torch.where(done, env.heading, prev_head)
+
+    # ★T5: device 누적기 → 옛 호스트 변수 (여기서부터 출력부는 글자 하나 안 바뀜). 값은 정수(정확) 또는
+    #   옛 코드와 같은 순서로 더한 float64 라 동일. 리스트 수집기는 device 조각을 옛 append 순서로 이어 붙인 것.
+    _sn_, _so_ = _acc_sit_n.tolist(), _acc_sit_ok.tolist()
+    for _k in (1, 2, 3, 4):
+        sit_n[_k] = _sn_[_k]; sit_ok[_k] = float(_so_[_k])
+    comp_n = sum(_sn_[1:]); comp_bin = float(sum(_so_[1:])); comp_sum = float(_acc_comp_sum)
+    _ms_ = _acc_msum.tolist()
+    for oc in range(1, 5):
+        for _fi, _fn in enumerate(('fuel', 'head', 'minsep', 'length', 'reward')):
+            msum[oc][_fn] = _ms_[oc][_fi]
+    all_minsep_sum = float(_acc_all_minsep)
+    _et_, _ed_ = _acc_enc_tot.tolist(), _acc_enc_dsum.tolist()
+    _eo_ = {_src: _acc_enc_ok[_src].tolist() for _src in ('act', 'cmd')}
+    for _k in (1, 2, 3, 4):
+        enc_tot[_k] = _et_[_k]; enc_dsum[_k] = _ed_[_k]
+        for _src in ('act', 'cmd'):
+            enc_ok[_src][_k] = _eo_[_src][_k]
+    for _band in ('near', 'far'):
+        coord[_band] = {k: float(v) for k, v in zip(_CK, _acc_coord[_band].tolist())}
+    coll_cat = dict(zip(_COLL_K, _acc_coll.tolist()))
+    null_off_abs = torch.cat(_null_off_dev).tolist() if _null_off_dev else []
+    for _bi in null_dpsi:
+        null_dpsi[_bi] = torch.cat(_null_dpsi_dev[_bi]).tolist() if _null_dpsi_dev[_bi] else []
+    for _row in (torch.cat(_pair_recs).tolist() if _pair_recs else []):
+        _k = int(_row[0])
+        pair_res[_k].append((bool(_row[1]), _row[2], _row[3]))
+        if _k == 2:   # 유지역할(R17): 목표 방위에서 얼마나 벗어났나 / null 대조용 (|Δψ|, 창 길이)
+            hd_res[2].append(_row[4]); sd_dpsi.append((_row[6], _row[7]))
+        else:         # 양보역할: 목표 방위 대비 최대 우현 오프셋
+            hd_res[_k].append(_row[5])
+        r8_res[_k].append((_row[5], _row[8], _row[9]))
 
     # ★2026-09-05 fix: 절단 실태를 항상 남김 — 팔마다 잘린 양이 다른지 눈으로 확인 가능해야 하고,
     #   출력에 안 남으면 사후 보정도 불가능했음.
