@@ -227,8 +227,12 @@ declare -a GPU_PIDS=()
 # ★2026-09-26 인자 = 이 작업이 쓸 VRAM(MiB, 위 실측표). 남은 VRAM 이 need+VESSEL_VRAM_MARGIN 미만인 GPU 는 건너뛰고,
 #   맞는 GPU 가 하나도 없으면 20 초 간격으로 기다린다(JOBS 를 8→16 으로 올렸을 때 한 GPU 에 5GB 짜리가 4개 몰려 OOM 나는 것 방지).
 #   결과 영향 없음 — 어느 물리 GPU 에 붙느냐·언제 시작하느냐만 바뀐다.
+#   ★2026-09-26 06:00 사고: 14개를 몇 초 안에 연달아 띄우자 아직 VRAM 을 잡기 전의 free 를 보고 GPU당 4개(≈19 GB)를
+#     배정 → WDDM 페이징 → TDR → cudaErrorIllegalAddress 로 6런 사망 + 드라이버 wedged. 두 겹 방어:
+#     (1) GPU당 동시 작업 상한 VESSEL_GPU_CAP(기본 ceil(JOBS/NGPU), 학습은 3 권장) — 카운트 기반이라 경쟁에 안 속음
+#     (2) 시작 간격 VESSEL_LAUNCH_GAP 초(기본 0; train 은 40 권장) — 앞 프로세스가 메모리를 잡은 뒤 다음 pick
 pick_gpu() {
-  local need=${1:-0} margin=${VESSEL_VRAM_MARGIN:-1200}
+  local need=${1:-0} margin=${VESSEL_VRAM_MARGIN:-1200} cap=${VESSEL_GPU_CAP:-$(( (JOBS + NGPU - 1) / NGPU ))}
   if [ "${VESSEL_GPU_PICK:-free}" = "rr" ]; then echo $(( GPU_I % NGPU )); return; fi
   local g n f p best best_n best_f
   local -a free=()
@@ -237,6 +241,7 @@ pick_gpu() {
     mapfile -t free < <(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null)
     for (( g=0; g<NGPU; g++ )); do
       n=0; for p in ${GPU_PIDS[$g]:-}; do kill -0 "$p" 2>/dev/null && n=$(( n + 1 )); done
+      [ "$n" -lt "$cap" ] || continue
       f=${free[$g]:-99999}; f=${f//[^0-9]/}; f=${f:-99999}     # nvidia-smi 없으면 제한 없음(옛 동작)
       [ "$f" -ge $(( need + margin )) ] || continue
       if [ "$n" -lt "$best_n" ] || { [ "$n" -eq "$best_n" ] && [ "$f" -gt "$best_f" ]; }; then
@@ -247,8 +252,9 @@ pick_gpu() {
     sleep 20
   done
 }
-# 작업 종류별 VRAM 요구(MiB) — 실측(2026-09-26, torch reserved 최대) 에 여유를 둔 값
-VRAM_TRAIN_OFF=2000; VRAM_TRAIN_ON=5500
+# 작업 종류별 VRAM 요구(MiB) — 실측(2026-09-26 nvidia-smi 델타: ON(EXT) 갈래 ≈4.7 GB 컨텍스트 포함, OFF ≈1.5 GB)
+#   ON 4800 + 여유 1200 = 6.0 GB 남아야 배정 → 16 GB 카드에 ON 3개(GPU 0 은 데스크톱 1.4 GB 때문에 2개)
+VRAM_TRAIN_OFF=2000; VRAM_TRAIN_ON=4800
 eval_vram() {   # envs → MiB (256: 0.6GB, 1024: 2.9GB 실측 → 선형 근사 + 여유)
   local e=${1:-256}; echo $(( 400 + e * 3 ))
 }
@@ -291,6 +297,7 @@ train_one() {
     echo "$run rc=$?" >> "$OUT/_status_train.txt"
   ) &
   GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
+  sleep "${VESSEL_LAUNCH_GAP:-0}"   # ★2026-09-26 시작 간격(위 pick_gpu 주석). 기본 0 = 옛 동작
 }
 
 # ── 평가 한 런 ──────────────────────────────────────────────────────────────
@@ -462,6 +469,12 @@ case "$MODE" in
     branch_batch "${VESSEL_TRAIN_ARMS:-$_def_arms}" "$BRANCH_AT" "$TOTAL_STEPS" "$RUN_PRE"
     echo "학습 완료"
     cat "$OUT/_status_train.txt"
+    # ★2026-09-26: rc≠0 갈래가 있으면 실패로 끝낸다(eval 모드와 같은 규칙). 전에는 갈래가 죽어도 exit 0 이라
+    #   all 모드가 eval 로 넘어갔다.
+    _train_bad=$(grep -cv 'rc=0' "$OUT/_status_train.txt")
+    if [ "${_train_bad:-0}" -ne 0 ]; then
+      echo "학습 실패: rc≠0 갈래 ${_train_bad}건 — 위 목록과 $OUT/<런>.log 확인"; exit 1
+    fi
     ;;
 
   eval)
