@@ -156,7 +156,7 @@ git fetch origin && git checkout feat/comm-intent && git pull
 cd Python
 export VESSEL_DYN_PROFILE=imo VESSEL_OBSTACLES=none VESSEL_CROSSING=0 VESSEL_COMM_EXT=1
 export VESSEL_CKPT_DIR=$HOME/VESSEL_checkpoints/comm_intent VESSEL_OUT_DIR=$PWD/_repro_out_intent
-export VESSEL_SEEDS="43 44 45"            # ★저자 결정 대기: 5시드면 "43 44 45 46 47" (결과 전에 정할 것)
+export VESSEL_SEEDS="43 44 45"            # 2026-09-26 저자 확정: 3시드
 # 0) preflight(PPO 미러 포함 — Windows 에서만) + EXT 스모크: trunk 1 update → 5팔 1 update → 분기 검사
 bash run_repro.sh smoke
 # 1) 본 배치 (trunk OFF 9,043,968 → 5팔 16.06M). 통신 텔레메트리로 act_zero_state/role/intent 도 기록
