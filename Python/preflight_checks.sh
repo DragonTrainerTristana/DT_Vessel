@@ -57,6 +57,7 @@ vessel_run_checks() {
     _vc_launch "동역학 프로필" "$OUT/_dyn_profile.txt" 1 env $_o "$PY" -u "$HERE/verify/test_dyn_profile.py"
     _vc_launch "sim 스냅샷" "$OUT/_sim_snapshot.txt" 1 env $_o "$PY" -u "$HERE/verify/test_sim_snapshot.py"
     _vc_launch "COMM_EXT" "$OUT/_comm_ext.txt" 1 env $_o "$PY" -u "$HERE/verify/test_comm_ext.py"
+    _vc_launch "grounded latent" "$OUT/_grounded_latent.txt" 1 env $_o "$PY" -u "$HERE/verify/test_grounded_latent.py"
   else
     echo "  (VESSEL_SKIP_GOLDEN=1 — 골든·충실도·동역학·sim·COMM_EXT 건너뜀, 미러만)"
   fi

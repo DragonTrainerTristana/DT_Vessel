@@ -337,6 +337,8 @@ arm_spec() {
     # ★2026-09-25 의도·역할 통신 사다리 (VESSEL_COMM_EXT=1 필요) + G6 2단계
     arpa6|onl6|ons6|oni6) echo "ON 6" ;;
     on6a0) echo "ON 6" ;;       # ON dim6 보조손실 0 (EXT 0) — aux 비대칭 절제
+    # ★2026-09-28 grounded latent (스펙 2026-09-28-grounded-latent-small-design.md, VESSEL_COMM_EXT=1 필요)
+    a6|c6) echo "ON 6" ;;       # a6 = 코덱 z → 수신측 복원 → 쌍 필드 / c6 = 코덱 z 를 k/v 가 직접 읽음
     *) return 1 ;;
   esac
 }
@@ -344,16 +346,21 @@ arm_spec() {
 #   학습기가 크래시 재개 때 스냅샷과 대조하고(다르면 거부), ckpt_io·eval 이 스냅샷으로 복원한다.
 comm_variant_env() {
   export VESSEL_COMM_FIELDS=latent VESSEL_COMM_LATENT=1.0 VESSEL_AUX_LOSS_SCALE=1.0
-  unset VESSEL_PARTNER_RANGE
+  unset VESSEL_PARTNER_RANGE VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE
   case "${1:-}" in
     arpa6) export VESSEL_COMM_FIELDS=state VESSEL_COMM_LATENT=0.0 VESSEL_PARTNER_RANGE=56 VESSEL_AUX_LOSS_SCALE=0.0 ;;
     onl6)  export VESSEL_COMM_FIELDS=latent VESSEL_AUX_LOSS_SCALE=0.0 ;;
     ons6)  export VESSEL_COMM_FIELDS=state  VESSEL_AUX_LOSS_SCALE=0.0 ;;
     oni6)  export VESSEL_COMM_FIELDS=intent VESSEL_AUX_LOSS_SCALE=0.0 ;;
     on6a0) export VESSEL_AUX_LOSS_SCALE=0.0 ;;
+    # ★2026-09-28 grounded latent: 동결 코덱(SHA 고정) · 창발 latent 끔 · 보조손실 0 · 필드 그룹 전부(intent)
+    a6)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=decode ;;
+    c6)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=direct ;;
   esac
 }
-is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6) return 0 ;; *) return 1 ;; esac; }
+is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6) return 0 ;; *) return 1 ;; esac; }
 off_name() { if [ "$1" = 6 ]; then echo off; else echo "off$1"; fi; }
 
 # ── 분기 검사 (verify/check_branch.py) — 결과 $OUT/_branch_check.txt, ALL PASS 아니면 1 ──
@@ -376,7 +383,7 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6)"; exit 1; }
     if is_ext_arm "$a" && [ "${VESSEL_COMM_EXT:-0}" != "1" ]; then
       echo "팔 $a 는 의도·역할 통신 구조가 필요함: VESSEL_COMM_EXT=1 로 배치를 돌릴 것(trunk 부터 EXT 구조)"; exit 1
     fi
@@ -451,6 +458,8 @@ case "$MODE" in
     BR_WARMUP=8
     rm -f "$CK"/smoke_trunk_d*_s43.pt   # 스모크는 trunk 학습까지 매번 확인
     if [ "${VESSEL_COMM_EXT:-0}" = "1" ]; then _sm_arms="off arpa6 onl6 ons6 oni6"; else _sm_arms="off on6"; fi
+    _sm_arms="${VESSEL_SMOKE_ARMS:-$_sm_arms}"   # ★2026-09-28 배치 팔로 스모크(예: "off a6 c6")
+    export VESSEL_REQUIRE_TRUNK=0                 # 스모크는 자기 trunk 를 매번 새로 학습(배치의 trunk 재사용 강제와 무관)
     rm -f "$CK"/smoke_${RUN_PRE}trunk_d*_s43.pt
     branch_batch "$_sm_arms" "$UPDATE_DEC" $(( UPDATE_DEC * 2 )) "smoke_${RUN_PRE}"
     echo "스모크 완료 — $OUT/_status_train.txt 의 rc 가 전부 0 이어야 함"
@@ -483,7 +492,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0; do
+      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6; do
         [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${RUN_PRE}${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
@@ -501,7 +510,7 @@ case "$MODE" in
     for s in $SEEDS; do
       if [ -n "$RUN_PRE" ]; then
         # ★2026-09-25 접두어 배치(COMM_EXT 등): 있는 것만 평가 (팔 구분은 스냅샷 — eval 헤더 comm_ext/fields 로 확인)
-        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand; do
+        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6; do
           [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] || continue
           if [ "$nm" = off ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"
           elif [ "$nm" = rand ]; then eval_one "${RUN_PRE}$nm" RANDOM 6 "$s"
@@ -601,11 +610,11 @@ case "$MODE" in
       GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
     }
     for s in $SEEDS; do
-      for a in arpa6 onl6 ons6 oni6; do
+      for a in arpa6 onl6 ons6 oni6 a6 c6; do
         nm="${RUN_PRE}$a"
         [ -f "$CK/${nm}_s$s.pt" ] || continue
         _abl_one "$nm" "$s" msgzero --arm OFF --allow_arm_mismatch
-        [ "$a" != arpa6 ] && _abl_one "$nm" "$s" latent0 --arm ON --latent_zero
+        case "$a" in onl6|ons6|oni6) _abl_one "$nm" "$s" latent0 --arm ON --latent_zero ;; esac   # a6·c6·arpa6 = latent 0
         [ "$a" != onl6 ] && _abl_one "$nm" "$s" shuffle --arm ON --field_shuffle
         case "$a" in
           ons6|arpa6) _abl_one "$nm" "$s" state0 --arm ON --comm_groups role --allow_fields_mismatch
@@ -629,7 +638,7 @@ case "$MODE" in
     preflight
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
-      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0; do
+      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6; do
         f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
         arm=ON; [ "$nm" = off ] && arm=OFF
         throttle

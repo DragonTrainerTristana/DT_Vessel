@@ -453,6 +453,21 @@ assert COMM_EXT or COMM_FIELDS == 'latent', \
 COMM_LATENT = _env_float('VESSEL_COMM_LATENT', 1.0)                # attention 토큰의 latent 메시지 배율. 0 = ARPA@56 팔(통신 없음)
 PARTNER_RANGE = _env_float('VESSEL_PARTNER_RANGE', None)           # 파트너 선택 반경. None = COMM_RANGE. 보상 반경과 분리
 AUX_LOSS_SCALE = _env_float('VESSEL_AUX_LOSS_SCALE', 1.0)          # ON 전용 보조손실(MSG_L2·state_recon 등) 배율. 0 = 목적함수 OFF 와 대칭
+# ★grounded latent 통신 (2026-09-28, 스펙 docs/superpowers/specs/2026-09-28-grounded-latent-small-design.md). 기본 '' = 끔(비트동일).
+#   송신자 자기 상태 6개(comm_codec.PAYLOAD)를 동결 코덱(Python/comm_codecs/*.pt)으로 k 차원 latent z 로 보낸다.
+#   'decode'(A6) = 수신측 동결 디코더로 복원 → comm_pair_features 의 송신자 값 자리에 대입(나머지 계산 동일).
+#   'direct'(C6) = 확장필드 자리에 [z_j, 수신자 자기 상태 4, 0…] 를 넣고 k/v 가 직접 읽음. 둘 다 토큰 폭 불변(trunk 재사용).
+COMM_CODEC = _env_str('VESSEL_COMM_CODEC', '')                   # 코덱 파일 경로(Python/ 기준 상대 또는 절대). '' = 끔
+COMM_CODEC_SHA = _env_str('VESSEL_COMM_CODEC_SHA', '')           # 기대 내용 SHA256(앞 12자 이상). 다르면 중단
+COMM_CODEC_MODE = _env_str('VESSEL_COMM_CODEC_MODE', '').lower()  # '' | 'decode' | 'direct'
+assert COMM_CODEC_MODE in ('', 'decode', 'direct'), f"VESSEL_COMM_CODEC_MODE={COMM_CODEC_MODE!r} - '' | 'decode' | 'direct'"
+assert bool(COMM_CODEC) == bool(COMM_CODEC_MODE), \
+    "VESSEL_COMM_CODEC 와 VESSEL_COMM_CODEC_MODE 는 같이 줘야 함 (하나만 주면 조용히 다른 팔이 됨)"
+if COMM_CODEC:
+    assert COMM_EXT and COMM_FIELDS == 'intent' and COMM_LATENT == 0.0 and AUX_LOSS_SCALE == 0.0, \
+        ("코덱 팔은 VESSEL_COMM_EXT=1 · COMM_FIELDS=intent(그룹 마스크 전부 켬) · COMM_LATENT=0 · AUX_LOSS_SCALE=0 필요 "
+         f"(현재 EXT={COMM_EXT} FIELDS={COMM_FIELDS} LATENT={COMM_LATENT} AUX={AUX_LOSS_SCALE})")
+    assert COMM_CODEC_SHA, "VESSEL_COMM_CODEC 를 쓰면 VESSEL_COMM_CODEC_SHA 도 줄 것(조용한 코덱 교체 방지)"
 # StateRecon / MoE 내부 스위치
 RECON_EMA_FLOOR = _env_float('VESSEL_RECON_EMA_FLOOR', 0.0)        # 그룹 정규화 바닥 (2026-09-07)
 RECON_LEGACY_STAT = _env_str('VESSEL_RECON_LEGACY_STAT', '0') == '1'
@@ -485,6 +500,10 @@ EARLY_AVOID_COEF = _env_float('VESSEL_EARLY_AVOID_COEF', 2.0)   # DCPA 벌리면
 EARLY_RISK_GATE = _env_float('VESSEL_EARLY_RISK_GATE', 0.1)   # earlyAvoid 발화 게이트
 EARLY_RELAX_TCPA = _env_str('VESSEL_EARLY_RELAX_TCPA', '1') == '1'   # tcpa 게이트 제거
 COLREGS_RISK_GATE = _env_float('VESSEL_COLREGS_GATE', 0.3)   # 준수보상 발화 게이트
+# ★2026-09-28 원거리 COLREGs 준수보상 반경(m). 0 = 끔(비트동일, 56 m 레이더 안 상황만 채점).
+#   >0 이면 56 m 안 상황이 없을 때 이 반경 안 최고위험 상대(충돌위험 dcpa<24 쌍만)의 기하 역할로 같은 준수항(같은 계수)을 채점.
+#   근거 = COLREGs Rule 8·16(양보선 조기·충분한 회피)·17(유지선 침로·속력 유지) — 56 m 레이더 반경에 묶이지 않음. 모든 팔 동일.
+COLREGS_FAR_RANGE = _env_float('VESSEL_COLREGS_FAR_RANGE', 0.0)
 CMD_MISMATCH_COEF = _env_float('VESSEL_CMD_MISMATCH_COEF', -0.03)   # 타속 포화 패널티
 PROXRAMP_COEF = _env_float('VESSEL_PROXRAMP_COEF', 0.0)   # C# 기본 0=off
 PROXRAMP_DIST = _env_float('VESSEL_PROXRAMP_DIST', 24.0)   # = DCPA_RISK
@@ -557,7 +576,7 @@ SIM_SNAPSHOT_KEYS = (
     'EARLY_AVOID_COEF', 'EARLY_RISK_GATE', 'EARLY_RELAX_TCPA', 'COLREGS_RISK_GATE', 'CMD_MISMATCH_COEF',
     'PROXRAMP_COEF', 'PROXRAMP_DIST', 'LOS_GATE', 'SPEED_AVOID_UNLOCK', 'SPEED_UNLOCK_GATE', 'COLREGS_MODE',
     'MAX_EPISODE_STEPS', 'COLLISION_PENALTY', 'FUEL_COEF', 'PROGRESS_COEF', 'COLREGS_SIM_COEF',
-    'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE',
+    'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE',
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',

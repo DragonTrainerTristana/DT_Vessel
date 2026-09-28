@@ -108,6 +108,7 @@ EARLY_AVOID_COEF   = _cfg.EARLY_AVOID_COEF   # DCPA 벌리면 +보상
 EARLY_RISK_GATE    = _cfg.EARLY_RISK_GATE    # earlyAvoid 발화 게이트
 EARLY_RELAX_TCPA   = _cfg.EARLY_RELAX_TCPA     # tcpa 게이트 제거(any tcpa)
 COLREGS_RISK_GATE  = _cfg.COLREGS_RISK_GATE       # 준수보상 발화 게이트
+COLREGS_FAR_RANGE  = _cfg.COLREGS_FAR_RANGE       # ★2026-09-28 원거리 준수보상 반경(0 = 끔, 비트동일)
 CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
 PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
 PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
@@ -274,7 +275,7 @@ def encounter_role(bearing, other_bearing, dist, approach, faster, R):
     return role
 
 
-def comm_pair_features(env, topi, partner_range, role_gate=True):
+def comm_pair_features(env, topi, partner_range, role_gate=True, sender=None):
     """파트너 확장 필드 [E,N,K,20] (레이아웃 v1). topi [E,N,K] = comm_gather 가 고른 파트너 인덱스.
 
     [0:2] sin/cos(ψj−ψi) · [2] sog_j/1.8 · [3] rot_j/MAX_YAW_RATE · [4:6] (v_j−v_i) 수신자 선체좌표[우현,전방]/3.6 ·
@@ -282,15 +283,18 @@ def comm_pair_features(env, topi, partner_range, role_gate=True):
     [18] 상대 명령 타각/30 · [19] 상대 명령 속력/1.8.
     역할은 반경 partner_range 안에서 판정하고, role_gate=True 면 충돌위험(dcpa < DCPA_RISK) 쌍에만 부여(스펙 §2).
     패딩 슬롯도 유한값을 내므로 호출부가 torch.where(pmask>0, ·, 0) 로 지운다. 환경 상태를 바꾸지 않는다.
+    ★sender (2026-09-28, grounded latent 'decode' 팔): 배별 [E,N] dict {heading(deg), speed, rot(=yaw/MAX_YAW_RATE),
+      cmd_rudder(deg), target_speed} — 주면 *송신자(j) 값* 자리만 이것으로 바꾼다(코덱 복원값). 수신자·위치는 env 참값.
+      None 이면 env 참값 = 기존 식 그대로(같은 연산, 비트동일).
     """
     E, N, K = topi.shape
     b = torch.arange(E, device=topi.device)[:, None, None]
     pos_i = env.pos.unsqueeze(2)                                   # [E,N,1,2]
     pos_j = env.pos[b, topi]                                       # [E,N,K,2]
     h_i = env.heading.unsqueeze(-1) * DEG                          # [E,N,1] rad
-    h_j = env.heading[b, topi] * DEG                               # [E,N,K]
+    h_j = (env.heading if sender is None else sender['heading'])[b, topi] * DEG   # [E,N,K]
     spd_i = env.speed.unsqueeze(-1)
-    spd_j = env.speed[b, topi]
+    spd_j = (env.speed if sender is None else sender['speed'])[b, topi]
     to_other = pos_j - pos_i                                       # [E,N,K,2]
     dx, dz = to_other[..., 0], to_other[..., 1]
     dist = torch.linalg.norm(to_other, dim=-1)                     # _pairwise 와 같은 연산(반경 경계 비교가 일치하도록)
@@ -324,7 +328,12 @@ def comm_pair_features(env, topi, partner_range, role_gate=True):
     dt = env.dtype if hasattr(env, 'dtype') else dist.dtype
     oh = lambda r: _F.one_hot(r, 5).to(dt)
     dh = h_j - h_i
-    rot_j = yaw_rate_deg(env.rudder[b, topi], spd_j, env.max_speed[b, topi]) / MAX_YAW_RATE
+    if sender is None:
+        rot_j = yaw_rate_deg(env.rudder[b, topi], spd_j, env.max_speed[b, topi]) / MAX_YAW_RATE
+        cmd_r_j, cmd_s_j = env.cmd_rudder[b, topi], env.target_speed[b, topi]
+    else:
+        rot_j = sender['rot'][b, topi]
+        cmd_r_j, cmd_s_j = sender['cmd_rudder'][b, topi], sender['target_speed'][b, topi]
     feats = torch.cat([
         torch.sin(dh).unsqueeze(-1), torch.cos(dh).unsqueeze(-1),
         (spd_j / COMM_EXT_SOG_NORM).unsqueeze(-1),
@@ -333,10 +342,27 @@ def comm_pair_features(env, topi, partner_range, role_gate=True):
         ((rvx * torch.sin(h_i) + rvz * torch.cos(h_i)) / COMM_EXT_VREL_NORM).unsqueeze(-1),   # 전방
         dcpa_risk.unsqueeze(-1), tcpa_risk.unsqueeze(-1),
         oh(my_role), oh(their_role),
-        (env.cmd_rudder[b, topi] / MAX_TURN_RATE).unsqueeze(-1),
-        (env.target_speed[b, topi] / COMM_EXT_SOG_NORM).unsqueeze(-1),
+        (cmd_r_j / MAX_TURN_RATE).unsqueeze(-1),
+        (cmd_s_j / COMM_EXT_SOG_NORM).unsqueeze(-1),
     ], dim=-1)
     return feats.to(dt)
+
+
+def own_payload(env):
+    """★grounded latent 송신 페이로드 [E,N,6] (2026-09-28, 레이아웃 'p6') — 결정 시점에 송신자가 가진 자기 값만.
+    [sinψ, cosψ, SOG/1.8, ROT/MAX_YAW_RATE, 직전 명령 타각/30, 직전 명령 속력/1.8]. comm_pair_features 가 송신자에게서
+    읽는 값과 같은 것(위치는 relpos 로 따로 명시 공유). 명령은 comm_gather 가 _apply_action 전에 불리므로 t−1 명령."""
+    h = env.heading * DEG
+    rot = yaw_rate_deg(env.rudder, env.speed, env.max_speed) / MAX_YAW_RATE
+    return torch.stack([torch.sin(h), torch.cos(h), env.speed / COMM_EXT_SOG_NORM, rot,
+                        env.cmd_rudder / MAX_TURN_RATE, env.target_speed / COMM_EXT_SOG_NORM], dim=-1)
+
+
+def own_state4(env):
+    """수신자 자기 상태 [E,N,4] = own_payload 의 운동 성분 4개(같은 식). 'direct'(C6) 토큰에서 z 옆에 둠."""
+    h = env.heading * DEG
+    rot = yaw_rate_deg(env.rudder, env.speed, env.max_speed) / MAX_YAW_RATE
+    return torch.stack([torch.sin(h), torch.cos(h), env.speed / COMM_EXT_SOG_NORM, rot], dim=-1)
 
 
 class _Unset:
@@ -897,8 +923,17 @@ class VesselBatchEnv:
         else:
             far_risk = None
 
+        # ★2026-09-28 원거리 COLREGs 채점용 기하 역할(COLREGS_FAR_RANGE>0 일 때만). 56 m 밖·충돌위험(dcpa<24) 쌍만.
+        #   역할 식 = encounter_role(= 위 situation cascade 의 순수 함수판). 0 이면 키만 None → 기존 연산 그대로(비트동일).
+        if COLREGS_FAR_RANGE > 0.0:
+            far_sit = encounter_role(bearing, other_bearing, dist, raw_tcpa >= 0, _faster, COLREGS_FAR_RANGE)
+            far_ok = (~eye) & (~occluded) & (dist > DETECTION_RANGE) & (dcpa < DCPA_RISK)
+            far_sit = torch.where(far_ok, far_sit, torch.zeros_like(far_sit))
+        else:
+            far_sit = None
+
         return {'dist': dist, 'risk': risk, 'near_risk': near_risk, 'sit': sit,
-                'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk}
+                'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk, 'far_sit': far_sit}
 
     def _far_field_on(self):
         """far_risk 가 보상에 쓰이는가 (#7-b farpair / #8 farfield PBRS). 호출 시점 계수로 판정."""
@@ -918,6 +953,15 @@ class VesselBatchEnv:
         # ★C# cachedDangerousVessel/cachedDangerRisk/cachedDangerSituation 대응 캐시.
         #   COLREGs 준수보상·earlyAvoid·proxRamp 가 *같은 한 척*의 기하를 쓴다(C# 다선 정합성 fix 미러).
         self.danger_idx = arg
+        if pw['far_sit'] is not None:
+            # ★2026-09-28 원거리 채점 상대 = 56 m 밖 충돌위험 쌍 중 보상 risk(0~reward_range) 최대인 배
+            _fs = pw['far_sit']
+            _fr = torch.where(_fs > 0, pw['risk'], torch.zeros_like(pw['risk']))
+            _fmax, _farg = _fr.max(dim=-1)
+            self.far_danger_idx = _farg
+            self.far_situation = torch.where(_fmax > 0, torch.gather(_fs, -1, _farg.unsqueeze(-1)).squeeze(-1),
+                                             torch.zeros_like(_farg))
+            self.far_max_risk = _fmax
         self._last_pw = pw
 
     # ─────────────────────────── obs 369D ───────────────────────────
@@ -1067,6 +1111,22 @@ class VesselBatchEnv:
             r = r + torch.where((max_risk_near > 0) & (_sep < PROXRAMP_DIST) & (_closing > 0),
                                 PROXRAMP_COEF * _prox01 * _prox01 * _cl01, torch.zeros_like(r))
 
+        # ★2026-09-28 원거리 준수 채점(COLREGS_FAR_RANGE>0): 56 m 안 상황이 없고 원거리 충돌위험 상대가 게이트를 넘으면
+        #   그 상대의 역할·기하로 아래 *같은* 준수항(같은 계수·같은 riskw 식)을 채점. 끄면 아래 변수는 원래 객체 그대로(비트동일).
+        if COLREGS_FAR_RANGE > 0.0:
+            _uf = (_sit == 0) & (self.far_situation > 0) & (self.far_max_risk > COLREGS_RISK_GATE)
+            _jf = torch.where(_uf, self.far_danger_idx, _j)
+            _pkf = lambda t: t.gather(-1, _jf.unsqueeze(-1)).squeeze(-1)
+            _sit_c = torch.where(_uf, self.far_situation, _sit)
+            _cgate_c = torch.where(_uf, torch.ones_like(_cgate), _cgate)
+            _riskw_c = torch.where(_uf, 1.0 + self.far_max_risk, _riskw)
+            _tcpa_c, _dcpa_c, _dist_c = _pkf(pw['tcpa']), _pkf(pw['dcpa']), _pkf(pw['dist'])
+            _g1f = lambda t: torch.gather(t, 1, _jf)
+            _other_c = (_g1f(self.rudder).abs() > 0.3) | (_g1f(self.speed) < _g1f(self.max_speed) * 0.7)
+        else:
+            _sit_c, _cgate_c, _riskw_c = _sit, _cgate, _riskw
+            _tcpa_c, _dcpa_c, _dist_c, _other_c = _tcpa_d, _dcpa_d, _dist_d, _other_taking
+
         # 9. ★COLREGs 준수 보상.
         #   COLREGS_MODE='unity'(기본): C# COLREGsHandler.EvaluateCompliance 전체 이식.
         #     - HeadOn/GiveWay/Overtaking: 좌현 변침(-0.5) / 우현 변침(+0.5)  ← 우현 *보상*이 파이썬엔 없었음
@@ -1090,18 +1150,18 @@ class VesselBatchEnv:
             _keep_w = 1.0 if _cs else 0.5
             _spd_hi, _spd_lo, _spd_md = (1.0, -2.0, -1.0) if _cs else (0.5, -1.0, -0.5)
             _nr = self.rudder / MAX_TURN_RATE                   # 실제 타각 정규화
-            _give = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r.dtype)
-            _stand = (_sit == 2).to(r.dtype)
+            _give = ((_sit_c == 1) | (_sit_c == 3) | (_sit_c == 4)).to(r.dtype)
+            _stand = (_sit_c == 2).to(r.dtype)
             _zero = torch.zeros_like(r)
             _comp = _give * (torch.where(_nr < -0.1, torch.full_like(r, -0.5), _zero)
                              + torch.where(_nr > 0.2, torch.full_like(r, 0.5), _zero))
-            _early17 = (_tcpa_d > RULE_17B_TIME).to(r.dtype)    # Rule 17(a) 구간
+            _early17 = (_tcpa_c > RULE_17B_TIME).to(r.dtype)    # Rule 17(a) 구간
             # Rule 17(a): 침로 유지
             _comp = _comp + _stand * _early17 * torch.where(_nr.abs() < 0.1, torch.full_like(r, _keep_w), _zero)
             # Rule 17(a): 속도 유지 — recommendedSpeed = max(speed, EFFECTIVE_SPEED_MIN), 17(c)면 0
             _eff = torch.clamp(self.speed, min=EFFECTIVE_SPEED_MIN)
-            _may17 = (~_other_taking) & ((_tcpa_d < RULE_17B_TIME) | (_dist_d < RULE_17B_DIST))
-            _shall17 = _may17 & ((_tcpa_d < RULE_17C_TIME) | (_dcpa_d < RULE_17C_DIST))
+            _may17 = (~_other_c) & ((_tcpa_c < RULE_17B_TIME) | (_dist_c < RULE_17B_DIST))
+            _shall17 = _may17 & ((_tcpa_c < RULE_17C_TIME) | (_dcpa_c < RULE_17C_DIST))
             _rec_spd = torch.where(_shall17, torch.zeros_like(_eff), _eff)
             _sr_c = self.speed / _rec_spd.clamp(min=1e-6)
             _spd_ok = (_rec_spd > 0).to(r.dtype)
@@ -1112,9 +1172,9 @@ class VesselBatchEnv:
             _comp = _comp + _stand * (1.0 - _early17) * torch.where(_nr.abs() > 0.3, torch.full_like(r, 0.5), _zero)
             if _cs:
                 # Rule 8(d) 안전 통과 보너스 — unity_cs 전용(위 (a) 참고)
-                _comp = _comp + torch.where(_dcpa_d > SAFE_PASSING, torch.full_like(r, 0.5), _zero)
-            _comp = _comp * (_sit > 0).to(r.dtype)              # situation None → 0 (C# 조기 return)
-            r = r + COLREGS_SIM_COEF * _comp * _riskw * _cgate
+                _comp = _comp + torch.where(_dcpa_c > SAFE_PASSING, torch.full_like(r, 0.5), _zero)
+            _comp = _comp * (_sit_c > 0).to(r.dtype)              # situation None → 0 (C# 조기 return)
+            r = r + COLREGS_SIM_COEF * _comp * _riskw_c * _cgate_c
         else:
             _rud = actions[..., 0]
             _starboard = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r.dtype)

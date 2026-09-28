@@ -72,6 +72,8 @@ def _variant(snap):
         v.append(f"R{float(snap['partner_range']):g}")
     if float(snap.get('aux_loss_scale', 1.0)) != 1.0:
         v.append(f"aux{float(snap['aux_loss_scale']):g}")
+    if snap.get('comm_codec'):   # ★2026-09-28 grounded latent — 같은 필드·latent 인 a6/c6 를 코덱 모드·SHA 로 구분
+        v.append(f"cdc:{snap.get('comm_codec_mode')}:{str(snap.get('comm_codec_sha256'))[:8]}")
     return ','.join(v)
 
 

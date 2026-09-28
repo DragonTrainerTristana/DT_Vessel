@@ -96,6 +96,12 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'comm_latent': float(net.COMM_LATENT),
         'partner_range': None if net.PARTNER_RANGE is None else float(net.PARTNER_RANGE),
         'aux_loss_scale': float(cfg.AUX_LOSS_SCALE),
+        # ★2026-09-28 grounded latent 코덱 (가중치에 흔적 없음 = 스냅샷이 유일 근거). 키 추가만. 끔 = '' / None
+        'comm_codec': (net.COMM_CODEC.path if net.COMM_CODEC is not None else ''),
+        'comm_codec_sha256': (net.COMM_CODEC.sha if net.COMM_CODEC is not None else ''),
+        'comm_codec_mode': str(net.COMM_CODEC_MODE),
+        'comm_codec_k': (int(net.COMM_CODEC.k) if net.COMM_CODEC is not None else None),
+        'comm_codec_bits': (int(net.COMM_CODEC.bits) if net.COMM_CODEC is not None else None),
     }
 
 
@@ -231,6 +237,7 @@ class Restored:
                 f"sim={e.get('sim_keys_applied', 0)}keys "
                 + (f"comm_ext=1 fields={e.get('comm_fields')} groups={'+'.join(e.get('comm_groups') or []) or '-'} "
                    f"latent={e.get('comm_latent')} partner_range={e.get('partner_range')} aux={e.get('aux_loss_scale')} "
+                   + (f"codec={e.get('comm_codec_mode')}:{str(e.get('comm_codec_sha256'))[:12]} " if e.get('comm_codec') else '')
                    if e.get('comm_ext') else '')
                 + f"comm_range={e['comm_range']} max_partners={self.max_partners} "
                 f"snapshot={'yes' if self.snap else 'NO'}")
@@ -291,9 +298,21 @@ def restore_comm_ext(_sd, snap, msg_dim, notes, tag, comm_groups=None, allow_fie
     net.COMM_LATENT = float(S.get('comm_latent', 1.0))
     _pr = S.get('partner_range')
     net.PARTNER_RANGE = None if _pr is None else float(_pr)
+    # ★2026-09-28 grounded latent 코덱: 스냅샷대로 항상 설정(없으면 None — 앞 체크포인트 값이 새지 않게).
+    #   env(VESSEL_COMM_CODEC)가 스냅샷과 다른 코덱을 가리키면 중단(조용한 교차평가 금지).
+    _cp, _cs, _cm = S.get('comm_codec') or '', S.get('comm_codec_sha256') or '', S.get('comm_codec_mode') or ''
+    if cfg.COMM_CODEC and _cs and not _cs.startswith(str(cfg.COMM_CODEC_SHA).lower()):
+        raise SystemExit(f"{tag} 중단: env 코덱 SHA {cfg.COMM_CODEC_SHA!r} != 스냅샷 {_cs[:12]} - 다른 코덱으로 평가 불가")
+    if _cp:
+        import comm_codec
+        comm_codec.install(_cp, _cs, _cm, 'cuda' if torch.cuda.is_available() else 'cpu')
+        notes.append(f"코덱 복원: {_cp} sha={_cs[:12]} mode={_cm}")
+    else:
+        net.COMM_CODEC, net.COMM_CODEC_MODE = None, ''
     return {'comm_ext': int(ext), 'comm_fields': fields, 'comm_groups': list(groups),
             'comm_latent': float(net.COMM_LATENT), 'partner_range': net.PARTNER_RANGE,
-            'aux_loss_scale': S.get('aux_loss_scale', 1.0)}
+            'aux_loss_scale': S.get('aux_loss_scale', 1.0),
+            'comm_codec': _cp, 'comm_codec_sha256': _cs, 'comm_codec_mode': _cm}
 
 
 def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,

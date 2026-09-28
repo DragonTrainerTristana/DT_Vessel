@@ -22,6 +22,7 @@ import torch.nn as nn
 import config as cfg
 import vessel_gym as vg
 import networks as net_mod          # 텔레메트리가 모듈 전역(_MSG_TOKEN_GAIN)을 읽는다
+import comm_codec                   # ★2026-09-28 grounded latent 코덱
 from networks import CNNPolicy
 
 MSG_RANDOM_SD = cfg.MSG_RANDOM_SD   # ★2026-09-10 RANDOM 팔 난수 sd. ckpt_io.restore_policy 가 스냅샷으로 덮어씀
@@ -318,7 +319,29 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     if policy.relpos_dim > 3:
         # ★의도·역할 통신 확장필드 (2026-09-25). ⚠️미러 규칙: 이 prelpos 텐서 *하나*를 아래 집계와 반환(버퍼 저장)에 같이 쓴다.
         #   update(evaluate_actions)는 저장값을 재사용하고 다시 계산하지 않으므로 rollout=update 가 구조적으로 성립한다.
-        ext = vg.comm_pair_features(env, topi, PART_R)                        # [E,N,Kc,20]
+        _cdc, _own_blk = net_mod.COMM_CODEC, None
+        if _cdc is None:
+            ext = vg.comm_pair_features(env, topi, PART_R)                    # [E,N,Kc,20]
+        else:
+            # ★2026-09-28 grounded latent: 송신자 자기 상태 → 동결 코덱 → z(양자화, 배당 1회). 코덱은 no_grad·정책 밖.
+            with torch.no_grad():
+                _zq = _cdc.encode(vg.own_payload(env).to(_cdc.enc[0].weight.dtype))          # [E,N,k]
+                if net_mod.COMM_CODEC_MODE == 'decode':
+                    # A6: 수신측 동결 디코더로 복원 → 송신자 값 자리에만 대입(수신자·위치는 참값) → 같은 20 필드
+                    _snd = comm_codec.decode_sender(_cdc.decode(_zq))
+                    ext = vg.comm_pair_features(env, topi, PART_R, sender=_snd)
+                elif net_mod.COMM_CODEC_MODE == 'direct':
+                    # C6: 필드 자리에 [z_j, 수신자 자기 상태 4, 0…] — k/v 가 z 를 직접 읽고 뜻을 학습(토큰 폭 불변)
+                    _kz = int(_zq.shape[-1])
+                    _zj = _zq[b, topi]                                                   # [E,N,Kc,k]
+                    _own_blk = vg.own_state4(env).unsqueeze(2).expand(-1, -1, Kc, -1).to(_zj.dtype)
+                    _pad = int(cfg.COMM_EXT_DIM) - _kz - 4
+                    if _pad < 0:
+                        raise SystemExit(f"[codec] 중단: k={_kz} + 4 > COMM_EXT_DIM {cfg.COMM_EXT_DIM}")
+                    ext = torch.cat([_zj, _own_blk, _zj.new_zeros(E, N, Kc, _pad)], dim=-1)
+                else:
+                    raise SystemExit(f"[codec] 중단: COMM_CODEC_MODE={net_mod.COMM_CODEC_MODE!r}")
+            ext = ext.to(prelpos.dtype)
         if ext_shuffle_gen is not None:
             # field-shuffle(평가 전용): 같은 env 안의 *유효* (수신자,슬롯) 항목끼리만 값을 돌린다 → 유효 슬롯 값의 모음(분포)은
             #   그대로, 짝(누가 누구에 대해)만 끊음. 무작위 순서로 늘어놓고 한 칸씩 당겨 받으므로 유효 항목이 2개 이상인 env 에서는
@@ -341,6 +364,10 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
                 _src = _flat.clone()
                 _flat[_F[_ord]] = _src[_F[_ord[_nxt]]]
                 ext = _flat.reshape(ext.shape)
+                if _own_blk is not None:
+                    # direct(C6): 섞는 건 z(송신 정보)뿐 — 수신자 자기 상태 칸은 제자리로 되돌림
+                    _kz = int(_zq.shape[-1])
+                    ext = torch.cat([ext[..., :_kz], _own_blk, ext[..., _kz + 4:]], dim=-1)
         _gs = net_mod.COMM_GROUPS if groups is None else tuple(groups)
         gmask = torch.zeros(ext.shape[-1], device=dev, dtype=ext.dtype)
         for _g in _gs:
@@ -622,6 +649,10 @@ def main():
     args = ap.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # ★2026-09-28 grounded latent 코덱(config 경로·SHA 고정 → 불일치면 중단). 끄면 net_mod 전역 None/''(비트동일)
+    if cfg.COMM_CODEC:
+        _cdc = comm_codec.install(cfg.COMM_CODEC, cfg.COMM_CODEC_SHA, cfg.COMM_CODEC_MODE, device)
+        print(f"[codec] {cfg.COMM_CODEC} sha={_cdc.sha[:12]} mode={cfg.COMM_CODEC_MODE} k={_cdc.k} bits={_cdc.bits}", flush=True)
     E = args.envs or (1024 if device == 'cuda' else 64)
     N = args.vessels
     torch.manual_seed(args.seed)
@@ -673,6 +704,13 @@ def main():
         if isinstance(_prev_snap.get('sim'), dict):
             from ckpt_io import dyn_constants_mismatch
             _ck_sim, _cur_sim = _prev_snap['sim'], cfg.sim_constants()
+            # ★2026-09-28 원거리 COLREGs 준수보상 반경은 *분기점에서만* trunk 와 달라도 됨(설계: 9M 부터 모든 갈래에 같이 켬).
+            #   크래시 재개(분기점 아님)는 여전히 일치 강제. 갈래끼리 같은지는 check_branch 가 sim 묶음 비교로 강제.
+            if args.comm_on_at > 0 and args.resume_at == args.comm_on_at and 'COLREGS_FAR_RANGE' in _ck_sim \
+                    and _ck_sim['COLREGS_FAR_RANGE'] != _cur_sim.get('COLREGS_FAR_RANGE'):
+                print(f"[branch] 원거리 COLREGs 반경 trunk={_ck_sim['COLREGS_FAR_RANGE']} → 갈래={_cur_sim.get('COLREGS_FAR_RANGE')} "
+                      "(분기점 보상 전환 — 허용)", flush=True)
+                _ck_sim = {k: v for k, v in _ck_sim.items() if k != 'COLREGS_FAR_RANGE'}
             _bad_sim = dyn_constants_mismatch(_ck_sim, {k: v for k, v in _cur_sim.items() if k in _ck_sim})
             if _bad_sim:
                 _d = ', '.join(f"{k} ckpt={_ck_sim[k]!r} 현재={_cur_sim.get(k, '<없음>')!r}" for k in _bad_sim)
@@ -683,8 +721,11 @@ def main():
         #   분기점(trunk=OFF → 갈래)에서는 팔마다 필드가 다른 게 정상이므로 comm_ext(구조)만 본다. 우회 없음.
         _cur_comm = {'comm_ext': int(cfg.COMM_EXT), 'comm_fields': cfg.COMM_FIELDS, 'comm_latent': float(cfg.COMM_LATENT),
                      'partner_range': (None if cfg.PARTNER_RANGE is None else float(cfg.PARTNER_RANGE)),
-                     'aux_loss_scale': float(cfg.AUX_LOSS_SCALE)}
-        _legacy_comm = {'comm_ext': 0, 'comm_fields': 'latent', 'comm_latent': 1.0, 'partner_range': None, 'aux_loss_scale': 1.0}
+                     'aux_loss_scale': float(cfg.AUX_LOSS_SCALE),
+                     'comm_codec_sha256': (net_mod.COMM_CODEC.sha if net_mod.COMM_CODEC is not None else ''),
+                     'comm_codec_mode': str(net_mod.COMM_CODEC_MODE)}
+        _legacy_comm = {'comm_ext': 0, 'comm_fields': 'latent', 'comm_latent': 1.0, 'partner_range': None, 'aux_loss_scale': 1.0,
+                        'comm_codec_sha256': '', 'comm_codec_mode': ''}
         _prev_comm = {k: _prev_snap.get(k, _legacy_comm[k]) for k in _cur_comm}
         _is_branch_pt = args.comm_on_at > 0 and args.resume_at == args.comm_on_at
         _keys_chk = ('comm_ext',) if _is_branch_pt else tuple(_cur_comm)

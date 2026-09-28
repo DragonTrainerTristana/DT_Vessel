@@ -107,6 +107,10 @@ COMM_GROUPS = tuple(_cfg.COMM_FIELDS_TO_GROUPS[_cfg.COMM_FIELDS])   # 켜진 확
 COMM_LATENT = _cfg.COMM_LATENT      # attention 토큰의 latent 메시지 배율 (0 = ARPA@56: 통신 없이 추적 정보만)
 PARTNER_RANGE = _cfg.PARTNER_RANGE  # 파트너 선택 반경 (None = COMM_RANGE). 보상 반경과 분리
 COMM_EXT_MLP_HIDDEN = 64            # EXT 일 때 k/v MLP 은닉 폭 (역할×의도 상호작용을 집계 전에 만들기 위함)
+# ★2026-09-28 grounded latent 코덱(comm_codec.install 이 설정, ckpt_io 가 스냅샷으로 덮어씀). rollout(comm_gather)만 읽음 —
+#   결과는 prelpos 로 버퍼에 저장돼 update 가 재사용하므로 evaluate_actions 는 코덱을 안 탐(구조적 미러). None = 끔(비트동일).
+COMM_CODEC = None
+COMM_CODEC_MODE = ''
 
 
 def _bmm_linear(cores, sit, h, attr):

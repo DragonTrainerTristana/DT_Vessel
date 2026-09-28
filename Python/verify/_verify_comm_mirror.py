@@ -30,6 +30,8 @@ def run_case(name, env_overrides, K, use_masks):
     import vessel_gym as vg
     import vessel_gym_train as T
     from networks import CNNPolicy
+    import comm_codec
+    comm_codec.install(cfg.COMM_CODEC, cfg.COMM_CODEC_SHA, cfg.COMM_CODEC_MODE, 'cpu')   # 끔이면 None/'' 로 리셋
 
     E, N = 8, 16
     torch.manual_seed(0)
@@ -90,8 +92,14 @@ BASE = dict(VESSEL_USE_COMM='1', VESSEL_MOE_SHARED='1', VESSEL_THREAT_COEF='0.5'
             # ★2026-09-25 의도·역할 통신 토글은 기본(끔)으로 고정 — preflight 가 배치 env(VESSEL_COMM_EXT=1 등)를
             #   물려받아도 기존 케이스는 EXT=0 경로를 검증한다. EXT 는 아래 전용 케이스에서만.
             VESSEL_COMM_EXT='0', VESSEL_COMM_FIELDS='latent', VESSEL_COMM_LATENT='1.0', VESSEL_PARTNER_RANGE=None,
-            VESSEL_AUX_LOSS_SCALE='1.0')
+            VESSEL_AUX_LOSS_SCALE='1.0',
+            # ★2026-09-28 grounded latent 코덱·원거리 COLREGs 도 기본(끔)으로 고정 — 배치 env 가 새지 않게
+            VESSEL_COMM_CODEC=None, VESSEL_COMM_CODEC_SHA=None, VESSEL_COMM_CODEC_MODE=None,
+            VESSEL_COLREGS_FAR_RANGE=None)
 _EXT = {'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1', 'VESSEL_COMM_EXT': '1'}
+_CDC = {'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_COMM_LATENT': '0.0', 'VESSEL_AUX_LOSS_SCALE': '0.0',
+        'VESSEL_DYN_PROFILE': 'imo', 'VESSEL_OBSTACLES': 'none',
+        'VESSEL_COMM_CODEC': 'comm_codecs/p6_k6_s0.pt', 'VESSEL_COMM_CODEC_SHA': 'fbe4c71a6bf4'}
 CASES = [
     ('MoE + threat + LN',      {**BASE, 'VESSEL_USE_MOE': '1'}, 4, False),
     ('단일망(MoE off)',         {**BASE, 'VESSEL_USE_MOE': '0'}, 4, False),
@@ -154,6 +162,13 @@ CASES = [
     ('EXT intent + aux 0',      {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_AUX_LOSS_SCALE': '0.0'}, 4, False),
     ('EXT intent + imo/none',   {**BASE, **_EXT, 'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_DYN_PROFILE': 'imo',
                                  'VESSEL_OBSTACLES': 'none'}, 4, False),
+    # ★2026-09-28 grounded latent 코덱(imo 전용 코덱 → imo 뒤). decode(A6)·direct(C6) + 원거리 COLREGs 보상 + 혼합함대·K=1
+    ('codec decode (A6)',       {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, False),
+    ('codec direct (C6)',       {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, False),
+    ('codec direct + far300',   {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct',
+                                 'VESSEL_COLREGS_FAR_RANGE': '300'}, 4, False),
+    ('codec decode + 혼합함대',  {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, True),
+    ('codec direct K=1',        {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 1, False),
 ]
 
 if __name__ == '__main__':

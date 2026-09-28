@@ -58,4 +58,7 @@ common_env() {
   #   팔별 내용(COMM_FIELDS·COMM_LATENT·PARTNER_RANGE·AUX_LOSS_SCALE)은 run_repro.sh comm_variant_env 가 런마다 export.
   #   스펙: docs/superpowers/specs/2026-09-25-comm-intent-design.md
   export VESSEL_COMM_EXT="${VESSEL_COMM_EXT:-0}"
+  # ★2026-09-28 원거리 COLREGs 준수보상 반경(m) — 배치 단위 실험 축(바깥 값 보존, 기본 0 = 끔·비트동일).
+  #   300 이면 56 m 밖·충돌위험 상대의 역할로 같은 준수항을 채점(모든 팔 동일). sim 스냅샷 키 → 재개·분기 검사가 일치 강제.
+  export VESSEL_COLREGS_FAR_RANGE="${VESSEL_COLREGS_FAR_RANGE:-0}"
 }
