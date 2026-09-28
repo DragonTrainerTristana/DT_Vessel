@@ -41,6 +41,9 @@ def main():
     assert len(arms) == len(a.ckpt), '--arm 개수 = --ckpt 개수'
     env = {k: v for k, v in os.environ.items() if k != 'VESSEL_ROLE_PROMISE_PEN'}
     env.setdefault('PYTHONIOENCODING', 'utf-8')
+    # CPU 고정: GPU 는 실행 간 비결정 연산이 있을 수 있어 같은 코드도 바이트가 달라질 수 있음(거짓 FAIL 방지). 16 env·600 결정이라 CPU 로 충분
+    env['CUDA_VISIBLE_DEVICES'] = '-1'
+    env['OMP_NUM_THREADS'] = '1'
     tmp = tempfile.mkdtemp(prefix='evaldiff_')
     old = os.path.join(tmp, 'old')
     subprocess.run(['git', '-C', REPO, 'worktree', 'add', '--detach', old, a.base], check=True,
