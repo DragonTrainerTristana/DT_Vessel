@@ -95,11 +95,16 @@ BASE = dict(VESSEL_USE_COMM='1', VESSEL_MOE_SHARED='1', VESSEL_THREAT_COEF='0.5'
             VESSEL_AUX_LOSS_SCALE='1.0',
             # ★2026-09-28 grounded latent 코덱·원거리 COLREGs 도 기본(끔)으로 고정 — 배치 env 가 새지 않게
             VESSEL_COMM_CODEC=None, VESSEL_COMM_CODEC_SHA=None, VESSEL_COMM_CODEC_MODE=None,
-            VESSEL_COLREGS_FAR_RANGE=None)
+            VESSEL_COLREGS_FAR_RANGE=None, VESSEL_COLREGS_FAR_MODE=None,
+            # ★2026-09-29 역할 약속 벌점도 기본(끔)으로 고정 — 배치 env(VESSEL_ROLE_PROMISE_PEN=20)가 새지 않게
+            VESSEL_ROLE_PROMISE_PEN=None)
 _EXT = {'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1', 'VESSEL_COMM_EXT': '1'}
 _CDC = {'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_COMM_LATENT': '0.0', 'VESSEL_AUX_LOSS_SCALE': '0.0',
         'VESSEL_DYN_PROFILE': 'imo', 'VESSEL_OBSTACLES': 'none',
         'VESSEL_COMM_CODEC': 'comm_codecs/p6_k6_s0.pt', 'VESSEL_COMM_CODEC_SHA': 'fbe4c71a6bf4'}
+# ★2026-09-29 역할 선언 코덱(p12, decode 전용) — 송신 선언·수신 매칭이 comm_gather 안에서 prelpos 로 저장되는지(구조적 미러)
+_CDC12 = {**_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p12_k8_s0.pt', 'VESSEL_COMM_CODEC_SHA': 'ed43ecc4d2a3',
+          'VESSEL_COMM_CODEC_MODE': 'decode'}
 CASES = [
     ('MoE + threat + LN',      {**BASE, 'VESSEL_USE_MOE': '1'}, 4, False),
     ('단일망(MoE off)',         {**BASE, 'VESSEL_USE_MOE': '0'}, 4, False),
@@ -169,6 +174,10 @@ CASES = [
                                  'VESSEL_COLREGS_FAR_RANGE': '300'}, 4, False),
     ('codec decode + 혼합함대',  {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, True),
     ('codec direct K=1',        {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 1, False),
+    ('codec p12 decode (A8)',   {**BASE, **_EXT, **_CDC12}, 4, False),
+    ('codec p12 + 역할약속 20',  {**BASE, **_EXT, **_CDC12, 'VESSEL_ROLE_PROMISE_PEN': '20'}, 4, False),
+    ('codec p12 + 혼합함대',     {**BASE, **_EXT, **_CDC12}, 4, True),
+    ('codec p12 K=1',           {**BASE, **_EXT, **_CDC12}, 1, False),
 ]
 
 if __name__ == '__main__':

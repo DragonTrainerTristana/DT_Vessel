@@ -110,6 +110,14 @@ EARLY_RELAX_TCPA   = _cfg.EARLY_RELAX_TCPA     # tcpa 게이트 제거(any tcpa)
 COLREGS_RISK_GATE  = _cfg.COLREGS_RISK_GATE       # 준수보상 발화 게이트
 COLREGS_FAR_RANGE  = _cfg.COLREGS_FAR_RANGE       # ★2026-09-28 원거리 준수보상 반경(0 = 끔, 비트동일)
 COLREGS_FAR_MODE   = _cfg.COLREGS_FAR_MODE        # ★2026-09-28b 'full' | 'penalty'(원거리는 위반 벌점만)
+ROLE_PROMISE_PEN   = _cfg.ROLE_PROMISE_PEN        # ★2026-09-29 역할 약속 조우 판정 벌점(0 = 끔, 비트동일). RolePromiseTracker
+ROLE_GIVEWAY_MIN_DEG = _cfg.ROLE_GIVEWAY_MIN_DEG  # 판정 상수 — config 가 정본(eval 도 같은 값을 import)
+ROLE_PORT_TOL_DEG    = _cfg.ROLE_PORT_TOL_DEG
+ROLE_STANDON_MAX_DEG = _cfg.ROLE_STANDON_MAX_DEG
+ROLE_SAFE_DIST       = _cfg.ROLE_SAFE_DIST
+ROLE_END_CPA         = _cfg.ROLE_END_CPA
+ROLE_END_FAR         = _cfg.ROLE_END_FAR
+ROLE_MIN_STEPS       = _cfg.ROLE_MIN_STEPS
 CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
 PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
 PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
@@ -133,6 +141,8 @@ CROSSING_ANGLE = 112.5
 # 선박 box collider (world, ×VESSEL_SCALE 0.2 반영): 길이(Z,bow) 14.18316, 폭(X,beam) 1.92741
 SHIP_HALF_LEN = 14.18316 / 2.0     # 7.0916 (bow 방향 반길이)
 SHIP_HALF_BEAM = 1.92741 / 2.0     # 0.9637 (beam 방향 반폭)
+# 두 선체 OBB 가 겹칠 수 있는 최대 중심거리(= 외접원 반지름 × 2) — 역할 판정기의 '두 배끼리 충돌' 판별용
+_PAIR_COLL_DIST = 2.0 * math.hypot(SHIP_HALF_LEN, SHIP_HALF_BEAM) + 1e-3
 
 OBSTACLES_MODE = _cfg.OBSTACLES_MODE   # 'grid3x3'(현행) | 'none'(open-sea, 2026-09-21)
 OBSTACLE_RADIUS = 20.0
@@ -366,6 +376,67 @@ def own_state4(env):
     return torch.stack([torch.sin(h), torch.cos(h), env.speed / COMM_EXT_SOG_NORM, rot], dim=-1)
 
 
+# ─────────────────────────── ★역할 선언 latent (2026-09-29, 코덱 레이아웃 'p12') ───────────────────────────
+#   스펙 docs/superpowers/specs/2026-09-29-role-promise-design.md §3. 송신자 s 가 자기 파트너(topi 행) 중 가장 위험한
+#   역할 상대 하나에 대해 "내 역할 + 그 배 위치(내 선체좌표)" 를 선언하고, 이 12개(운동 6 + 선언 6)가 동결 코덱을 거쳐 z 가 된다.
+#   받는 배는 z 를 복원해 선언이 *자기*를 향했는지 위치로 판정하고, 그렇다면 확장필드 [13:18](상대 역할 칸)에 선언 역할을 넣는다.
+def role_declaration(env, topi, valid, true_feats):
+    """Sender declaration from the sender's own (true) view. topi [E,N,K] partner index, valid [E,N,K] bool (real
+    partner slot, before recv_mask), true_feats = comm_pair_features(env, topi, R) with no sender override.
+    Target = among valid slots with my_role > 0 (already dcpa < DCPA_RISK gated), the max dcpa_risk + tcpa_risk;
+    ties -> nearest (topi is sorted by distance; argmax takes the first). Returns (role [E,N] long 0..4,
+    pos [E,N,2] target position in the sender's body frame (starboard, forward) in metres; zeros when role 0)."""
+    my_role = true_feats[..., 8:13].argmax(dim=-1)                                   # [E,N,K] 0..4
+    cand = valid & (my_role > 0)
+    score = torch.where(cand, true_feats[..., 6] + true_feats[..., 7], torch.full_like(true_feats[..., 6], -1.0))
+    best, kstar = score.max(dim=-1)                                                  # [E,N]
+    has = best > -0.5
+    role = torch.where(has, my_role.gather(-1, kstar.unsqueeze(-1)).squeeze(-1), torch.zeros_like(kstar))
+    E = topi.shape[0]
+    b = torch.arange(E, device=topi.device)[:, None]
+    tgt = topi.gather(-1, kstar.unsqueeze(-1)).squeeze(-1)                           # [E,N]
+    rel = env.pos[b, tgt] - env.pos                                                  # [E,N,2] target − sender (world x,z)
+    h = env.heading * DEG
+    stb = rel[..., 0] * torch.cos(h) - rel[..., 1] * torch.sin(h)
+    fwd = rel[..., 0] * torch.sin(h) + rel[..., 1] * torch.cos(h)
+    pos = torch.stack([stb, fwd], dim=-1)
+    pos = torch.where(has.unsqueeze(-1), pos, torch.zeros_like(pos))
+    return role, pos
+
+
+def own_payload12(env, decl_role, decl_pos):
+    """★p12 payload [E,N,12] = own_payload (6) + declared role one-hot 4 (SIT 1..4; none = zeros) + declared target
+    position / COMM_RANGE (sender body frame stb, fwd)."""
+    import torch.nn.functional as _F
+    p6 = own_payload(env)
+    oh = _F.one_hot(decl_role, 5)[..., 1:].to(p6.dtype)
+    return torch.cat([p6, oh, (decl_pos / float(COMM_RANGE)).to(p6.dtype)], dim=-1)
+
+
+def apply_declaration(env, topi, ext, sender):
+    """Receiver side: replace ext [..,13:18] (partner's role toward me) with the partner's *declared* role when the
+    decoded declaration targets me, else none. 'Targets me' = my position in the partner's body frame (decoded partner
+    heading, true relative position) is within max(ROLE_DECL_MATCH_M, ROLE_DECL_MATCH_FRAC * dist) of the decoded
+    declared position. sender = comm_codec.decode_sender(...) of a p12 codec (has decl_role / decl_pos).
+    Returns a new tensor (no in-place)."""
+    import torch.nn.functional as _F
+    E = topi.shape[0]
+    b = torch.arange(E, device=topi.device)[:, None, None]
+    rel = env.pos.unsqueeze(2) - env.pos[b, topi]                                    # [E,N,K,2] me − partner
+    hj = sender['heading'][b, topi] * DEG
+    stb = rel[..., 0] * torch.cos(hj) - rel[..., 1] * torch.sin(hj)
+    fwd = rel[..., 0] * torch.sin(hj) + rel[..., 1] * torch.cos(hj)
+    dpos = sender['decl_pos'][b, topi]                                               # [E,N,K,2]
+    err = torch.sqrt((dpos[..., 0] - stb) ** 2 + (dpos[..., 1] - fwd) ** 2)
+    dist = torch.linalg.norm(rel, dim=-1)
+    tol = torch.clamp(dist * _cfg.ROLE_DECL_MATCH_FRAC, min=_cfg.ROLE_DECL_MATCH_M)
+    drole = sender['decl_role'][b, topi]                                             # [E,N,K]
+    match = (drole > 0) & (err <= tol)
+    cls = torch.where(match, drole, torch.zeros_like(drole))
+    oh = _F.one_hot(cls, 5).to(ext.dtype)
+    return torch.cat([ext[..., :13], oh, ext[..., 18:]], dim=-1)
+
+
 class _Unset:
     """인자 생략 감지용 sentinel (작은 int 는 `is` 비교가 불가능해서 별도 객체)."""
     def __repr__(self):
@@ -373,6 +444,145 @@ class _Unset:
 
 
 _UNSET = _Unset()
+
+
+class RolePromiseTracker:
+    """★2026-09-29 role promise: pairwise encounter judge (spec docs/superpowers/specs/2026-09-29-role-promise-design.md §2).
+
+    Owned by VesselBatchEnv; step() calls update() after termination is decided and before respawn, so it sees the
+    same post-physics, pre-respawn state as the reward. Pairs live only in the strict upper triangle i<j of [E,N,N]
+    (the diagonal must stay out: encounter_role returns OVERTAKING for a ship against itself).
+
+    start : dist <= COMM_RANGE, raw_tcpa >= 0, dcpa < DCPA_RISK, and both roles > 0 after the complement rule
+            (if one side is give-way/overtaking and the other side has no role, the other side is stand-on — COLREGs 13/17).
+            Roles and the start headings are frozen at the start.
+    track : dpsi = wrap(psi - psi0) max/min per side; stand-on side also max |dpsi| while tcpa > RULE_17B_TIME;
+            min distance; decision count n.
+    end   : raw_tcpa < 0 for ROLE_END_CPA decisions in a row, dist > COMM_RANGE for ROLE_END_FAR in a row, or the two
+            ships collide with each other. Any other termination of either ship (goal, timeout, collision with a third
+            ship, wall) discards the pair without a verdict.
+    judge : (n >= ROLE_MIN_STEPS, or a collision between the two regardless of n)
+            head-on/give-way: max dpsi >= ROLE_GIVEWAY_MIN_DEG and min dpsi >= -ROLE_PORT_TOL_DEG
+            stand-on        : max |dpsi| before the 17(b) point <= ROLE_STANDON_MAX_DEG
+            overtaking      : any side (judged by safety only)
+            safe            : min distance >= ROLE_SAFE_DIST and no collision between the two
+            success = both comply and safe; fail = judged and not success.
+    update() returns the per-ship number of failed encounters [E,N]; the env subtracts ROLE_PROMISE_PEN per failure.
+    No RNG, no host sync, never modifies env state or pw. The last step's verdicts are kept in self.events.
+    """
+
+    def __init__(self, env):
+        self.E, self.N, self.device, self.dtype = env.E, env.N, env.device, env.dtype
+        self.upper = torch.triu(torch.ones(self.N, self.N, dtype=torch.bool, device=self.device),
+                                diagonal=1).unsqueeze(0)                                  # [1,N,N] i<j
+        self.reset()
+
+    def reset(self):
+        E, N, dev, dt = self.E, self.N, self.device, self.dtype
+        zf = lambda: torch.zeros(E, N, N, device=dev, dtype=dt)
+        zl = lambda: torch.zeros(E, N, N, device=dev, dtype=torch.long)
+        self.active = torch.zeros(E, N, N, device=dev, dtype=torch.bool)
+        self.role_i, self.role_j, self.t_start = zl(), zl(), zl()
+        self.h0_i, self.h0_j = zf(), zf()
+        self.dmax_i, self.dmin_i, self.dmax_j, self.dmin_j = zf(), zf(), zf(), zf()
+        self.so_i, self.so_j = zf(), zf()
+        self.mind, self.n, self.cpa, self.far = zf(), zf(), zf(), zf()
+        self.t = 0                 # reset 뒤 결정 수(t_start 의 시계)
+        self.events = None
+
+    @staticmethod
+    def roles(env, pw, R):
+        """(role_i, role_j) [E,N,N] long: role of i toward j and of j toward i, after the complement rule.
+        Geometry uses the same formulas as VesselBatchEnv._pairwise (bearing / other bearing / faster)."""
+        to_other = env.pos[:, None, :, :] - env.pos[:, :, None, :]                  # [E,N,N,2] = pos_j − pos_i
+        dx, dz = to_other[..., 0], to_other[..., 1]
+        h = env.heading * DEG
+        fx, fz = torch.sin(h)[:, :, None], torch.cos(h)[:, :, None]                 # i 선수
+        gx, gz = torch.sin(h)[:, None, :], torch.cos(h)[:, None, :]                 # j 선수
+        bearing = torch.atan2(fz * dx - fx * dz, fx * dx + fz * dz) / DEG
+        other_bearing = torch.atan2(gx * dz - gz * dx, -(gx * dx + gz * dz)) / DEG
+        faster = env.speed[:, :, None] > (env.speed[:, None, :] * 1.1)
+        r = encounter_role(bearing, other_bearing, pw['dist'], pw['raw_tcpa'] >= 0, faster, R)   # i→j
+        rt = r.transpose(1, 2)                                                                     # j→i (같은 [i,j] 칸)
+        two = torch.full_like(r, SIT_STANDON)
+        yielding = lambda x: (x == SIT_GIVEWAY) | (x == SIT_OVERTAKING)
+        role_i = torch.where((r == SIT_NONE) & yielding(rt), two, r)
+        role_j = torch.where((rt == SIT_NONE) & yielding(r), two, rt)
+        return role_i, role_j
+
+    @staticmethod
+    def complies(role, dmax, dmin, so):
+        """Course-change verdict per side (spec §2 table)."""
+        give = (role == SIT_HEADON) | (role == SIT_GIVEWAY)
+        ok_give = (dmax >= ROLE_GIVEWAY_MIN_DEG) & (dmin >= -ROLE_PORT_TOL_DEG)
+        ok_stand = so <= ROLE_STANDON_MAX_DEG
+        return torch.where(give, ok_give, torch.where(role == SIT_STANDON, ok_stand, torch.ones_like(ok_give)))
+
+    def update(self, env, pw, outcome):
+        """Advance one decision. pw = env._last_pw of this (post-physics, pre-respawn) state, outcome [E,N].
+        Returns the number of failed encounters per ship [E,N] (env dtype)."""
+        R = float(COMM_RANGE)
+        dist, raw_tcpa, tcpa, dcpa = pw['dist'], pw['raw_tcpa'], pw['tcpa'], pw['dcpa']
+        act = self.active
+        hi = env.heading[:, :, None].expand(-1, -1, self.N)
+        hj = env.heading[:, None, :].expand(-1, self.N, -1)
+        # 1) 활성 쌍 누적(이번 상태)
+        dpi, dpj = _wrap180(hi - self.h0_i), _wrap180(hj - self.h0_j)
+        self.dmax_i = torch.where(act, torch.maximum(self.dmax_i, dpi), self.dmax_i)
+        self.dmin_i = torch.where(act, torch.minimum(self.dmin_i, dpi), self.dmin_i)
+        self.dmax_j = torch.where(act, torch.maximum(self.dmax_j, dpj), self.dmax_j)
+        self.dmin_j = torch.where(act, torch.minimum(self.dmin_j, dpj), self.dmin_j)
+        early = act & (tcpa > RULE_17B_TIME)
+        self.so_i = torch.where(early, torch.maximum(self.so_i, dpi.abs()), self.so_i)
+        self.so_j = torch.where(early, torch.maximum(self.so_j, dpj.abs()), self.so_j)
+        self.mind = torch.where(act, torch.minimum(self.mind, dist), self.mind)
+        self.n = torch.where(act, self.n + 1.0, self.n)
+        zf = torch.zeros_like(self.n)
+        self.cpa = torch.where(act, torch.where(raw_tcpa < 0, self.cpa + 1.0, zf), self.cpa)
+        self.far = torch.where(act, torch.where(dist > R, self.far + 1.0, zf), self.far)
+        # 2) 종료·판정
+        done = outcome != OUT_RUNNING
+        dany = done[:, :, None] | done[:, None, :]
+        vc = outcome == OUT_COLLISION_VESSEL
+        pair_coll = vc[:, :, None] & vc[:, None, :] & (dist <= _PAIR_COLL_DIST)
+        end_coll = act & pair_coll
+        end_disc = act & dany & (~pair_coll)
+        end_norm = act & (~dany) & ((self.cpa >= ROLE_END_CPA) | (self.far >= ROLE_END_FAR))
+        judged = (end_norm & (self.n >= ROLE_MIN_STEPS)) | end_coll
+        discard = end_disc | (end_norm & (self.n < ROLE_MIN_STEPS))
+        ok_i = self.complies(self.role_i, self.dmax_i, self.dmin_i, self.so_i)
+        ok_j = self.complies(self.role_j, self.dmax_j, self.dmin_j, self.so_j)
+        safe = (self.mind >= ROLE_SAFE_DIST) & (~end_coll)
+        success = judged & ok_i & ok_j & safe
+        fail = judged & (~success)
+        fail_f = fail.to(self.dtype)
+        n_fail = fail_f.sum(dim=2) + fail_f.sum(dim=1)                 # i 로서(행) + j 로서(열)
+        # 판정 기록(아래 텐서는 이후 제자리 수정 없음 — 뒤 줄은 전부 재바인딩)
+        self.events = {'judged': judged, 'success': success, 'fail': fail, 'discard': discard,
+                       'ok_i': judged & ok_i, 'ok_j': judged & ok_j, 'safe': judged & safe, 'coll': end_coll,
+                       'role_i': self.role_i, 'role_j': self.role_j, 't_start': self.t_start,
+                       'mind': self.mind, 'n': self.n, 'dmax_i': self.dmax_i, 'dmin_i': self.dmin_i,
+                       'dmax_j': self.dmax_j, 'dmin_j': self.dmin_j, 'so_i': self.so_i, 'so_j': self.so_j}
+        act = act & ~(end_coll | end_disc | end_norm)
+        # 3) 새 조우(이번 결정에 종료된 배는 곧 respawn → 제외)
+        role_i, role_j = self.roles(env, pw, R)
+        start = (self.upper & (~act) & (~dany) & (dist <= R) & (raw_tcpa >= 0) & (dcpa < DCPA_RISK)
+                 & (role_i > 0) & (role_j > 0))
+        self.role_i = torch.where(start, role_i, self.role_i)
+        self.role_j = torch.where(start, role_j, self.role_j)
+        self.h0_i = torch.where(start, hi, self.h0_i)
+        self.h0_j = torch.where(start, hj, self.h0_j)
+        self.dmax_i, self.dmin_i = torch.where(start, zf, self.dmax_i), torch.where(start, zf, self.dmin_i)
+        self.dmax_j, self.dmin_j = torch.where(start, zf, self.dmax_j), torch.where(start, zf, self.dmin_j)
+        self.so_i, self.so_j = torch.where(start, zf, self.so_i), torch.where(start, zf, self.so_j)
+        self.cpa, self.far = torch.where(start, zf, self.cpa), torch.where(start, zf, self.far)
+        self.mind = torch.where(start, dist, self.mind)
+        self.n = torch.where(start, torch.ones_like(zf), self.n)
+        self.t_start = torch.where(start, torch.full_like(self.t_start, self.t), self.t_start)
+        self.active = act | start
+        self.events['start'] = start
+        self.t += 1
+        return n_fail
 
 
 class VesselBatchEnv:
@@ -451,6 +661,10 @@ class VesselBatchEnv:
         self.situation = torch.zeros(E, N, device=self.device, dtype=torch.long)  # obs[368], 1-step stale
         self.dropout_left = torch.zeros(E, N, device=self.device, dtype=torch.long)  # 센서고장 잔여(결정 수)
         self.spawn_idx = torch.zeros(E, N, device=self.device, dtype=torch.long)
+        # ★2026-09-29 역할 약속 조우 판정기 — ROLE_PROMISE_PEN>0(보상) 또는 enable_role_tracker()(eval 지표)일 때만 만든다.
+        #   둘 다 아니면 None 으로 남고 step() 에서 연산이 하나도 추가되지 않는다(비트동일).
+        self._rp = None
+        self._rp_on = False
 
         if OBSTACLES_MODE == 'none':
             # ★2026-09-21 open-sea: 장애물 0 → [0,2]. _radar 원 청크 루프(0회)·_obb_circle_hit(2026-09-26 부터 shape[0]>0 가드로
@@ -493,7 +707,17 @@ class VesselBatchEnv:
         mask = torch.ones(self.E, self.N, dtype=torch.bool, device=self.device)
         self._respawn(mask, initial=True)
         self._update_situation()
+        if self._rp is not None:
+            self._rp.reset()
         return self._build_obs()
+
+    def enable_role_tracker(self):
+        """Turn on the role-promise encounter judge without touching the reward (eval metric). Returns the tracker;
+        its .events after each step() hold the verdicts of pairs that ended in that decision."""
+        self._rp_on = True
+        if self._rp is None:
+            self._rp = RolePromiseTracker(self)
+        return self._rp
 
     def _respawn(self, mask, initial=False, col_any=None):
         """mask=True인 (env,vessel)만 리스폰 (비동기). initial=True면 전 선박 고유 spawn point 배정.
@@ -1174,6 +1398,14 @@ class VesselBatchEnv:
             if _cs:
                 # Rule 8(d) 안전 통과 보너스 — unity_cs 전용(위 (a) 참고)
                 _comp = _comp + torch.where(_dcpa_c > SAFE_PASSING, torch.full_like(r, 0.5), _zero)
+            if ROLE_PROMISE_PEN > 0.0:
+                # ★2026-09-29 역할 약속: 결정당 가산(양보 우현·유지선 침로·속도 +0.5·17(b) +0.5) 없음 — 벌점 항만 *항별로* 다시 짠다.
+                #   합계에 clamp(max=0) 를 걸면 같은 결정의 가산·벌점이 상쇄돼 벌점까지 사라진다(검토 C1). 준수 판정은 조우 끝에
+                #   RolePromiseTracker 가 한다(step). 원거리 채점·unity_cs 와는 같이 쓰지 않음(config assert 와 같은 조건).
+                if COLREGS_FAR_RANGE > 0.0 or _cs:
+                    raise ValueError('ROLE_PROMISE_PEN>0 은 COLREGS_FAR_RANGE=0 · COLREGS_MODE=unity 에서만 (config assert 참고)')
+                _comp = (_give * torch.where(_nr < -0.1, torch.full_like(r, -0.5), _zero)
+                         + _stand * _early17 * _spd_ok * torch.clamp(_spd_term, max=0.0))
             if COLREGS_FAR_RANGE > 0.0 and COLREGS_FAR_MODE == 'penalty':
                 # ★2026-09-28b 원거리(_uf) 칸만 위반 벌점으로 교체 — 양보선 좌현 −0.5, 유지선 17(a) 침로 변경 −0.5 + 속도항의
                 #   음수 부분만. 우현·침로유지·17(b) 회피 가산 없음 → 오래 돌아도 이득 없음. 56 m 안 채점은 그대로.
@@ -1349,6 +1581,13 @@ class VesselBatchEnv:
         reward = reward + torch.where(coll, torch.full_like(reward, COLLISION_PENALTY), torch.zeros_like(reward))
         # ★2026-08: timeout 완만 페널티(실패 신호). 충돌(-300)보다 훨씬 약해 충돌 유발 안 함.
         reward = reward + torch.where(outcome == OUT_TIMEOUT, torch.full_like(reward, TIMEOUT_PENALTY), torch.zeros_like(reward))
+        # ★2026-09-29 역할 약속: 조우 끝 판정(respawn 전 = 방금 물리 적용된 상태). 끄면(PEN 0·eval 미사용) 이 블록은 파이썬 비교뿐.
+        if ROLE_PROMISE_PEN > 0.0 or self._rp_on:
+            if self._rp is None:
+                self._rp = RolePromiseTracker(self)
+            _nfail = self._rp.update(self, self._last_pw, outcome)
+            if ROLE_PROMISE_PEN > 0.0:
+                reward = reward - ROLE_PROMISE_PEN * _nfail
         done = outcome != OUT_RUNNING
         # ★2026-09-05 fix: 리셋이 없는 스텝은 respawn 전·후 상태(pos/heading/speed)가 완전히
         #   같은데도 _pairwise 와 _radar(360ray × (원9+타선N+벽))를 한 번 더 돌렸음 = 순수 중복.

@@ -63,4 +63,8 @@ common_env() {
   export VESSEL_COLREGS_FAR_RANGE="${VESSEL_COLREGS_FAR_RANGE:-0}"
   # ★2026-09-28b 원거리 채점 방식 full(g_ 배치) | penalty(위반 벌점만). FAR_RANGE=0 이면 무관.
   export VESSEL_COLREGS_FAR_MODE="${VESSEL_COLREGS_FAR_MODE:-full}"
+  # ★2026-09-29 역할 약속 조우 판정 벌점 — 배치 단위 실험 축(바깥 값 보존, 기본 0 = 끔·비트동일). 모든 팔 동일.
+  #   >0 이면 결정당 COLREGs 가산 제거 + 조우 끝 실패 시 두 배 모두 −값. sim 스냅샷 키 → 재개·분기 검사가 일치 강제.
+  #   스펙: docs/superpowers/specs/2026-09-29-role-promise-design.md
+  export VESSEL_ROLE_PROMISE_PEN="${VESSEL_ROLE_PROMISE_PEN:-0}"
 }

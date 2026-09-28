@@ -69,6 +69,8 @@ def main():
                     help="평가에 켤 확장필드 그룹(쉼표: state,role,intent / 'none'). 학습과 다르면 --allow_fields_mismatch 필요")
     ap.add_argument('--allow_fields_mismatch', action='store_true', help='의도한 필드 절제 평가만')
     ap.add_argument('--latent_zero', action='store_true', help='학습 latent 메시지만 0 (확장필드·위치는 유지)')
+    ap.add_argument('--decl_zero', action='store_true',
+                    help='★2026-09-29 확장필드 [13:18](상대 역할 칸: a8 = 선언, a6 = 수신측 추정)만 0 — 역할 선언 기여 절제')
     ap.add_argument('--field_shuffle', action='store_true',
                     help='확장필드를 같은 env 의 다른 수신자 것으로 섞음(분포 유지, 정보 차단)')
     ap.add_argument('--traj_out', default=None,
@@ -106,6 +108,8 @@ def main():
     args.ring, args.crossing = env.ring_scale, env.crossing   # 뒤에서 [run] 로그가 찍는 값
 
     fs = FrameStack(E, N, dev)
+    # ★2026-09-29 역할 약속 조우 지표: env 판정기를 켠다(보상 불변 — 보상은 스냅샷 ROLE_PROMISE_PEN 이 정함, 난수 없음, 상태 불변)
+    _rpt = env.enable_role_tracker()
     obs = env.reset()
     radar, goal, self_s, sit = parse_obs(obs); fs.reset_all(radar)
 
@@ -113,21 +117,25 @@ def main():
     total = 0
 
     # ★2026-09-25 절제 옵션 (ON 팔에서만 의미). 전용 CPU generator → 정책 샘플 RNG 와 분리.
-    if (args.latent_zero or args.field_shuffle) and args.arm != 'ON':
-        raise SystemExit('[eval] --latent_zero/--field_shuffle 은 --arm ON 에서만 의미가 있음')
+    if (args.latent_zero or args.field_shuffle or args.decl_zero) and args.arm != 'ON':
+        raise SystemExit('[eval] --latent_zero/--field_shuffle/--decl_zero 는 --arm ON 에서만 의미가 있음')
+    if args.decl_zero and getattr(policy, 'relpos_dim', 3) <= 3:
+        raise SystemExit('[eval] --decl_zero 는 COMM_EXT 체크포인트에서만 (확장필드가 없음)')
+    _ext_zero = (13, 18) if args.decl_zero else None
     if args.field_shuffle and getattr(policy, 'relpos_dim', 3) <= 3:
         raise SystemExit('[eval] --field_shuffle 은 COMM_EXT 체크포인트에서만 (확장필드가 없음)')
     _shuf_gen = torch.Generator().manual_seed(args.seed + 7) if args.field_shuffle else None
     _zmsg = torch.zeros(E, N, _r.msg_dim, device=dev) if args.latent_zero else None
-    if args.latent_zero or args.field_shuffle or args.comm_groups is not None:
+    if args.latent_zero or args.field_shuffle or args.comm_groups is not None or args.decl_zero:
         print(f"[eval] 절제: latent_zero={args.latent_zero} field_shuffle={args.field_shuffle} "
-              f"comm_groups={list(net.COMM_GROUPS)} (학습과 다른 입력 — 절제 결과로만 보고)", flush=True)
+              + ("decl_zero=[13:18] " if args.decl_zero else '')
+              + f"comm_groups={list(net.COMM_GROUPS)} (학습과 다른 입력 — 절제 결과로만 보고)", flush=True)
 
     def act(x, goal, self_s, sit):
         with torch.no_grad():
             if args.arm == 'ON':
                 om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners,
-                                    msg_override=_zmsg, ext_shuffle_gen=_shuf_gen)
+                                    msg_override=_zmsg, ext_shuffle_gen=_shuf_gen, ext_zero=_ext_zero)
             else:
                 om = make_others_msg(env, args.arm, E, N, dev)
             action, _, _, _ = policy.ctr_actor(x, goal, self_s, om, sit)
@@ -286,6 +294,9 @@ def main():
     ep_fuel.zero_(); ep_head.zero_(); ep_len.zero_(); ep_reward.zero_()
     ep_minsep.fill_(BIG)
     counted = torch.zeros(E, N, dtype=torch.bool, device=dev)   # 종료를 한 번 본 뒤부터 집계
+    # ★2026-09-29 역할 약속 조우 지표 — burn-in 뒤 시작한 조우만(경계를 걸친 조우 제외 = pr_skip 과 같은 취지)
+    _rp_t0 = _rpt.t
+    _acc_rp = torch.zeros(7, **_i64)   # judged, success, both_comply, safe, pair_coll, discarded, started
     # ★조우 누적기도 여기서 초기화 — burn-in 경계를 걸친 조우는 앞부분이 잘려 R_stb/R_ck 가 왜곡되므로
     #   현재 진행 중인 조우를 enc_skip 으로 표시해 첫 1건만 집계에서 뺀다(옛 counted 게이트와 같은 취지).
     enc_sit = env.situation.clone()
@@ -671,6 +682,12 @@ def main():
         # ── step ──
         obs, rew_step, done, outcome = env.step(a)
         ep_reward += rew_step
+        if _dstep < args.eval_decisions and _rpt.events is not None:
+            _ev = _rpt.events
+            _sel = _ev['t_start'] >= _rp_t0
+            _acc_rp.add_(torch.stack([(_ev['judged'] & _sel).sum(), (_ev['success'] & _sel).sum(),
+                                      (_ev['ok_i'] & _ev['ok_j'] & _sel).sum(), (_ev['safe'] & _sel).sum(),
+                                      (_ev['coll'] & _sel).sum(), (_ev['discard'] & _sel).sum(), _ev['start'].sum()]))
         if _traj is not None and _dstep < args.eval_decisions:
             _traj['outcome'].append(outcome[:_te].clone())
         if _dstep < args.eval_decisions and _cctx:
@@ -836,8 +853,20 @@ def main():
         torch.save(_out, args.traj_out)
         print(f"   [traj] {args.traj_out} ← {tuple(_out['pos'].shape)} (결정×env×선박×2)", flush=True)
 
+    _rp_ = _acc_rp.tolist()
+
+    def _print_rp():
+        # ★2026-09-29 역할 약속 조우 지표 — 항상 맨 끝 한 줄(기존 줄·파서 불변). 정의 = vessel_gym.RolePromiseTracker(보상과 같음)
+        _j, _s, _b, _sf, _c, _d, _st = _rp_
+        _pct = (lambda x: f"{100 * x / _j:5.1f}%") if _j else (lambda x: '  -  ')
+        _rate = f"{2 * _st / total:.3f}" if total else '  -  '
+        print(f"   [role-promise] judged n={_j}  roleKeptSafe={_pct(_s)}  both_comply={_pct(_b)}  safe={_pct(_sf)}  "
+              f"pair_coll={_c}  discarded={_d}  started={_st}  pair_enc_per_ship_ep={_rate}  "
+              f"(rule: gw/ho stbd>={vg.ROLE_GIVEWAY_MIN_DEG:g}deg port<={vg.ROLE_PORT_TOL_DEG:g}deg, "
+              f"so |dpsi|<={vg.ROLE_STANDON_MAX_DEG:g}deg before 17b, safe>={vg.ROLE_SAFE_DIST:g}m)", flush=True)
+
     if total == 0:
-        print(f"{os.path.basename(ckpt_path):26s} | no terminations"); return
+        print(f"{os.path.basename(ckpt_path):26s} | no terminations"); _print_rp(); return
     g, v, o, t = (float(counts[i]) / total * 100 for i in (1, 2, 3, 4))
     # goal 에피소드 기준 궤적 지표(공정 비교: 도달한 배들이 얼마나 부드럽고 안전하게 갔나)
     gm = msum[1]
@@ -984,6 +1013,7 @@ def main():
                       f"무조우 같은길이 창 중앙 {_np.median(_c):5.1f}deg  (비 {_np.median(_a)/max(_np.median(_c),1e-9):4.2f}x)")
                 _nb2 = {k: len(v) for k, v in null_dpsi.items()}
                 print(f"   [StandOn/null대조] null 창 표본(길이버킷별) {_nb2}")
+    _print_rp()
 
 
 if __name__ == '__main__':

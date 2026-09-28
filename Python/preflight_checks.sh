@@ -30,6 +30,8 @@ vessel_preflight_fp() {
     git -C "$root" ls-files --others --exclude-standard -- '*.py' '*.sh' '*.json' | while IFS= read -r f; do
       echo "$f $(git -C "$root" hash-object "$f" 2>/dev/null)"
     done
+    # ★2026-09-29 코덱 파일(.pt 는 gitignore — 추적 안 되는 새 코덱도 내용이 바뀌면 다시 검사)
+    for f in "$HERE"/comm_codecs/*.pt; do [ -f "$f" ] && echo "codec $(basename "$f") $(git hash-object "$f" 2>/dev/null)"; done
     "$PY" -c "import sys, platform, torch; print(sys.executable, sys.version, torch.__version__, platform.platform())" 2>/dev/null
     ( common_env; env | grep '^VESSEL_' | grep -Ev "$VESSEL_FP_IGNORE" | sort )
   } | _vessel_hash
@@ -58,6 +60,10 @@ vessel_run_checks() {
     _vc_launch "sim 스냅샷" "$OUT/_sim_snapshot.txt" 1 env $_o "$PY" -u "$HERE/verify/test_sim_snapshot.py"
     _vc_launch "COMM_EXT" "$OUT/_comm_ext.txt" 1 env $_o "$PY" -u "$HERE/verify/test_comm_ext.py"
     _vc_launch "grounded latent" "$OUT/_grounded_latent.txt" 1 env $_o "$PY" -u "$HERE/verify/test_grounded_latent.py"
+    # ★2026-09-29 역할 약속: 보상 판정기(G2) · p12 코덱·기능 게이트(G3) · 변경 전 커밋 대비 차분(G8a)
+    _vc_launch "역할 약속" "$OUT/_role_promise.txt" 1 env $_o "$PY" -u "$HERE/verify/test_role_promise.py"
+    _vc_launch "p12 코덱" "$OUT/_codec_p12.txt" 1 env $_o "$PY" -u "$HERE/verify/test_codec_p12.py"
+    _vc_launch "p6 차분" "$OUT/_p6_diff.txt" 1 env $_o "$PY" -u "$HERE/verify/test_p6_diff.py"
   else
     echo "  (VESSEL_SKIP_GOLDEN=1 — 골든·충실도·동역학·sim·COMM_EXT 건너뜀, 미러만)"
   fi

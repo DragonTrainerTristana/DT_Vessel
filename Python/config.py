@@ -517,6 +517,25 @@ LOS_GATE = _env_str('VESSEL_LOS_GATE', '0') == '1'   # 가려진 위협 보상 �
 SPEED_AVOID_UNLOCK = _env_str('VESSEL_SPEED_AVOID_UNLOCK', '0') == '1'
 SPEED_UNLOCK_GATE = _env_float('VESSEL_SPEED_UNLOCK_GATE', 0.3)
 COLREGS_MODE = _env_str('VESSEL_COLREGS_MODE', 'unity').lower()   # 'unity'(기본) | 'unity_cs'(C# 원본 크기) | 'simple'(구 축약본)
+# ★2026-09-29 역할 약속(role promise) — 스펙 docs/superpowers/specs/2026-09-29-role-promise-design.md. 0 = 끔(비트동일).
+#   >0 이면 (a) 결정당 COLREGs 준수항은 벌점 항만 남기고(양보선 좌현 −0.5·유지선 감속 벌점, 가산 0)
+#   (b) 쌍 조우(300 m 안·접근 중·dcpa<24)가 끝날 때 두 배 중 하나라도 역할(침로 변화 기준)을 어겼거나 24 m 안으로 지나갔으면
+#   두 배 모두 −ROLE_PROMISE_PEN (vessel_gym.RolePromiseTracker). 모든 팔 동일. 원거리 채점·unity_cs·simple 과는 같이 안 씀.
+ROLE_PROMISE_PEN = _env_float('VESSEL_ROLE_PROMISE_PEN', 0.0)
+assert ROLE_PROMISE_PEN >= 0.0, f"VESSEL_ROLE_PROMISE_PEN={ROLE_PROMISE_PEN} - 벌점 크기(≥0)"
+assert ROLE_PROMISE_PEN == 0.0 or (COLREGS_FAR_RANGE == 0.0 and COLREGS_MODE == 'unity'), \
+    (f"VESSEL_ROLE_PROMISE_PEN>0 은 COLREGS_FAR_RANGE=0 · COLREGS_MODE=unity 에서만 (현재 far={COLREGS_FAR_RANGE} "
+     f"mode={COLREGS_MODE}) — 결정당 준수항 재구성이 unity 식 기준이라 다른 조합은 조용히 다른 보상이 됨")
+# 조우 판정 상수(보상 판정기와 eval 이 같이 import — 스펙 §2). env 로 바꾸지 않음: 바꾸려면 코드·스펙을 같이 고칠 것.
+ROLE_GIVEWAY_MIN_DEG = 10.0     # 정면·양보선: 조우 중 우현 침로 변화 최대값 ≥ 이것
+ROLE_PORT_TOL_DEG = 5.0         # 정면·양보선: 좌현 침로 변화가 이것을 넘으면 위반
+ROLE_STANDON_MAX_DEG = 10.0     # 유지선: 17(b) 시점(tcpa ≤ RULE_17B_TIME) 전까지 |침로 변화| ≤ 이것
+ROLE_SAFE_DIST = 24.0           # 안전 통과 최소거리(m) = vessel_gym.DCPA_RISK
+ROLE_END_CPA = 3                # 종료: raw_tcpa<0 이 이만큼 연속(eval 쌍 지표 PAIR_END_CPA 와 같음)
+ROLE_END_FAR = 5                # 종료: 거리 > 판정 반경이 이만큼 연속(eval PAIR_END_FAR 와 같음)
+ROLE_MIN_STEPS = 5              # 판정 최소 결정 수(eval ENC_MIN_STEPS 와 같음). 두 배끼리 충돌은 길이 무관 판정
+ROLE_DECL_MATCH_M = 8.0         # p12 선언 대상 매칭 허용오차(m) — max(이것, 거리×FRAC)
+ROLE_DECL_MATCH_FRAC = 0.05
 MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS', os.environ.get('VESSEL_MAX_STEP', '45000')))   # 물리스텝. C# VESSEL_MAX_STEP 이름 호환 폴백
 COLLISION_PENALTY = _env_float('VESSEL_COLLISION_PENALTY', -300.0)
 FUEL_COEF = _env_float('VESSEL_FUEL_COEF', 0.02)
@@ -583,6 +602,7 @@ SIM_SNAPSHOT_KEYS = (
     'PROXRAMP_COEF', 'PROXRAMP_DIST', 'LOS_GATE', 'SPEED_AVOID_UNLOCK', 'SPEED_UNLOCK_GATE', 'COLREGS_MODE',
     'MAX_EPISODE_STEPS', 'COLLISION_PENALTY', 'FUEL_COEF', 'PROGRESS_COEF', 'COLREGS_SIM_COEF',
     'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE',
+    'ROLE_PROMISE_PEN',
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',

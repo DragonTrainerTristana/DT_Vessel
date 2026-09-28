@@ -262,7 +262,7 @@ def compute_own_threat(x, threat_k, device):
 
 
 def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None,
-                msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None):
+                msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None, ext_zero=None):
     """★배치 학습형 comm (2026-08): 각 배의 COMM_RANGE 내 nearest-K 파트너 메시지를 pos_ground 집계.
     evaluate_actions(update)의 pos_ground 분기와 *동일 함수형* → PPO ratio 유효 (mirror 검증 대상).
     Returns:
@@ -325,11 +325,22 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
         else:
             # ★2026-09-28 grounded latent: 송신자 자기 상태 → 동결 코덱 → z(양자화, 배당 1회). 코덱은 no_grad·정책 밖.
             with torch.no_grad():
-                _zq = _cdc.encode(vg.own_payload(env).to(_cdc.enc[0].weight.dtype))          # [E,N,k]
+                _p12 = getattr(_cdc, 'layout', 'p6') == 'p12'
+                if _p12:
+                    # ★2026-09-29 역할 선언(p12): 송신자가 자기 참 시점으로 가장 위험한 역할 상대 하나를 골라 [내 역할 + 그 배 위치]를
+                    #   페이로드에 싣는다(선택은 recv_mask 전 유효 슬롯 = topd<BIG). z 에 들어가므로 선언도 latent 메시지의 일부.
+                    _drole, _dpos = vg.role_declaration(env, topi, topd < BIG, vg.comm_pair_features(env, topi, PART_R))
+                    _pay = vg.own_payload12(env, _drole, _dpos)
+                else:
+                    _pay = vg.own_payload(env)
+                _zq = _cdc.encode(_pay.to(_cdc.enc[0].weight.dtype))                          # [E,N,k]
                 if net_mod.COMM_CODEC_MODE == 'decode':
                     # A6: 수신측 동결 디코더로 복원 → 송신자 값 자리에만 대입(수신자·위치는 참값) → 같은 20 필드
                     _snd = comm_codec.decode_sender(_cdc.decode(_zq))
                     ext = vg.comm_pair_features(env, topi, PART_R, sender=_snd)
+                    if _p12:
+                        # A8: [13:18](상대 역할 칸) = 나를 향한 *선언* 역할(아니면 없음). 나머지 칸은 A6 과 같은 식
+                        ext = vg.apply_declaration(env, topi, ext, _snd)
                 elif net_mod.COMM_CODEC_MODE == 'direct':
                     # C6: 필드 자리에 [z_j, 수신자 자기 상태 4, 0…] — k/v 가 z 를 직접 읽고 뜻을 학습(토큰 폭 불변)
                     _kz = int(_zq.shape[-1])
@@ -374,6 +385,10 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
             _a, _b = cfg.COMM_EXT_GROUPS[_g]
             gmask[_a:_b] = 1.0
         ext = torch.where(pmask > 0, ext * gmask, torch.zeros_like(ext))      # 패딩은 곱이 아니라 where(NaN×0 방지)
+        if ext_zero is not None:
+            # ★2026-09-29 평가 전용 절제(decl0 = [13:18] 상대 역할 칸만 0). 기본 None = 학습 경로 불변
+            _za, _zb = ext_zero
+            ext = torch.cat([ext[..., :_za], torch.zeros_like(ext[..., _za:_zb]), ext[..., _zb:]], dim=-1)
         prelpos = torch.cat([prelpos, ext], dim=-1)                            # [E,N,Kc,3+20]
     # others_msg: msg_actor(파트너) → msg_encoder(pos_ground) → masked mean (evaluate_actions 미러)
     prel_f = prelpos.reshape(E * N, Kc, -1); pmask_f = pmask.reshape(E * N, Kc, 1)

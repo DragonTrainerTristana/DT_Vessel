@@ -102,6 +102,8 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'comm_codec_mode': str(net.COMM_CODEC_MODE),
         'comm_codec_k': (int(net.COMM_CODEC.k) if net.COMM_CODEC is not None else None),
         'comm_codec_bits': (int(net.COMM_CODEC.bits) if net.COMM_CODEC is not None else None),
+        # ★2026-09-29 코덱 레이아웃('p6' | 'p12' 역할 선언). SHA 가 내용을 고정하지만 레이아웃을 따로 적어 복원 때 교차검증. 키 추가만
+        'comm_codec_layout': (str(getattr(net.COMM_CODEC, 'layout', 'p6')) if net.COMM_CODEC is not None else ''),
     }
 
 
@@ -306,7 +308,10 @@ def restore_comm_ext(_sd, snap, msg_dim, notes, tag, comm_groups=None, allow_fie
     if _cp:
         import comm_codec
         comm_codec.install(_cp, _cs, _cm, 'cuda' if torch.cuda.is_available() else 'cpu')
-        notes.append(f"코덱 복원: {_cp} sha={_cs[:12]} mode={_cm}")
+        _cl = S.get('comm_codec_layout')
+        if _cl and str(_cl) != str(net.COMM_CODEC.layout):
+            raise SystemExit(f"{tag} 중단: 스냅샷 comm_codec_layout={_cl!r} != 코덱 파일 레이아웃 {net.COMM_CODEC.layout!r}")
+        notes.append(f"코덱 복원: {_cp} sha={_cs[:12]} mode={_cm}")   # 문구 불변(eval 출력 바이트 동일 — test_eval_diff)
     else:
         net.COMM_CODEC, net.COMM_CODEC_MODE = None, ''
     return {'comm_ext': int(ext), 'comm_fields': fields, 'comm_groups': list(groups),

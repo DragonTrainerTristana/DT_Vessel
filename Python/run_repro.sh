@@ -62,7 +62,7 @@
 #   on6a0  (EXT 0) ON dim6 보조손실 0 — 계획서 G6 2단계(aux 비대칭 절제). 1차 trunk 를 새 $CK 에 복사해 "off on6a0" 로 돌릴 것
 #   bash run_repro.sh ablate  EXT 통신 체크포인트마다 절제 평가(msgzero·latent0·그룹별 0·field-shuffle)
 #   bash run_repro.sh all    ★2026-09-26 smoke → train → eval (→ EXT 면 traj → ablate) 를 한 명령으로. 실패 단계에서 멈춤
-#   preflight 는 검사 7종을 동시에 돌리고 코드·env 지문이 같으면 캐시로 건너뜀(VESSEL_FORCE_PREFLIGHT=1 로 강제)
+#   preflight 는 검사 11종(2026-09-29 +역할 약속·p12 코덱·p6 차분)을 동시에 돌리고 코드·env 지문이 같으면 캐시로 건너뜀(VESSEL_FORCE_PREFLIGHT=1 로 강제)
 #   bash run_repro.sh traj   F5 '같은 조우 ON vs OFF' 궤적 덤프: 팔마다 같은 시드·burn-in 0 으로 reset 직후 장면부터
 #                            1500 결정(16 env) 기록 → traj_<이름>_s<시드>.pt. 첫 재스폰 전까지 팔 간 초기 장면이 같다
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +156,9 @@ names = ['USE_ATTENTION','CENTRAL_CRITIC','STATE_RECON_COEF','MOE_SHARED','SHARE
 # override 축 = 기본값과 달라도 되는 실험 축. 위 names 와 달리 '기본값과 같은가' 가 아니라
 #   'common_env 가 export 한 값을 config 가 실제로 그대로 읽었는가' 를 본다.
 override = [('DYN_PROFILE', 'VESSEL_DYN_PROFILE'), ('OBSTACLES_MODE', 'VESSEL_OBSTACLES'),
-            ('RADAR_RANGE', 'VESSEL_RADAR_RANGE'), ('COMM_EXT', 'VESSEL_COMM_EXT')]   # ★2026-09-25 COMM_EXT
+            ('RADAR_RANGE', 'VESSEL_RADAR_RANGE'), ('COMM_EXT', 'VESSEL_COMM_EXT'),   # ★2026-09-25 COMM_EXT
+            ('COLREGS_FAR_RANGE', 'VESSEL_COLREGS_FAR_RANGE'), ('COLREGS_FAR_MODE', 'VESSEL_COLREGS_FAR_MODE'),
+            ('ROLE_PROMISE_PEN', 'VESSEL_ROLE_PROMISE_PEN')]   # ★2026-09-29 보상 축(오타·타입 오류로 조용히 기본값 폴백 방지)
 dump_names = names + [k for k, _ in override]
 def _dump(e=None):
     # ★2026-09-15: returncode/stderr 를 안 보면 환경 문제(torch 없음·config import 에러)가
@@ -202,7 +204,7 @@ PYCHK
     echo "  → override 축이면 VESSEL_DYN_PROFILE·VESSEL_OBSTACLES·VESSEL_RADAR_RANGE 값(오타·단위)을 볼 것"
     exit 1
   fi
-  # ★2026-09-26: 검사 7종(PPO·통신 미러, 골든, 충실도, 동역학, sim 스냅샷, COMM_EXT)을 *동시에* 돌리고, 같은 코드·env 면
+  # ★2026-09-26: 검사 7종(PPO·통신 미러, 골든, 충실도, 동역학, sim 스냅샷, COMM_EXT; 09-28 +grounded, 09-29 +역할 약속·p12·p6 차분 = 11종)을 *동시에* 돌리고, 같은 코드·env 면
   #   캐시로 건너뛴다(preflight_checks.sh). 예전의 '커밋당 1회 + 이후 VESSEL_SKIP_GOLDEN=1' 을 자동으로 — 코드가 바뀌면 다시 돈다.
   vessel_preflight_cached 1 preflight || { echo "preflight 실패 — 위 ★FAIL 파일 확인"; exit 1; }
   echo
@@ -339,6 +341,8 @@ arm_spec() {
     on6a0) echo "ON 6" ;;       # ON dim6 보조손실 0 (EXT 0) — aux 비대칭 절제
     # ★2026-09-28 grounded latent (스펙 2026-09-28-grounded-latent-small-design.md, VESSEL_COMM_EXT=1 필요)
     a6|c6) echo "ON 6" ;;       # a6 = 코덱 z → 수신측 복원 → 쌍 필드 / c6 = 코덱 z 를 k/v 가 직접 읽음
+    # ★2026-09-29 역할 선언 latent (스펙 2026-09-29-role-promise-design.md): p12 코덱(운동 6 + 역할 선언 6) → z 8 → 수신측 복원
+    a8)    echo "ON 6" ;;
     *) return 1 ;;
   esac
 }
@@ -358,9 +362,12 @@ comm_variant_env() {
                   VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=decode ;;
     c6)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
                   VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=direct ;;
+    # ★2026-09-29 a8: [13:18] = 나를 향한 선언 역할(아니면 없음), 나머지 필드는 a6 과 같은 식. 코덱 decode 전용
+    a8)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p12_k8_s0.pt VESSEL_COMM_CODEC_SHA=ed43ecc4d2a3da60 VESSEL_COMM_CODEC_MODE=decode ;;
   esac
 }
-is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6) return 0 ;; *) return 1 ;; esac; }
+is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6|a8) return 0 ;; *) return 1 ;; esac; }
 off_name() { if [ "$1" = 6 ]; then echo off; else echo "off$1"; fi; }
 
 # ── 분기 검사 (verify/check_branch.py) — 결과 $OUT/_branch_check.txt, ALL PASS 아니면 1 ──
@@ -383,7 +390,7 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6|a8)"; exit 1; }
     if is_ext_arm "$a" && [ "${VESSEL_COMM_EXT:-0}" != "1" ]; then
       echo "팔 $a 는 의도·역할 통신 구조가 필요함: VESSEL_COMM_EXT=1 로 배치를 돌릴 것(trunk 부터 EXT 구조)"; exit 1
     fi
@@ -492,7 +499,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6; do
+      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6 a8; do
         [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${RUN_PRE}${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
@@ -510,7 +517,7 @@ case "$MODE" in
     for s in $SEEDS; do
       if [ -n "$RUN_PRE" ]; then
         # ★2026-09-25 접두어 배치(COMM_EXT 등): 있는 것만 평가 (팔 구분은 스냅샷 — eval 헤더 comm_ext/fields 로 확인)
-        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6; do
+        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6 a8; do
           [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] || continue
           if [ "$nm" = off ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"
           elif [ "$nm" = rand ]; then eval_one "${RUN_PRE}$nm" RANDOM 6 "$s"
@@ -555,6 +562,25 @@ case "$MODE" in
       echo "평가 실패: rc≠0 인 평가 ${_eval_bad}건 — 위 목록에서 rc 를 확인하고 $OUT/eval_*.txt 를 볼 것"
       exit 1
     fi
+    ;;
+
+  evalref)
+    # ★2026-09-29 옛 체크포인트 재평가(새 [role-promise] 줄 포함) — 역할 약속 배치의 비짝 기준(스펙 §7).
+    #   VESSEL_EVAL_NAMES = 접두어 포함 이름 목록(예 "x_off h_off h_a6"). *off 로 끝나면 OFF, 나머지는 ON.
+    #   분기 검사 없음: 다른 trunk·옛 배치라 짝 비교에 쓰지 않는다. 보상 축은 스냅샷이 정하므로 깨끗한 env(PEN 0)에서 부를 것.
+    preflight
+    : > "$OUT/_status_eval.txt"
+    for s in $SEEDS; do
+      for nm in ${VESSEL_EVAL_NAMES:?VESSEL_EVAL_NAMES 필요 (예: x_off h_off h_a6)}; do
+        case "$nm" in *off) eval_one "$nm" OFF 6 "$s" ;; *) eval_one "$nm" ON 6 "$s" ;; esac
+      done
+    done
+    wait
+    [ "$EVAL_N" -gt 0 ] || { echo "재평가 0건 — $CK 에 ${VESSEL_EVAL_NAMES}_s*.pt 없음"; exit 1; }
+    [ -z "$EVAL_MISS" ] || { echo "재평가 체크포인트 없음:$EVAL_MISS"; exit 1; }
+    echo "재평가 완료 — $EVAL_N건, $OUT/eval_*.txt"; cat "$OUT/_status_eval.txt"
+    _eval_bad=$(grep -cv 'rc=0$' "$OUT/_status_eval.txt")
+    [ "${_eval_bad:-0}" -eq 0 ] || { echo "재평가 rc≠0 ${_eval_bad}건"; exit 1; }
     ;;
 
   random)
@@ -610,11 +636,13 @@ case "$MODE" in
       GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
     }
     for s in $SEEDS; do
-      for a in arpa6 onl6 ons6 oni6 a6 c6; do
+      for a in arpa6 onl6 ons6 oni6 a6 c6 a8; do
         nm="${RUN_PRE}$a"
         [ -f "$CK/${nm}_s$s.pt" ] || continue
         _abl_one "$nm" "$s" msgzero --arm OFF --allow_arm_mismatch
         case "$a" in onl6|ons6|oni6) _abl_one "$nm" "$s" latent0 --arm ON --latent_zero ;; esac   # a6·c6·arpa6 = latent 0
+        # ★2026-09-29 decl0: 확장필드 [13:18](상대 역할 칸 — a8 은 선언, a6 은 수신측 추정)만 0 (스펙 §7)
+        case "$a" in a6|a8) _abl_one "$nm" "$s" decl0 --arm ON --decl_zero ;; esac
         [ "$a" != onl6 ] && _abl_one "$nm" "$s" shuffle --arm ON --field_shuffle
         case "$a" in
           ons6|arpa6) _abl_one "$nm" "$s" state0 --arm ON --comm_groups role --allow_fields_mismatch
@@ -638,7 +666,7 @@ case "$MODE" in
     preflight
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
-      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6; do
+      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6 a8; do
         f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
         arm=ON; [ "$nm" = off ] && arm=OFF
         throttle
@@ -689,7 +717,7 @@ case "$MODE" in
     ;;
 
   *)
-    echo "알 수 없는 모드: $MODE  (smoke | train | eval | random | ablate | traj | diag | all)"
+    echo "알 수 없는 모드: $MODE  (smoke | train | eval | evalref | random | ablate | traj | diag | all)"
     exit 2
     ;;
 esac

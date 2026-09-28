@@ -171,7 +171,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 
 - **우선순위: attention > pos_ground > sum·mean·scale**, 끝에 `msg_gain`. 세 곳 모두 같은 순서·같은 함수형.
 - MoE 라우팅도 미러 대상: 파트너 메시지는 저장된 `partner_situations`로 재생성(:1302), 자기 행동은 저장된 `situation`으로 재라우팅.
-- **검증기 둘 다 ALL PASS 필수** — `verify/_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `verify/_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`가 강제 — ★2026-09-26 `Python/preflight_checks.sh`: 검사 7종(PPO·통신 미러, 골든 `--jobs 5`, 충실도, 동역학, sim 스냅샷, COMM_EXT) 동시 실행 + 코드·env 지문 캐시(같으면 건너뜀, 코드 바뀌면 재검사, `VESSEL_FORCE_PREFLIGHT=1` 강제). smoke_mac 도 같은 구현(PPO 제외).
+- **검증기 둘 다 ALL PASS 필수** — `verify/_verify_ppo_mirror.py`(Unity 경로, VERDICT :443) · `verify/_verify_comm_mirror.py`(gym 경로, :123). `run_repro.sh preflight`가 강제 — ★2026-09-26 `Python/preflight_checks.sh`: 검사 7종(PPO·통신 미러, 골든 `--jobs 5`, 충실도, 동역학, sim 스냅샷, COMM_EXT; 09-28 +grounded latent, ★09-29 +역할 약속·p12 코덱·p6 차분 = 11종) 동시 실행 + 코드·env 지문 캐시(같으면 건너뜀, 코드 바뀌면 재검사, `VESSEL_FORCE_PREFLIGHT=1` 강제). smoke_mac 도 같은 구현(PPO 제외).
 - **"한 곳만 고치면 4번째 사고"** — 과거 3건:
 
 | # | 일자 | 사고 | 기록 |
@@ -251,7 +251,7 @@ others_msg 집계가 **세 곳에 복제**돼 있음. 한 곳만 고치면 ratio
 - `cfg_snapshot` 없는 체크포인트(2026-09-05 이전) = 집계 방식(attention/pos_ground)을 키로 알 수 없음 → **legacy 기본**(attention 0·pos_ground 1·token_gain 1·relu·agg sum)으로 감(YUGIOH 기본 아님). comm_range 불명이면 **중단** — `VESSEL_COMM_RANGE=<학습값>` + `allow_comm_range_mismatch` 로만 진행. **조용히 틀릴 수 있음** 명시 보고.
 - **2026-09-10 YUGIOH 에서 발견·수정**: `restore_policy` 가 `use_moe / moe_width / moe_shared` 를 복원 안 했음 → YUGIOH 기본(공유 MoE)으로 만들면 단일망·얇게는 strict 실패, 두껍게(MOE_SHARED=0)는 5벌 인코더가 한 객체에 덮여 **마지막 전문가만 남는 조용한 오염**. 지금은 스냅샷 → 없으면 키(`experts.`)·전문가 0/1 텐서 동일성·conv/fc 채널 수(폭 역산)로 스니핑. 구조 4종 × {정상/구 스냅샷/스냅샷 없음} 12건 시뮬 통과.
 - **2026-09-21**: 스냅샷 키에 `dyn_profile`·`dyn`·`obstacles`·`radar_dropout_p/len`·`los_gate`·`max_episode_steps` 추가.
-- **2026-09-23**: 스냅샷 키 `sim` 추가 — `config.SIM_SNAPSHOT_KEYS` 24개를 `snapshot_config` 가 기록하고 `apply_sim_snapshot`/`make_env_from_snapshot` 이 대조·복원, 학습기 재개(`vessel_gym_train.py` :603)와 `verify/check_branch.py` 가 일치를 강제한다. 체크포인트에 *있는* 키만 대조(구 체크포인트 호환), 현재 config 에 없는 키는 불일치. `ckpt_io.py <ckpt> --env` 가 24개를 `export` 로 뽑아 준다. 검사 = `verify/test_sim_snapshot.py`(preflight·smoke_mac 5단계).
+- **2026-09-23**: 스냅샷 키 `sim` 추가 — `config.SIM_SNAPSHOT_KEYS` 24개를 `snapshot_config` 가 기록하고 `apply_sim_snapshot`/`make_env_from_snapshot` 이 대조·복원, 학습기 재개(`vessel_gym_train.py` :603)와 `verify/check_branch.py` 가 일치를 강제한다. 체크포인트에 *있는* 키만 대조(구 체크포인트 호환), 현재 config 에 없는 키는 불일치. `ckpt_io.py <ckpt> --env` 가 24개를 `export` 로 뽑아 준다. 검사 = `verify/test_sim_snapshot.py`(preflight·smoke_mac 5단계). ★2026-09-28 +2(COLREGS_FAR_RANGE·FAR_MODE), ★2026-09-29 +1(ROLE_PROMISE_PEN) = 27개. 역할 약속 = 스펙 `docs/superpowers/specs/2026-09-29-role-promise-design.md`(판정기 `vessel_gym.RolePromiseTracker`, eval 끝 줄 `[role-promise]`, 코덱 레이아웃 p12·팔 a8).
 - 시드 1개 단독 주장 금지, 평균엔 시드별 승패 수 동반(루트 CLAUDE.md §2).
 
 ### 8-1. ON/OFF 분기 규약 (2026-09-15, 사용자 지시 — 예외 없음)
