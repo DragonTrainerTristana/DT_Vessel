@@ -706,11 +706,12 @@ def main():
             _ck_sim, _cur_sim = _prev_snap['sim'], cfg.sim_constants()
             # ★2026-09-28 원거리 COLREGs 준수보상 반경은 *분기점에서만* trunk 와 달라도 됨(설계: 9M 부터 모든 갈래에 같이 켬).
             #   크래시 재개(분기점 아님)는 여전히 일치 강제. 갈래끼리 같은지는 check_branch 가 sim 묶음 비교로 강제.
-            if args.comm_on_at > 0 and args.resume_at == args.comm_on_at and 'COLREGS_FAR_RANGE' in _ck_sim \
-                    and _ck_sim['COLREGS_FAR_RANGE'] != _cur_sim.get('COLREGS_FAR_RANGE'):
-                print(f"[branch] 원거리 COLREGs 반경 trunk={_ck_sim['COLREGS_FAR_RANGE']} → 갈래={_cur_sim.get('COLREGS_FAR_RANGE')} "
-                      "(분기점 보상 전환 — 허용)", flush=True)
-                _ck_sim = {k: v for k, v in _ck_sim.items() if k != 'COLREGS_FAR_RANGE'}
+            for _fk in ('COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE'):        # ★2026-09-28b 채점 방식도 같은 규약
+                if args.comm_on_at > 0 and args.resume_at == args.comm_on_at and _fk in _ck_sim \
+                        and _ck_sim[_fk] != _cur_sim.get(_fk):
+                    print(f"[branch] 원거리 COLREGs {_fk} trunk={_ck_sim[_fk]} → 갈래={_cur_sim.get(_fk)} "
+                          "(분기점 보상 전환 — 허용)", flush=True)
+                    _ck_sim = {k: v for k, v in _ck_sim.items() if k != _fk}
             _bad_sim = dyn_constants_mismatch(_ck_sim, {k: v for k, v in _cur_sim.items() if k in _ck_sim})
             if _bad_sim:
                 _d = ', '.join(f"{k} ckpt={_ck_sim[k]!r} 현재={_cur_sim.get(k, '<없음>')!r}" for k in _bad_sim)

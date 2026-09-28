@@ -4,7 +4,8 @@
 
 1. comm_pair_features(sender=참값) 가 sender=None 과 비트동일 (송신자 값 대입 경로가 같은 연산)
 2. 코덱: 로드 SHA 가드·프로필 가드·양자화 결정론·no-grad/정책 밖·복원 충실도, decode 필드 ≈ 참 필드
-3. 원거리 COLREGs: 끄면 far_sit=None, 켜면 상태 궤적 불변(보상만 다름)이고 보상 차이는 원거리 채점 대상 배에만
+3. 원거리 COLREGs: 끄면 far_sit=None, 켜면 상태 궤적 불변(보상만 다름)이고 보상 차이는 원거리 채점 대상 배에만.
+   penalty 모드(2026-09-28b)는 대상 배 보상이 끈 보상보다 크지 않음(가산 없음)
 4. ckpt_io.restore_comm_ext: 스냅샷에 코덱 있으면 설치, 없으면 None 으로 리셋(앞 체크포인트 값 누출 없음)
 """
 import os
@@ -111,15 +112,17 @@ def t2_codec(env, topi, f0):
         pass
 
 
-def t3_far_reward():
+def t3_far_reward(mode='full'):
     E, N = 8, 16
+    tag = '' if mode == 'full' else f'[{mode}] '
     envA, envB = make_env(E, N, 7), make_env(E, N, 7)
     gA, gB = torch.Generator().manual_seed(3), torch.Generator().manual_seed(3)
-    vg.COLREGS_FAR_RANGE = 0.0
+    vg.COLREGS_FAR_RANGE, vg.COLREGS_FAR_MODE = 0.0, mode
     envA.step(rand_actions(E, N, gA))
     envB.step(rand_actions(E, N, gB))                      # 두 env 를 같은 행동·같은 상태로 맞춰 둠
-    check('3a 끄면 far_sit=None', envA._last_pw['far_sit'] is None)
-    same_state, diff_outside, n_used, n_diff = True, 0.0, 0, 0
+    if mode == 'full':
+        check('3a 끄면 far_sit=None', envA._last_pw['far_sit'] is None)
+    same_state, diff_outside, n_used, n_diff, max_gain = True, 0.0, 0, 0, -1e9
     for _ in range(120):
         aA, aB = rand_actions(E, N, gA), rand_actions(E, N, gB)
         vg.COLREGS_FAR_RANGE = 0.0
@@ -132,12 +135,18 @@ def t3_far_reward():
         m_out = live & ~uf
         if m_out.any():
             diff_outside = max(diff_outside, float((rA - rB)[m_out].abs().max()))
+        if (live & uf).any():
+            max_gain = max(max_gain, float((rB - rA)[live & uf].max()))
         n_used += int((live & uf).sum())
         n_diff += int(((rA - rB).abs() > 1e-6)[live & uf].sum())
-    vg.COLREGS_FAR_RANGE = 0.0
-    check('3b 켜도 상태 궤적 불변(보상만 다름)', same_state)
-    check('3c 원거리 채점 대상 아닌 배는 보상 동일', diff_outside < 1e-5, f"max|d|={diff_outside:.1e}")
-    check('3d 원거리 채점이 실제로 발화', n_used > 0 and n_diff > 0, f"대상 {n_used} 배·결정, 보상 달라진 {n_diff}")
+    vg.COLREGS_FAR_RANGE, vg.COLREGS_FAR_MODE = 0.0, 'full'
+    check(f'3b {tag}켜도 상태 궤적 불변(보상만 다름)', same_state)
+    check(f'3c {tag}원거리 채점 대상 아닌 배는 보상 동일', diff_outside < 1e-5, f"max|d|={diff_outside:.1e}")
+    check(f'3d {tag}원거리 채점이 실제로 발화', n_used > 0 and n_diff > 0, f"대상 {n_used} 배·결정, 보상 달라진 {n_diff}")
+    if mode == 'penalty':
+        check('3e [penalty] 원거리 채점은 가산 없음(대상 배 보상 ≤ 끈 보상)', max_gain < 1e-5, f"max(rB-rA)={max_gain:.1e}")
+    else:
+        check('3e 원거리 full 은 가산 있음(g_ 배치 동작 재현)', max_gain > 1e-3, f"max(rB-rA)={max_gain:.2f}")
 
 
 def t4_restore():
@@ -162,7 +171,8 @@ if __name__ == '__main__':
     print('=' * 78)
     env, topi, f0 = t1_sender_identity()
     t2_codec(env, topi, f0)
-    t3_far_reward()
+    t3_far_reward('full')
+    t3_far_reward('penalty')
     t4_restore()
     print('=' * 78)
     print(f"VERDICT: {'ALL PASS' if all(RES) else 'FAIL ' + str(RES.count(False))}")

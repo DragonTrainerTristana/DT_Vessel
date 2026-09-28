@@ -61,4 +61,6 @@ common_env() {
   # ★2026-09-28 원거리 COLREGs 준수보상 반경(m) — 배치 단위 실험 축(바깥 값 보존, 기본 0 = 끔·비트동일).
   #   300 이면 56 m 밖·충돌위험 상대의 역할로 같은 준수항을 채점(모든 팔 동일). sim 스냅샷 키 → 재개·분기 검사가 일치 강제.
   export VESSEL_COLREGS_FAR_RANGE="${VESSEL_COLREGS_FAR_RANGE:-0}"
+  # ★2026-09-28b 원거리 채점 방식 full(g_ 배치) | penalty(위반 벌점만). FAR_RANGE=0 이면 무관.
+  export VESSEL_COLREGS_FAR_MODE="${VESSEL_COLREGS_FAR_MODE:-full}"
 }

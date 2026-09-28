@@ -109,6 +109,7 @@ EARLY_RISK_GATE    = _cfg.EARLY_RISK_GATE    # earlyAvoid 발화 게이트
 EARLY_RELAX_TCPA   = _cfg.EARLY_RELAX_TCPA     # tcpa 게이트 제거(any tcpa)
 COLREGS_RISK_GATE  = _cfg.COLREGS_RISK_GATE       # 준수보상 발화 게이트
 COLREGS_FAR_RANGE  = _cfg.COLREGS_FAR_RANGE       # ★2026-09-28 원거리 준수보상 반경(0 = 끔, 비트동일)
+COLREGS_FAR_MODE   = _cfg.COLREGS_FAR_MODE        # ★2026-09-28b 'full' | 'penalty'(원거리는 위반 벌점만)
 CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
 PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
 PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
@@ -1173,6 +1174,13 @@ class VesselBatchEnv:
             if _cs:
                 # Rule 8(d) 안전 통과 보너스 — unity_cs 전용(위 (a) 참고)
                 _comp = _comp + torch.where(_dcpa_c > SAFE_PASSING, torch.full_like(r, 0.5), _zero)
+            if COLREGS_FAR_RANGE > 0.0 and COLREGS_FAR_MODE == 'penalty':
+                # ★2026-09-28b 원거리(_uf) 칸만 위반 벌점으로 교체 — 양보선 좌현 −0.5, 유지선 17(a) 침로 변경 −0.5 + 속도항의
+                #   음수 부분만. 우현·침로유지·17(b) 회피 가산 없음 → 오래 돌아도 이득 없음. 56 m 안 채점은 그대로.
+                _far_pen = (_give * torch.where(_nr < -0.1, torch.full_like(r, -0.5), _zero)
+                            + _stand * _early17 * torch.where(_nr.abs() >= 0.1, torch.full_like(r, -0.5), _zero)
+                            + _stand * _early17 * _spd_ok * torch.clamp(_spd_term, max=0.0))
+                _comp = torch.where(_uf, _far_pen, _comp)
             _comp = _comp * (_sit_c > 0).to(r.dtype)              # situation None → 0 (C# 조기 return)
             r = r + COLREGS_SIM_COEF * _comp * _riskw_c * _cgate_c
         else:

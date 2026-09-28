@@ -504,6 +504,12 @@ COLREGS_RISK_GATE = _env_float('VESSEL_COLREGS_GATE', 0.3)   # 준수보상 발�
 #   >0 이면 56 m 안 상황이 없을 때 이 반경 안 최고위험 상대(충돌위험 dcpa<24 쌍만)의 기하 역할로 같은 준수항(같은 계수)을 채점.
 #   근거 = COLREGs Rule 8·16(양보선 조기·충분한 회피)·17(유지선 침로·속력 유지) — 56 m 레이더 반경에 묶이지 않음. 모든 팔 동일.
 COLREGS_FAR_RANGE = _env_float('VESSEL_COLREGS_FAR_RANGE', 0.0)
+# ★2026-09-28b 원거리 채점 방식. 'full' = 5d95b5a 그대로(56 m 안과 같은 ±항 — g_ 배치). 'penalty' = 원거리에서는 위반만 벌점
+#   (양보선 좌현 변침 −0.5, 유지선 Rule 17(a) 침로 변경 −0.5·감속 벌점, 가산 0). 근거: g_ 배치에서 원거리 우현 +0.5/결정이
+#   긴 원거리 조우 동안 누적돼 과선회(양보 변침 중앙 39°→78–86°)·연료·경로 악화 → 가산 없는 형태면 돌수록 이득이 없음.
+#   COLREGS_FAR_RANGE=0 이면 무관(비트동일). 스펙 docs/superpowers/specs/2026-09-28-far-penalty-design.md
+COLREGS_FAR_MODE = _env_str('VESSEL_COLREGS_FAR_MODE', 'full').lower()
+assert COLREGS_FAR_MODE in ('full', 'penalty'), f"VESSEL_COLREGS_FAR_MODE={COLREGS_FAR_MODE!r} - 'full' | 'penalty'"
 CMD_MISMATCH_COEF = _env_float('VESSEL_CMD_MISMATCH_COEF', -0.03)   # 타속 포화 패널티
 PROXRAMP_COEF = _env_float('VESSEL_PROXRAMP_COEF', 0.0)   # C# 기본 0=off
 PROXRAMP_DIST = _env_float('VESSEL_PROXRAMP_DIST', 24.0)   # = DCPA_RISK
@@ -576,7 +582,7 @@ SIM_SNAPSHOT_KEYS = (
     'EARLY_AVOID_COEF', 'EARLY_RISK_GATE', 'EARLY_RELAX_TCPA', 'COLREGS_RISK_GATE', 'CMD_MISMATCH_COEF',
     'PROXRAMP_COEF', 'PROXRAMP_DIST', 'LOS_GATE', 'SPEED_AVOID_UNLOCK', 'SPEED_UNLOCK_GATE', 'COLREGS_MODE',
     'MAX_EPISODE_STEPS', 'COLLISION_PENALTY', 'FUEL_COEF', 'PROGRESS_COEF', 'COLREGS_SIM_COEF',
-    'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE',
+    'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE',
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',
