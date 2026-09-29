@@ -149,8 +149,8 @@ def install(path, expect_sha, mode, device):
     if mode not in ('decode', 'direct'):
         raise SystemExit(f"[codec] 중단: 모드 {mode!r} ('decode' | 'direct')")
     c = load_codec(path, expect_sha, device)
-    if c.layout != 'p6' and mode != 'decode':
-        raise SystemExit(f"[codec] 중단: 레이아웃 {c.layout!r} 는 'decode' 모드 전용 (direct 는 z 폭 + 자기상태 4 가 20 칸을 넘음)")
+    # ★2026-09-29 p12 도 direct(C8) 허용 — 수신 신경망이 z(8) 를 직접 읽고 선언의 뜻·대상 매칭을 스스로 학습(저자: latent 우선).
+    #   z 폭 + 자기상태 4 ≤ COMM_EXT_DIM 은 comm_gather 가 검사(k=8 → 8+4+0패딩 8 = 20).
     net.COMM_CODEC = c
     net.COMM_CODEC_MODE = mode
     return net.COMM_CODEC

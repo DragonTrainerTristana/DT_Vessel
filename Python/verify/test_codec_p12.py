@@ -7,7 +7,7 @@ cp2 송신 선언(대상·역할·위치) == 무차별 대입 참값 (실제 롤
 cp3 코덱 통과 후 선언 역할 복원 ≥ 99.5 % (실제 상태) · 합성 holdout 역할 정확도 ≥ 99.5 %      ← 기능 게이트 ①
 cp4 선언이 대상 배에만 도착: 미탐 ≤ 1 % · 오탐(대상 아닌 배가 받음) ≤ 2 %, 선언 단위             ← 기능 게이트 ②
 cp5 [13:18] 을 뺀 필드는 같은 복원 운동값의 decode 경로와 같음 · 받는 배 역할 추정 일치율 ≥ 0.97   ← 기능 게이트 ③
-cp6 가드: p12+direct 거부 · layout/d_in 불일치 거부 · 틀린 SHA 거부 · 스냅샷 layout 불일치 거부
+cp6 가드: p12+direct(C8) 설치 가능 · layout/d_in 불일치 거부 · 틀린 SHA 거부 · 스냅샷 layout 불일치 거부
 """
 import os
 import sys
@@ -179,11 +179,9 @@ def cp2_to_cp5(c12, snaps):
 
 def cp6(c12):
     ok = []
-    try:
-        comm_codec.install(CODEC12, SHA12, 'direct', 'cpu')
-        ok.append(False)
-    except SystemExit:
-        ok.append(True)
+    c8 = comm_codec.install(CODEC12, SHA12, 'direct', 'cpu')          # ★C8: p12 + direct 허용(저자 결정 2026-09-29)
+    ok.append(c8 is not None and net.COMM_CODEC_MODE == 'direct' and c8.k + 4 <= cfg.COMM_EXT_DIM)
+    net.COMM_CODEC, net.COMM_CODEC_MODE = None, ''
     try:
         comm_codec.LatentCodec(k=8, d_in=6, layout='p12')
         ok.append(False)
@@ -208,7 +206,7 @@ def cp6(c12):
     ckpt_io.restore_comm_ext(sd, snap, cfg.MSG_DIM, [], '[t]')
     ok.append(net.COMM_CODEC is not None and net.COMM_CODEC.layout == 'p12' and net.COMM_CODEC_MODE == 'decode')
     net.COMM_CODEC, net.COMM_CODEC_MODE = None, ''
-    check('cp6 가드: p12+direct · layout/d_in · 틀린 SHA · 스냅샷 layout 불일치 거부, 맞으면 설치', all(ok), str(ok))
+    check('cp6 가드: p12+direct(C8) 설치 · layout/d_in · 틀린 SHA · 스냅샷 layout 불일치 거부, 맞으면 설치', all(ok), str(ok))
 
 
 if __name__ == '__main__':

@@ -178,6 +178,11 @@ CASES = [
     ('codec p12 + 역할약속 20',  {**BASE, **_EXT, **_CDC12, 'VESSEL_ROLE_PROMISE_PEN': '20'}, 4, False),
     ('codec p12 + 혼합함대',     {**BASE, **_EXT, **_CDC12}, 4, True),
     ('codec p12 K=1',           {**BASE, **_EXT, **_CDC12}, 1, False),
+    # ★2026-09-29 C8: p12 + direct — 수신 신경망이 z 를 직접 읽음(확장필드 = [z 8, 자기상태 4, 0 8])
+    ('codec p12 direct (C8)',   {**BASE, **_EXT, **_CDC12, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, False),
+    ('codec p12 direct + 역할약속', {**BASE, **_EXT, **_CDC12, 'VESSEL_COMM_CODEC_MODE': 'direct',
+                                   'VESSEL_ROLE_PROMISE_PEN': '20'}, 4, False),
+    ('codec p12 direct + 혼합함대', {**BASE, **_EXT, **_CDC12, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, True),
 ]
 
 if __name__ == '__main__':
