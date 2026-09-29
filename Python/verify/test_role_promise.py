@@ -10,11 +10,12 @@ rp4  정면: 한 배가 좌현 → 두 배 모두 실패 1회, 그 결정 보상
 rp5  교차: 양보선 우현 + 유지선 유지 → 성공 / 유지선이 17(b) 전에 크게 돌면 → 실패
 rp6  추월: 추월선 = 4, 추월당하는 배 = 보완 규칙으로 유지(2)
 rp7  두 배끼리 충돌 → 길이 무관 판정·실패, −300 도 그대로
-rp8  도착·시간초과·제3선 충돌로 끝나면 판정 없이 폐기
+rp8  도착으로 끝나면 판정 없이 폐기(벌점 0) · 시간초과·제3선 충돌·벽으로 끝나면 폐기하되 *그 배만* 조우당 실패 1(09-29c 벽 빈틈 수정)
 rp9  respawn 한 배는 행·열 모두 비활성(이전 조우를 물려받지 않음)
 rp10 CPA 판정 debounce(3 연속) — 흔들려도 1회만 판정
 rp11 16척 규칙 정책 롤아웃에서 판정기 이벤트 전체 == 느린 파이썬 참조 구현(쌍별 루프) + 공허 통과 방지 하한
 rp12 N=1·N=2 env 에서도 동작 · 판정 상수 = config
+rp13 벽 충돌: 조우 중 벽으로 가면 그 배만 조우당 실패 1(벽 탈출 빈틈 막힘)
 """
 import math
 import os
@@ -81,7 +82,8 @@ def act(env, rud, spd=None):
 def fails_per_ship(env):
     ev = env._rp.events
     f = ev['fail'].to(env.dtype)
-    return f.sum(dim=2) + f.sum(dim=1)
+    ci, cj = ev['crash_i'].to(env.dtype), ev['crash_j'].to(env.dtype)
+    return f.sum(dim=2) + f.sum(dim=1) + ci.sum(dim=2) + cj.sum(dim=1)
 
 
 def run_scenario(ships, policy, steps, pen=PEN, N=None):
@@ -231,10 +233,11 @@ def rp8_discard():
     _, t3, n3, rec3 = run_scenario(third, lambda t, e: [0.0, 0.0, 0.0], 40, N=3)
     disc01 = sum(int(r['ev']['discard'][0, 0, 1]) for r in rec3)
     coll02 = sum(int(r['ev']['coll'][0, 0, 2]) for r in rec3)
-    ok = (t1['discard'] >= 1 and t1['judged'] == 0 and float(n1.sum()) == 0
-          and t2['discard'] >= 1 and t2['judged'] == 0 and float(n2.sum()) == 0 and disc01 == 1 and coll02 == 1)
-    check('rp8 도착·시간초과·제3선 충돌 → (0,1) 쌍 판정 없이 폐기', ok,
-          f"도착 {t1} / 시간초과 {t2} / 제3선: (0,1) 폐기 {disc01} (0,2) 충돌판정 {coll02}, 전체 {t3}")
+    ok = (t1['discard'] >= 1 and t1['judged'] == 0 and float(n1.sum()) == 0                      # 도착: 벌점 없음
+          and t2['discard'] >= 1 and t2['judged'] == 0 and n2.tolist() == [[1.0, 0.0]]            # 시간초과: 그 배만 1
+          and disc01 == 1 and coll02 == 1 and n3.tolist() == [[2.0, 0.0, 1.0]])                   # 0: (0,2) 충돌 실패 + (0,1) 이탈 1
+    check('rp8 도착=폐기·벌점0 / 시간초과·제3선 충돌 = 폐기 + 끝난 배만 조우당 실패', ok,
+          f"도착 {t1} n={n1.tolist()} / 시간초과 n={n2.tolist()} / 제3선: (0,1) 폐기 {disc01} (0,2) 충돌 {coll02} n={n3.tolist()}")
 
 
 def rp9_respawn_reset():
@@ -421,6 +424,26 @@ def rp12_small_and_consts():
     check('rp12 N=1·2 동작 · 판정 상수 = config = 스펙 고정값', ok and same and pinned and cfg.ROLE_SAFE_DIST == vg.DCPA_RISK)
 
 
+def rp13_wall():
+    # 동쪽 벽(x 299.5) 옆 정면 조우(0 북행 x=288, 1 남행) → 0 번이 우현 전타로 벽에 박음 → (0,1) 폐기 + 0 번만 실패 1
+    ships = [dict(pos=(288.0, -60.0), hdg=0.0, spd=1.5, maxs=1.5, goal=(288.0, 280.0)),
+             dict(pos=(288.0, 60.0), hdg=180.0, spd=1.5, maxs=1.5, goal=(288.0, -280.0))]
+    vg.ROLE_PROMISE_PEN = PEN
+    env = make_env(1, 2)
+    place(env, ships)
+    nf, hit, started = torch.zeros(1, 2), False, 0
+    for t in range(80):
+        _, r, d, oc = env.step(act(env, [1.0, 0.0]))
+        started += int(env._rp.events['start'].sum())
+        nf += fails_per_ship(env)
+        if int(oc[0, 0]) == vg.OUT_COLLISION_OBSTACLE:
+            hit = True
+            break
+    vg.ROLE_PROMISE_PEN = 0.0
+    check('rp13 조우 중 벽 충돌 → 그 배만 실패 1(벽 탈출 빈틈 막힘)', hit and started >= 1 and nf.tolist() == [[1.0, 0.0]],
+          f"벽충돌={hit} 조우시작={started} 실패={nf.tolist()}")
+
+
 if __name__ == '__main__':
     torch.set_num_threads(1)
     print('=' * 78)
@@ -438,6 +461,7 @@ if __name__ == '__main__':
     rp10_debounce()
     rp11_reference()
     rp12_small_and_consts()
+    rp13_wall()
     print('=' * 78)
     print(f"VERDICT: {'ALL PASS' if all(RES) else 'FAIL ' + str(RES.count(False))}")
     sys.exit(0 if all(RES) else 1)

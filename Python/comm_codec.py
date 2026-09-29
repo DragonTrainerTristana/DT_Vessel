@@ -34,10 +34,19 @@ import torch.nn as nn
 
 LAYOUT = 'p6'
 D_IN = 6
-LAYOUTS = {'p6': 6, 'p12': 12}        # ★2026-09-29 layout -> payload width (file meta 'layout' picks one)
+LAYOUTS = {'p6': 6, 'p12': 12, 'p50': 50}   # ★2026-09-29 layout -> payload width (file meta 'layout' picks one)
 DECL_ROLE_SLICE = slice(6, 10)        # p12: declared role one-hot (SIT 1..4 -> column 0..3)
 DECL_POS_SLICE = slice(10, 12)        # p12: declared target position / COMM_RANGE, sender body frame (stb, fwd)
 P12_DECL_WEIGHT = 4.0                 # p12 training loss weight on the 6 declaration columns (training-only, recorded in extra)
+# ★2026-09-29c p50 = sender payload for the latent-dimension sweep (spec 2026-09-29-latent-sweep-design.md):
+#   [0:6] own_payload · [6:8] own goal obs (d/(d+150), signed angle/180) · [8:12] declared role one-hot ·
+#   [12:14] declared target position / COMM_RANGE (sender body frame) · [14:50] own radar in 36 sectors of 10 deg
+#   (current frame, min over the 10 one-degree rays = nearest return in the sector as a fraction of radar range;
+#   1.0 = nothing). Direct mode only. Codecs are trained on REAL states (comm_codec.py collect), not synthetic draws.
+P50_GOAL = slice(6, 8)
+P50_ROLE = slice(8, 12)
+P50_POS = slice(12, 14)
+P50_RADAR = slice(14, 50)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -149,6 +158,8 @@ def install(path, expect_sha, mode, device):
     if mode not in ('decode', 'direct'):
         raise SystemExit(f"[codec] 중단: 모드 {mode!r} ('decode' | 'direct')")
     c = load_codec(path, expect_sha, device)
+    if c.layout == 'p50' and mode != 'direct':
+        raise SystemExit("[codec] 중단: 레이아웃 'p50' 은 'direct' 전용 (목표·레이더 필드용 복원 규칙 없음 — 수신 신경망이 z 를 직접 읽음)")
     # ★2026-09-29 p12 도 direct(C8) 허용 — 수신 신경망이 z(8) 를 직접 읽고 선언의 뜻·대상 매칭을 스스로 학습(저자: latent 우선).
     #   z 폭 + 자기상태 4 ≤ COMM_EXT_DIM 은 comm_gather 가 검사(k=8 → 8+4+0패딩 8 = 20).
     net.COMM_CODEC = c
@@ -218,6 +229,21 @@ def fidelity(codec, p):
     out['rot_n'] = q((ph[:, 3].clamp(-1, 1) - p[:, 3]).abs())
     out['cmd_rudder_deg'] = q((ph[:, 4].clamp(-1, 1) - p[:, 4]).abs() * 30.0)
     out['cmd_speed_mps'] = q((ph[:, 5].clamp(0, 1) - p[:, 5]).abs() * 1.8)
+    if p.shape[-1] == LAYOUTS['p50']:
+        import vessel_gym as vg
+        cls = lambda t: torch.where(t[..., P50_ROLE].max(-1).values >= 0.5, t[..., P50_ROLE].argmax(-1) + 1,
+                                    torch.zeros(t.shape[:-1], dtype=torch.long))
+        tr, dr = cls(p), cls(ph)
+        out['decl_role_acc'] = float((tr == dr).double().mean())
+        has = tr > 0
+        perr = torch.linalg.norm((ph[:, P50_POS].clamp(-1, 1) - p[:, P50_POS]) * float(vg.COMM_RANGE), dim=-1)
+        out['decl_pos_m'] = q(perr[has]) if bool(has.any()) else q(torch.zeros(1))
+        out['goal_dist_ratio'] = q((ph[:, 6] - p[:, 6]).abs())
+        out['goal_angle_deg'] = q((ph[:, 7] - p[:, 7]).abs() * 180.0)
+        rd, rh = p[:, P50_RADAR], ph[:, P50_RADAR].clamp(0, 1)
+        det = rd < 0.999
+        out['radar_sector_m'] = q(((rh - rd).abs() * float(vg.RADAR_RANGE))[det]) if bool(det.any()) else q(torch.zeros(1))
+        out['radar_detect_acc'] = float(((rh < 0.999) == det).double().mean())
     if p.shape[-1] == LAYOUTS['p12']:
         import vessel_gym as vg
         tr, dr = decl_class(p), decl_class(ph)
@@ -257,26 +283,45 @@ def fidelity_gate(fid, fid_p6):
 
 
 def train_codec(k=6, seed=0, hidden=64, bits=8, n_train=400000, n_hold=50000, steps=6000, batch=4096, layout='p6',
-                decl_weight=None):
+                decl_weight=None, data=None):
     import vessel_gym as vg
     torch.set_num_threads(1)
     torch.manual_seed(seed)
     gen = torch.Generator().manual_seed(1000 + seed)
-    _synth = synth_payload if layout == 'p6' else synth_payload_p12
-    ptr = _synth(n_train, gen)
-    pho = _synth(n_hold, gen)
+    if layout == 'p50':
+        # ★실제 상태(collect 로 모은 파일)로 학습. 뒤섞은 뒤 90 % 학습 / 10 % holdout
+        if not data:
+            raise SystemExit("[codec] p50 은 --data <collect 파일> 이 필요함(실제 상태로 학습)")
+        P = torch.load(_resolve(data), map_location='cpu')['payload'].float()
+        perm = torch.randperm(P.shape[0], generator=gen)
+        P = P[perm]
+        nh = max(1, P.shape[0] // 10)
+        pho, ptr = P[:nh], P[nh:]
+        n_train = int(ptr.shape[0])
+    else:
+        _synth = {'p6': synth_payload, 'p12': synth_payload_p12}[layout]
+        ptr = _synth(n_train, gen)
+        pho = _synth(n_hold, gen)
     c = LatentCodec(k=k, hidden=hidden, bits=bits, d_in=LAYOUTS[layout], layout=layout)
     _w = None
     if layout == 'p12':
         _w = torch.ones(LAYOUTS['p12'])
         _w[6:] = P12_DECL_WEIGHT if decl_weight is None else float(decl_weight)
+    elif layout == 'p50':
+        # ★z-score MSE(값마다 학습 데이터 표준편차로 나눔, 하한 0.05) — 크기가 작은 값(선회율 등)을 통째로 버리지 않게.
+        #   움직임 6·역할 선언·대상 위치는 ×decl_weight(기본 4): 상대에게 COLREGs·DCPA 에 필요한 핵심이 레이더 36칸에 묻히지 않게.
+        _w = 1.0 / ptr.std(dim=0).clamp(min=0.05) ** 2
+        _dw = P12_DECL_WEIGHT if decl_weight is None else float(decl_weight)
+        _w[0:6] = _w[0:6] * _dw
+        _w[P50_ROLE] = _w[P50_ROLE] * _dw
+        _w[P50_POS] = _w[P50_POS] * _dw
     opt = torch.optim.Adam(c.parameters(), lr=1e-3)
     lv = float(2 ** bits - 1)
     for it in range(steps):
         if it == int(steps * 0.7):
             for g in opt.param_groups:
                 g['lr'] = 3e-4
-        idx = torch.randint(0, n_train, (batch,), generator=gen)
+        idx = torch.randint(0, int(ptr.shape[0]), (batch,), generator=gen)
         p = ptr[idx]
         z = c.enc(p)
         if bits > 0:   # quantization as uniform noise during training (deterministic rounding at run time)
@@ -292,8 +337,53 @@ def train_codec(k=6, seed=0, hidden=64, bits=8, n_train=400000, n_hold=50000, st
         extra['data'] = 'synth_payload_p12 v1 (p6 draws + declaration: none 0.4 / 4 roles 0.15 each, uniform disc)'
         extra['decl_weight'] = float(P12_DECL_WEIGHT if decl_weight is None else decl_weight)
         extra['hidden_note'] = f'hidden={hidden} steps={steps} batch={batch}'
+    elif layout == 'p50':
+        extra['data'] = f'real states: {os.path.basename(str(data))} (comm_codec.py collect)'
+        extra['loss'] = f'z-score MSE (std floor 0.05), motion+role+target x{P12_DECL_WEIGHT if decl_weight is None else decl_weight}'
+        extra['hidden_note'] = f'hidden={hidden} steps={steps} batch={batch}'
     sha = content_sha(c, extra)
     return c, extra, sha, fidelity(c, pho)
+
+
+def collect_p50(out, envs=8, burn=200, T=1000, seed=0):
+    """★2026-09-29c real sender payloads (p50) from a rule-following fleet (goal steering; give-way/head-on/overtaking
+    turn starboard 0.6; stand-on holds until 17(b) then 0.6) in the imo/open-sea env — same partner choice, role
+    declaration, radar sectors and goal obs as comm_gather. Deterministic on CPU. Saves {'payload': [M,50], 'meta'}."""
+    import config as cfg
+    import vessel_gym as vg
+    import vessel_gym_train as T_
+    torch.set_num_threads(1)
+    torch.manual_seed(seed)
+    env = vg.VesselBatchEnv(num_envs=envs, n_vessels=16, device='cpu', seed=seed, ring_scale=1.0, crossing=0,
+                            risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
+                            farfield_coef=0.0, perpair_coef=-0.15, perpair_exp=3.0)
+    fs = T_.FrameStack(env.E, env.N, 'cpu')
+    obs = env.reset()
+    r, g, ss, st = T_.parse_obs(obs)
+    fs.reset_all(r)
+    out_p = []
+    for t in range(burn + T):
+        x = fs.get()
+        if t >= burn:
+            out_p.append(T_.payload50_now(env, x, g).reshape(-1, 50).clone())
+        pw = env._last_pw
+        tc = pw['tcpa'].gather(-1, env.danger_idx.unsqueeze(-1)).squeeze(-1)
+        tg = env.goal - env.pos
+        a0 = torch.clamp(vg._wrap180(torch.atan2(tg[..., 0], tg[..., 1]) / vg.DEG - env.heading) / 20.0, -1, 1)
+        sit = env.situation
+        a0 = torch.where((sit == 1) | (sit == 3) | (sit == 4), torch.full_like(a0, 0.6), a0)
+        a0 = torch.where((sit == 2) & (tc > vg.RULE_17B_TIME), torch.zeros_like(a0), a0)
+        a0 = torch.where((sit == 2) & (tc <= vg.RULE_17B_TIME), torch.full_like(a0, 0.6), a0)
+        obs, _, done, _ = env.step(torch.stack([a0, torch.ones_like(a0)], -1))
+        r, g, ss, st = T_.parse_obs(obs)
+        fs.push(r, done)
+    P = torch.cat(out_p)
+    fp = _resolve(out)
+    os.makedirs(os.path.dirname(fp), exist_ok=True)
+    torch.save({'payload': P, 'meta': {'envs': envs, 'burn': burn, 'T': T, 'seed': seed, 'dyn_profile': str(cfg.DYN_PROFILE),
+                                        'policy': 'rule fleet (goal + starboard give-way, 17b stand-on)'}}, fp)
+    print(json.dumps({'out': out, 'n': int(P.shape[0]), 'role_frac': float((P[:, P50_ROLE].sum(-1) > 0).float().mean()),
+                      'radar_detect_frac': float((P[:, P50_RADAR] < 0.999).float().mean())}))
 
 
 def _main():
@@ -308,6 +398,13 @@ def _main():
     t.add_argument('--steps', type=int, default=6000)
     t.add_argument('--hidden', type=int, default=64)
     t.add_argument('--decl_weight', type=float, default=None)
+    t.add_argument('--data', default=None, help='p50: collect 로 모은 실제 상태 파일')
+    c_ = sub.add_parser('collect', help='p50 학습용 실제 상태 수집(규칙 배 롤아웃, CPU 1 스레드)')
+    c_.add_argument('--out', required=True)
+    c_.add_argument('--envs', type=int, default=8)
+    c_.add_argument('--burn', type=int, default=200)
+    c_.add_argument('--T', type=int, default=1000)
+    c_.add_argument('--seed', type=int, default=0)
     t.add_argument('--out', required=True)
     i = sub.add_parser('info')
     i.add_argument('path')
@@ -317,7 +414,7 @@ def _main():
         if os.path.exists(fp):
             raise SystemExit(f"[codec] 중단: {fp} 가 이미 있음 — 덮어쓰지 않음(고정 SHA 보호). 지우고 다시 하려면 직접 지울 것")
         c, extra, sha, fid = train_codec(k=a.k, seed=a.seed, bits=a.bits, steps=a.steps, layout=a.layout,
-                                         hidden=a.hidden, decl_weight=a.decl_weight)
+                                         hidden=a.hidden, decl_weight=a.decl_weight, data=a.data)
         meta = dict(c.meta())
         meta.update(extra)
         blob = {'state_dict': c.state_dict(), 'meta': meta, 'sha': sha, 'fidelity_holdout': fid}
@@ -330,6 +427,8 @@ def _main():
         os.makedirs(os.path.dirname(fp), exist_ok=True)
         torch.save(blob, fp)
         print(json.dumps(rep_, indent=1, ensure_ascii=False))
+    elif a.cmd == 'collect':
+        collect_p50(a.out, envs=a.envs, burn=a.burn, T=a.T, seed=a.seed)
     else:
         blob = torch.load(_resolve(a.path), map_location='cpu')
         print(json.dumps({'sha': blob['sha'], 'meta': blob['meta'], 'fidelity_holdout': blob.get('fidelity_holdout'),

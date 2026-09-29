@@ -261,6 +261,28 @@ def compute_own_threat(x, threat_k, device):
     return thr.reshape(M, threat_k * 4), mask.reshape(M, threat_k * 4)
 
 
+def radar_sectors(x, n=36):
+    """★2026-09-29c own radar (current frame of the frame stack) → n sectors, min over each sector's rays = nearest return
+    as a fraction of radar range (obs value + 0.5), 1.0 = nothing. Ray 0 = bow, clockwise. x [..., FRAMES*STATE]."""
+    cur = x.reshape(*x.shape[:-1], FRAMES, STATE)[..., -1, :] + 0.5
+    return cur.reshape(*cur.shape[:-1], n, STATE // n).min(dim=-1).values
+
+
+def payload50(env, x, goal, topi, valid, part_r):
+    """★2026-09-29c sender payload p50 [E,N,50] — single definition for comm_gather and comm_codec.collect_p50."""
+    drole, dpos = vg.role_declaration(env, topi, valid, vg.comm_pair_features(env, topi, part_r))
+    return vg.own_payload50(env, drole, dpos, goal, radar_sectors(x))
+
+
+def payload50_now(env, x, goal):
+    """payload50 with comm_gather's partner choice (range COMM_RANGE, nearest MAX_COMM_PARTNERS) — for data collection."""
+    N = env.N
+    d = torch.cdist(env.pos, env.pos) + torch.eye(N, device=env.pos.device).unsqueeze(0) * 1e9
+    d = torch.where(d <= cfg.COMM_RANGE, d, torch.full_like(d, 1e9))
+    topd, topi = torch.topk(d, min(cfg.MAX_COMM_PARTNERS, N - 1), dim=-1, largest=False)
+    return payload50(env, x, goal, topi, topd < 1e9, cfg.COMM_RANGE)
+
+
 def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None,
                 msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None, ext_zero=None):
     """★배치 학습형 comm (2026-08): 각 배의 COMM_RANGE 내 nearest-K 파트너 메시지를 pos_ground 집계.
@@ -325,8 +347,13 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
         else:
             # ★2026-09-28 grounded latent: 송신자 자기 상태 → 동결 코덱 → z(양자화, 배당 1회). 코덱은 no_grad·정책 밖.
             with torch.no_grad():
-                _p12 = getattr(_cdc, 'layout', 'p6') == 'p12'
-                if _p12:
+                _lay = getattr(_cdc, 'layout', 'p6')
+                _p12 = _lay == 'p12'
+                if _lay == 'p50':
+                    # ★2026-09-29c p50(latent 차원 sweep z2–z12): 움직임 6 + 목표 2 + 역할 선언 6 + 내 레이더 36방향(10° 최솟값) 36
+                    #   = 송신자가 결정 시점에 가진 값. direct 전용 — 수신 신경망이 z 를 직접 읽음.
+                    _pay = payload50(env, x, goal, topi, topd < BIG, PART_R)
+                elif _p12:
                     # ★2026-09-29 역할 선언(p12): 송신자가 자기 참 시점으로 가장 위험한 역할 상대 하나를 골라 [내 역할 + 그 배 위치]를
                     #   페이로드에 싣는다(선택은 recv_mask 전 유효 슬롯 = topd<BIG). z 에 들어가므로 선언도 latent 메시지의 일부.
                     _drole, _dpos = vg.role_declaration(env, topi, topd < BIG, vg.comm_pair_features(env, topi, PART_R))

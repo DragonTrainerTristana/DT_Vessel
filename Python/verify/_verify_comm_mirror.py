@@ -183,6 +183,16 @@ CASES = [
     ('codec p12 direct + 역할약속', {**BASE, **_EXT, **_CDC12, 'VESSEL_COMM_CODEC_MODE': 'direct',
                                    'VESSEL_ROLE_PROMISE_PEN': '20'}, 4, False),
     ('codec p12 direct + 혼합함대', {**BASE, **_EXT, **_CDC12, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, True),
+    # ★2026-09-29b latent 차원 sweep(p50, direct 전용): 송신 페이로드에 레이더 36방향(x 에서 계산)·목표가 들어감 → prelpos 저장
+    ('p50 z2',                  {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p50_k2_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': '0793c57f44b18f7e', 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, False),
+    ('p50 z8 + 역할약속',        {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p50_k8_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': 'cebe26d19380f564', 'VESSEL_COMM_CODEC_MODE': 'direct',
+                                 'VESSEL_ROLE_PROMISE_PEN': '20'}, 4, False),
+    ('p50 z8 + 혼합함대',        {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p50_k8_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': 'cebe26d19380f564', 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, True),
+    ('p50 z12 K=1',             {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p50_k12_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': '2d2285b279e17f0d', 'VESSEL_COMM_CODEC_MODE': 'direct'}, 1, False),
 ]
 
 if __name__ == '__main__':

@@ -343,6 +343,8 @@ arm_spec() {
     a6|c6) echo "ON 6" ;;       # a6 = 코덱 z → 수신측 복원 → 쌍 필드 / c6 = 코덱 z 를 k/v 가 직접 읽음
     # ★2026-09-29 역할 선언 latent (스펙 2026-09-29-role-promise-design.md): p12 코덱(운동 6 + 역할 선언 6) → z 8 → 수신측 복원
     a8|c8) echo "ON 6" ;;     # a8 = 수신측 고정 복원기로 풀어 읽음 / c8 = 수신 신경망이 z 를 직접 읽음(주 처치)
+    # ★2026-09-29c latent 차원 sweep(스펙 2026-09-29-latent-sweep-design.md): p50 재료 50개(실제 상태로 학습한 코덱) → z(k) · 수신 신경망이 직접 읽음
+    z2|z4|z6|z8|z10|z12) echo "ON 6" ;;
     *) return 1 ;;
   esac
 }
@@ -368,9 +370,20 @@ comm_variant_env() {
     # ★2026-09-29 c8(주 처치, 저자 'latent 우선'): 같은 p12 z 를 확장필드 [z 8, 자기상태 4, 0 8] 로 — k/v 가 직접 읽고 뜻을 학습
     c8)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
                   VESSEL_COMM_CODEC=comm_codecs/p12_k8_s0.pt VESSEL_COMM_CODEC_SHA=ed43ecc4d2a3da60 VESSEL_COMM_CODEC_MODE=direct ;;
+    z2|z4|z6|z8|z10|z12)
+           export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p50_k${1#z}_s0.pt VESSEL_COMM_CODEC_SHA=$(z_codec_sha "$1") VESSEL_COMM_CODEC_MODE=direct ;;
   esac
 }
-is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6|a8|c8) return 0 ;; *) return 1 ;; esac; }
+is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6|a8|c8|z2|z4|z6|z8|z10|z12) return 0 ;; *) return 1 ;; esac; }
+# ★2026-09-29c p50 코덱 SHA 고정(앞 16자). 코덱 파일은 git 추적(force-add) — 다르면 comm_codec.load_codec 가 중단
+z_codec_sha() {
+  case "$1" in
+    z2) echo 0793c57f44b18f7e ;; z4) echo 234e5e3bd855cf5c ;; z6) echo 2cbb1e9bb6e903ff ;;
+    z8) echo cebe26d19380f564 ;; z10) echo 520834f0ec3284fa ;; z12) echo 2d2285b279e17f0d ;;
+    *) echo ""; return 1 ;;
+  esac
+}
 off_name() { if [ "$1" = 6 ]; then echo off; else echo "off$1"; fi; }
 
 # ── 분기 검사 (verify/check_branch.py) — 결과 $OUT/_branch_check.txt, ALL PASS 아니면 1 ──
@@ -393,7 +406,7 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6|a8|c8)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6|a8|c8|z2..z12)"; exit 1; }
     if is_ext_arm "$a" && [ "${VESSEL_COMM_EXT:-0}" != "1" ]; then
       echo "팔 $a 는 의도·역할 통신 구조가 필요함: VESSEL_COMM_EXT=1 로 배치를 돌릴 것(trunk 부터 EXT 구조)"; exit 1
     fi
@@ -502,7 +515,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6 a8 c8; do
+      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12; do
         [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${RUN_PRE}${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
@@ -520,7 +533,7 @@ case "$MODE" in
     for s in $SEEDS; do
       if [ -n "$RUN_PRE" ]; then
         # ★2026-09-25 접두어 배치(COMM_EXT 등): 있는 것만 평가 (팔 구분은 스냅샷 — eval 헤더 comm_ext/fields 로 확인)
-        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6 a8 c8; do
+        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6 a8 c8 z2 z4 z6 z8 z10 z12; do
           [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] || continue
           if [ "$nm" = off ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"
           elif [ "$nm" = rand ]; then eval_one "${RUN_PRE}$nm" RANDOM 6 "$s"
@@ -586,6 +599,23 @@ case "$MODE" in
     [ "${_eval_bad:-0}" -eq 0 ] || { echo "재평가 rc≠0 ${_eval_bad}건"; exit 1; }
     ;;
 
+  trunk)
+    # ★2026-09-29c trunk 만 학습(갈래 없음) — trunk 관문(스펙 §4)을 통과한 시드만 다음 train 에서 갈래를 뻗기 위함.
+    #   $CK/${RUN_PRE}trunk_d6_s<seed>.pt 가 있으면 건너뜀(재사용). 로그 $OUT/${RUN_PRE}trunk_d6_s<seed>.log
+    preflight
+    : > "$OUT/_status_train.txt"
+    for s in $SEEDS; do
+      t="$CK/${RUN_PRE}trunk_d6_s$s.pt"
+      if [ -f "$t" ]; then echo "  trunk 재사용: $t"; continue; fi
+      throttle
+      train_one "${RUN_PRE}trunk_d6" OFF 6 "$s" "$BRANCH_AT"
+    done
+    wait
+    _tr_bad=$(grep -cv 'rc=0$' "$OUT/_status_train.txt" 2>/dev/null)
+    [ "${_tr_bad:-0}" -eq 0 ] || { echo "trunk 학습 실패 ${_tr_bad}건"; cat "$OUT/_status_train.txt"; exit 1; }
+    echo "trunk 완료"; cat "$OUT/_status_train.txt"
+    ;;
+
   random)
     # ★난수 메시지 대조군. 2026-09-04 배치에는 없던 팔이라 기본 재현 대상이 아니다.
     #   통신 ON 이 OFF 를 이겼을 때 그 이득이 메시지 *내용* 때문인지, 메시지 경로가 붙으며
@@ -639,7 +669,7 @@ case "$MODE" in
       GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
     }
     for s in $SEEDS; do
-      for a in arpa6 onl6 ons6 oni6 a6 c6 a8 c8; do
+      for a in ${VESSEL_ABLATE_ARMS:-arpa6 onl6 ons6 oni6 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12}; do   # ★09-29b 팔 제한(이미 한 절제 재실행 방지)
         nm="${RUN_PRE}$a"
         [ -f "$CK/${nm}_s$s.pt" ] || continue
         _abl_one "$nm" "$s" msgzero --arm OFF --allow_arm_mismatch
@@ -669,7 +699,7 @@ case "$MODE" in
     preflight
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
-      for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6 a8 c8; do
+      for nm in ${VESSEL_TRAJ_ARMS:-off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12}; do
         f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
         arm=ON; [ "$nm" = off ] && arm=OFF
         throttle
@@ -720,7 +750,7 @@ case "$MODE" in
     ;;
 
   *)
-    echo "알 수 없는 모드: $MODE  (smoke | train | eval | evalref | random | ablate | traj | diag | all)"
+    echo "알 수 없는 모드: $MODE  (smoke | trunk | train | eval | evalref | random | ablate | traj | diag | all)"
     exit 2
     ;;
 esac

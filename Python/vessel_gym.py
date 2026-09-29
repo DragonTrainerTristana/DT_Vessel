@@ -413,6 +413,16 @@ def own_payload12(env, decl_role, decl_pos):
     return torch.cat([p6, oh, (decl_pos / float(COMM_RANGE)).to(p6.dtype)], dim=-1)
 
 
+def own_payload50(env, decl_role, decl_pos, goal_obs, radar36):
+    """★2026-09-29c p50 payload [E,N,50] (latent-dimension sweep) = own_payload 6 · own goal obs 2 (obs[360:362]) ·
+    declared role one-hot 4 · declared target position / COMM_RANGE 2 · own radar 36 sectors (10 deg, min over rays,
+    fraction of radar range, 1 = nothing). Layout must match comm_codec.P50_* slices."""
+    import torch.nn.functional as _F
+    p6 = own_payload(env)
+    oh = _F.one_hot(decl_role, 5)[..., 1:].to(p6.dtype)
+    return torch.cat([p6, goal_obs.to(p6.dtype), oh, (decl_pos / float(COMM_RANGE)).to(p6.dtype), radar36.to(p6.dtype)], dim=-1)
+
+
 def apply_declaration(env, topi, ext, sender):
     """Receiver side: replace ext [..,13:18] (partner's role toward me) with the partner's *declared* role when the
     decoded declaration targets me, else none. 'Targets me' = my position in the partner's body frame (decoded partner
@@ -460,7 +470,9 @@ class RolePromiseTracker:
             min distance; decision count n.
     end   : raw_tcpa < 0 for ROLE_END_CPA decisions in a row, dist > COMM_RANGE for ROLE_END_FAR in a row, or the two
             ships collide with each other. Any other termination of either ship (goal, timeout, collision with a third
-            ship, wall) discards the pair without a verdict.
+            ship, wall) discards the pair without a verdict; since 2026-09-29c a ship that ended by anything but reaching
+            its goal (wall/obstacle, collision with a third ship, timeout) is charged one failure per pending encounter
+            (its partner is not) — closes the 'escape into the wall' loophole seen in the r_ batch.
     judge : (n >= ROLE_MIN_STEPS, or a collision between the two regardless of n)
             head-on/give-way: max dpsi >= ROLE_GIVEWAY_MIN_DEG and min dpsi >= -ROLE_PORT_TOL_DEG
             stand-on        : max |dpsi| before the 17(b) point <= ROLE_STANDON_MAX_DEG
@@ -557,9 +569,17 @@ class RolePromiseTracker:
         fail = judged & (~success)
         fail_f = fail.to(self.dtype)
         n_fail = fail_f.sum(dim=2) + fail_f.sum(dim=1)                 # i 로서(행) + j 로서(열)
+        # ★2026-09-29c 벽 빈틈 수정(r_ 배치에서 trunk 가 벽 충돌로 빠짐): 도착이 아닌 이유(벽·제3선 충돌·시간초과)로 끝난 배는
+        #   걸려 있던 조우를 '그 배만' 실패로 친다(상대는 잘못 없음 — 벌점 없음, 조우는 판정 없이 폐기 그대로).
+        #   예전엔 폐기만 해서 부딪힐 것 같으면 벽으로 가는 쪽이 −20×(걸린 조우 수) 만큼 덜 손해였다.
+        crash = done & (outcome != OUT_GOAL)
+        crash_i = end_disc & crash[:, :, None]
+        crash_j = end_disc & crash[:, None, :]
+        n_fail = n_fail + crash_i.to(self.dtype).sum(dim=2) + crash_j.to(self.dtype).sum(dim=1)
         # 판정 기록(아래 텐서는 이후 제자리 수정 없음 — 뒤 줄은 전부 재바인딩)
         self.events = {'judged': judged, 'success': success, 'fail': fail, 'discard': discard,
                        'ok_i': judged & ok_i, 'ok_j': judged & ok_j, 'safe': judged & safe, 'coll': end_coll,
+                       'crash_i': crash_i, 'crash_j': crash_j,
                        'role_i': self.role_i, 'role_j': self.role_j, 't_start': self.t_start,
                        'mind': self.mind, 'n': self.n, 'dmax_i': self.dmax_i, 'dmin_i': self.dmin_i,
                        'dmax_j': self.dmax_j, 'dmin_j': self.dmin_j, 'so_i': self.so_i, 'so_j': self.so_j}

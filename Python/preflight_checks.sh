@@ -14,7 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 지문에서 뺄 env — 실행 관리용(검사 결과와 무관). 이게 들어가면 smoke/train/eval 사이에 캐시가 안 맞는다.
-VESSEL_FP_IGNORE='^VESSEL_(SEEDS|OUT_DIR|CKPT_DIR|TRAIN_ARMS|JOBS|NGPU|SKIP_GOLDEN|FORCE_PREFLIGHT|PREFLIGHT_CACHE|DIAG_[A-Z_]*|ALLOW_UNBRANCHED|REQUIRE_TRUNK|BRANCH_WARMUP|CKPT_EVERY|GPU_PICK|RUN_PREFIX|COMM_TELEMETRY|COMM_TELEMETRY_EVERY|MSG_RANDOM_SD|TIMING|EVAL_ENVS|EVAL_DEC|VRAM_MARGIN|GPU_CAP|LAUNCH_GAP)='
+VESSEL_FP_IGNORE='^VESSEL_(SEEDS|OUT_DIR|CKPT_DIR|TRAIN_ARMS|JOBS|NGPU|SKIP_GOLDEN|FORCE_PREFLIGHT|PREFLIGHT_CACHE|DIAG_[A-Z_]*|ALLOW_UNBRANCHED|REQUIRE_TRUNK|BRANCH_WARMUP|CKPT_EVERY|GPU_PICK|RUN_PREFIX|COMM_TELEMETRY|COMM_TELEMETRY_EVERY|MSG_RANDOM_SD|TIMING|EVAL_ENVS|EVAL_DEC|VRAM_MARGIN|GPU_CAP|LAUNCH_GAP|SMOKE_ARMS|ABLATE_ARMS|TRAJ_ARMS|EVAL_NAMES|RP_PREFIX)='
 
 _vessel_hash() { "$PY" -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:20])"; }
 
@@ -64,6 +64,8 @@ vessel_run_checks() {
     _vc_launch "역할 약속" "$OUT/_role_promise.txt" 1 env $_o "$PY" -u "$HERE/verify/test_role_promise.py"
     _vc_launch "p12 코덱" "$OUT/_codec_p12.txt" 1 env $_o "$PY" -u "$HERE/verify/test_codec_p12.py"
     _vc_launch "p6 차분" "$OUT/_p6_diff.txt" 1 env $_o "$PY" -u "$HERE/verify/test_p6_diff.py"
+    # ★2026-09-29b latent 차원 sweep 코덱(p50 z2–z12)
+    _vc_launch "p50 코덱" "$OUT/_codec_p50.txt" 1 env $_o "$PY" -u "$HERE/verify/test_codec_p50.py"
   else
     echo "  (VESSEL_SKIP_GOLDEN=1 — 골든·충실도·동역학·sim·COMM_EXT 건너뜀, 미러만)"
   fi

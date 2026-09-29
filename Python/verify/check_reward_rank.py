@@ -5,7 +5,9 @@
 
   정책: goal(목표로 직진) · stbd(레이더 안 상황이 있으면 무조건 우현 — 학습 OFF 의 명령 패턴) · radar(레이더 안 규칙:
         양보·정면·추월 우현, 유지 17(b) 전 유지) · vo56 / vo56s(56 m 안 상대 위치·속도로 궤적 예측 회피, s = 우현만) ·
-        seeker(300 m 안 가까운 배 쪽으로 틀어 충돌코스를 만든 뒤 레이더 규칙으로 비킴 = 조우 유도)
+        seeker(300 m 안 가까운 배 쪽으로 틀어 충돌코스를 만든 뒤 레이더 규칙으로 비킴 = 조우 유도) ·
+        wall(가장 가까운 벽으로 직진 = 자폭) · wallesc(평소 목표, 조우가 걸리면 가까운 벽으로 = 벽 탈출)
+        ★2026-09-29c wall·wallesc 추가: r_ trunk 가 벽 충돌로 무너진 빈틈(조우 중 벽 충돌 = 판정 폐기) 막힘을 확인
   보상: old = 배치 X 와 같은 옛 보상 / new = VESSEL_ROLE_PROMISE_PEN=20
   판정(new 만, 시드마다): min(G[vo56], G[vo56s]) − max(G[goal·stbd·radar·seeker]) > 0.05·|max(...)|  (부호 무관 여유)
   old 결과는 기록만(옛 보상은 이 순서가 뒤집혀 있을 수 있음 — 그게 이번 수정의 이유).
@@ -21,8 +23,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYROOT = os.path.dirname(HERE)
-POLICIES = ('goal', 'stbd', 'radar', 'vo56', 'vo56s', 'seeker')
-AVOIDERS, OTHERS = ('vo56', 'vo56s'), ('goal', 'stbd', 'radar', 'seeker')
+POLICIES = ('goal', 'stbd', 'radar', 'vo56', 'vo56s', 'seeker', 'wall', 'wallesc')
+AVOIDERS, OTHERS = ('vo56', 'vo56s'), ('goal', 'stbd', 'radar', 'seeker', 'wall', 'wallesc')
 
 
 # ─────────────────────────── child: 한 보상 설정에서 정책 × 시드 ───────────────────────────
@@ -100,6 +102,19 @@ def _child(a):
         a0 = torch.where((dmin < 1e8) & ~on_course, toward, goal_a0(env))
         return radar_rule(env, a0)
 
+    def wall_a0(env):
+        # 가장 가까운 벽 쪽 방위(동 90 · 서 −90 · 북 0 · 남 180)로 전타
+        x, z = env.pos[..., 0], env.pos[..., 1]
+        gap = torch.stack([vg.ARENA_INNER - x, vg.ARENA_INNER + x, vg.ARENA_INNER - z, vg.ARENA_INNER + z], -1)
+        brg = torch.tensor([90.0, -90.0, 0.0, 180.0], device=dev)[gap.argmin(-1)]
+        return torch.clamp(wrap(brg - env.heading) / 20.0, -1, 1)
+
+    def pending(env):
+        # 판정기 시작 조건과 같은 모양(300 m · 접근 · dcpa < 24) — 조우가 걸린 배
+        pw = env._last_pw
+        d = pw['dist'] + torch.eye(env.N, device=dev).unsqueeze(0) * 1e9
+        return ((pw['dcpa'] < vg.DCPA_RISK) & (pw['raw_tcpa'] >= 0) & (d <= float(cfg.COMM_RANGE))).any(-1)
+
     gamma = float(cfg.DISCOUNT_FACTOR)
     rows = []
     for seed in a.seeds:
@@ -110,7 +125,7 @@ def _child(a):
             env.reset()
             prev = torch.zeros(env.E, env.N, device=dev)
             R, D = [], []
-            eps = coll = goal = 0
+            eps = coll = goal = ocoll = 0
             for t in range(a.burn + a.T):
                 if pol == 'goal':
                     a0 = goal_a0(env)
@@ -120,6 +135,10 @@ def _child(a):
                     a0 = radar_rule(env, goal_a0(env))
                 elif pol == 'seeker':
                     a0 = seeker_a0(env)
+                elif pol == 'wall':
+                    a0 = wall_a0(env)
+                elif pol == 'wallesc':
+                    a0 = torch.where(pending(env), wall_a0(env), goal_a0(env))
                 else:
                     a0, prev = vo_action(env, 56.0, prev, pol.endswith('s'))
                 act = torch.stack([a0, torch.ones_like(a0)], -1)
@@ -128,7 +147,7 @@ def _child(a):
                 if t >= a.burn:
                     R.append(r.cpu()); D.append(done.cpu())
                     eps += int(done.sum()); coll += int((oc == vg.OUT_COLLISION_VESSEL).sum())
-                    goal += int((oc == vg.OUT_GOAL).sum())
+                    goal += int((oc == vg.OUT_GOAL).sum()); ocoll += int((oc == vg.OUT_COLLISION_OBSTACLE).sum())
             Rt, Dt = torch.stack(R), torch.stack(D).float()
             G = torch.zeros_like(Rt[0])
             Gs = torch.zeros_like(Rt)
@@ -137,9 +156,10 @@ def _child(a):
                 Gs[t] = G
             keep = max(1, Rt.shape[0] - 300)                                  # 창 끝 절단(γ^300≈0.05) 제외
             rows.append({'seed': seed, 'policy': pol, 'G': float(Gs[:keep].mean()), 'r_per_dec': float(Rt.mean()),
-                         'eps': eps, 'vColl%': 100.0 * coll / max(eps, 1), 'goal%': 100.0 * goal / max(eps, 1)})
+                         'eps': eps, 'vColl%': 100.0 * coll / max(eps, 1), 'goal%': 100.0 * goal / max(eps, 1),
+                         'oColl%': 100.0 * ocoll / max(eps, 1)})
             print(f"  [{a.child}] seed {seed} {pol:7s} G={rows[-1]['G']:8.2f} r/dec={rows[-1]['r_per_dec']:6.3f} "
-                  f"vColl={rows[-1]['vColl%']:5.1f}% goal={rows[-1]['goal%']:5.1f}% eps={eps}", flush=True)
+                  f"vColl={rows[-1]['vColl%']:5.1f}% oColl={rows[-1]['oColl%']:5.1f}% goal={rows[-1]['goal%']:5.1f}% eps={eps}", flush=True)
     print('JSON ' + json.dumps({'setting': a.child, 'pen': float(cfg.ROLE_PROMISE_PEN), 'rows': rows}), flush=True)
 
 
