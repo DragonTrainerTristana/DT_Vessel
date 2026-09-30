@@ -4,6 +4,7 @@
 
 1. comm_pair_features(sender=참값) 가 sender=None 과 비트동일 (송신자 값 대입 경로가 같은 연산)
 2. 코덱: 로드 SHA 가드·프로필 가드·양자화 결정론·no-grad/정책 밖·복원 충실도, decode 필드 ≈ 참 필드
+   2b(★2026-09-30, 보고 전용): p6 코덱 k=2/4/6 의 실제 env 상태 복원 충실도 표 — a2/a4 팔용, 합격선 없음(k=6 만 2e/2f 가 판정)
 3. 원거리 COLREGs: 끄면 far_sit=None, 켜면 상태 궤적 불변(보상만 다름)이고 보상 차이는 원거리 채점 대상 배에만.
    penalty 모드(2026-09-28b)는 대상 배 보상이 끈 보상보다 크지 않음(가산 없음)
 4. ckpt_io.restore_comm_ext: 스냅샷에 코덱 있으면 설치, 없으면 None 으로 리셋(앞 체크포인트 값 누출 없음)
@@ -27,6 +28,10 @@ import comm_codec  # noqa: E402
 
 CODEC = 'comm_codecs/p6_k6_s0.pt'
 SHA = 'fbe4c71a6bf4'
+# ★2026-09-30 a2/a4 팔(스펙 2026-09-30-reward-v3-decode-sweep-design.md)의 p6 코덱 k=2/4 — 보고 전용. SHA = comm_codec.py info 앞 16자
+P6_SWEEP = (('k=2', 'comm_codecs/p6_k2_s0.pt', '11a9e56bced1e266'),
+            ('k=4', 'comm_codecs/p6_k4_s0.pt', 'a806563cee7c2660'),
+            ('k=6', CODEC, SHA))
 RES = []
 
 
@@ -112,6 +117,29 @@ def t2_codec(env, topi, f0):
         pass
 
 
+def t2b_fidelity_table(env, topi, f0):
+    """★2026-09-30 p6 k=2/4/6 real-state fidelity table (report only - same metrics as 2e/2f, no PASS/FAIL)."""
+    p = vg.own_payload(env)
+    role_t = f0[..., 8:18].argmax(-1)
+    q99 = lambda t: float(t.flatten().quantile(0.99))
+    print('  [report] p6 코덱 k 별 실제 env 상태 복원 충실도(합격선 없음 — 2e/2f 와 같은 지표): '
+          'heading° p50/p99 · SOG m/s p99 · ROT p99 · cmd_rudder° p99 · cmd_speed m/s p99 | decode 필드 역할 일치율 · 운동 p99')
+    for tag, path, sha in P6_SWEEP:
+        try:
+            c = comm_codec.load_codec(path, sha)
+        except SystemExit as e:
+            print(f"    {tag} {os.path.basename(path)}: 로드 실패(보고만) - {e}")
+            continue
+        fid = comm_codec.fidelity(c, p.reshape(-1, 6))
+        snd = comm_codec.decode_sender(c.decode(c.encode(p)))
+        f1 = vg.comm_pair_features(env, topi, cfg.COMM_RANGE, sender=snd)
+        agree = float((role_t == f1[..., 8:18].argmax(-1)).float().mean())
+        dk = (f1[..., 0:6] - f0[..., 0:6]).abs()
+        print(f"    {tag} {os.path.basename(path)} sha={c.sha[:12]}: heading {fid['heading_deg']['p50']:.2f}/{fid['heading_deg']['p99']:.2f}° "
+              f"sog {fid['sog_mps']['p99']:.3f} rot {fid['rot_n']['p99']:.3f} rudder {fid['cmd_rudder_deg']['p99']:.2f}° "
+              f"cmd_speed {fid['cmd_speed_mps']['p99']:.3f} | role agree {agree:.3f} kin p99 {q99(dk):.4f} max {float(dk.max()):.3f}")
+
+
 def t3_far_reward(mode='full'):
     E, N = 8, 16
     tag = '' if mode == 'full' else f'[{mode}] '
@@ -171,6 +199,7 @@ if __name__ == '__main__':
     print('=' * 78)
     env, topi, f0 = t1_sender_identity()
     t2_codec(env, topi, f0)
+    t2b_fidelity_table(env, topi, f0)
     t3_far_reward('full')
     t3_far_reward('penalty')
     t4_restore()

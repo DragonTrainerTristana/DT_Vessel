@@ -169,6 +169,11 @@ CASES = [
                                  'VESSEL_OBSTACLES': 'none'}, 4, False),
     # ★2026-09-28 grounded latent 코덱(imo 전용 코덱 → imo 뒤). decode(A6)·direct(C6) + 원거리 COLREGs 보상 + 혼합함대·K=1
     ('codec decode (A6)',       {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, False),
+    # ★2026-09-30 a2/a4: 같은 decode 경로, p6 코덱 k=2/4 (SHA 고정 — comm_codec.py info). 복원 → 같은 20 필드라 토큰 폭 불변
+    ('codec decode k=2 (A2)',   {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p6_k2_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': '11a9e56bced1e266', 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, False),
+    ('codec decode k=4 (A4)',   {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC': 'comm_codecs/p6_k4_s0.pt',
+                                 'VESSEL_COMM_CODEC_SHA': 'a806563cee7c2660', 'VESSEL_COMM_CODEC_MODE': 'decode'}, 4, False),
     ('codec direct (C6)',       {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct'}, 4, False),
     ('codec direct + far300',   {**BASE, **_EXT, **_CDC, 'VESSEL_COMM_CODEC_MODE': 'direct',
                                  'VESSEL_COLREGS_FAR_RANGE': '300'}, 4, False),

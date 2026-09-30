@@ -64,3 +64,21 @@ SCALE = 3.0   (표시 배율)
 - 학습 중 기록은 에피소드가 몰려서 끝나는 시점에 따라 흔들린다. 최종 성능
   판단에는 학습 종료 후 평가 결과(`metrics_v2.txt`)를 쓴다.
 - 실행이 하나뿐인 조건은 표준편차가 0으로 표시된다. 오차가 없다는 뜻이 아니다.
+
+## 학습곡선 — trunk/분기 배치 (2026-09-30, 스펙 `2026-09-30-reward-v3-decode-sweep-design.md` §7 '목표 2(그림)')
+
+| 스크립트 | 입력 (`--dir`, 없으면 `--also_dir` 순서로 찾음) | 출력 |
+|---|---|---|
+| `plot_reward_v3.py` | `<prefix><arm>_s<seed>.csv` (`step,raw_reward,ema_reward`, update 65,536결정당 1행; 갈래 파일은 trunk 행 1–138 뒤에 자기 행) + `<prefix>trunk_d<dim>_s<seed>.csv` | 결정당 보상: raw(옅게) + **중심 이동평균 20 update**, 시드별 행(`--layout mean` 은 시드 평균 + 얇은 시드별 선), 왼쪽 0–16.06M(y 범위에 0·첫 값 포함, 분기 점선·첫 update 주석), 오른쪽 분기 뒤 확대(끝값 직접 라벨). PNG·PDF 둘 다 |
+| `plot_ep_return.py` | `<prefix><arm>_s<seed>_ep.csv` (`step,n_ep,ep_return_mean,goal,vColl,oColl,TO`; 빈칸·nan·n_ep 0 행은 건너뜀, 비율은 학습기가 % 로 씀 = `--rate_unit pct` 기본) | 같은 배치 + goal(실선)/vColl(점선) MA % 패널. 폴더에 `*_ep.csv` 가 하나도 없으면 알리고 rc 0 으로 끝남(s_ 등 옛 배치) |
+
+```
+C:/Users/OSH/anaconda3/python.exe plot_reward_v3.py --dir <out dir> --prefix t_ --arms off,a6,a8,a2,a4,offb --seeds 43,44,45 --out <file>.png
+C:/Users/OSH/anaconda3/python.exe plot_ep_return.py --dir <out dir> --prefix t_ --arms off,a6,a8,a2,a4,offb --seeds 43,44,45 --out <file>.png
+```
+
+- matplotlib 은 base anaconda python 에만 있음(mltest 에 없음). 한글 = Malgun Gothic(없으면 대체 폰트).
+- 이동평균 = 중심 창 20 update, 양 끝은 창 축소(pandas `rolling(20, center=True, min_periods=1)` 과 같음). `ema_reward` 열(α 0.02, ~50 update 지연)은 안 씀.
+- stdout 표(팔×시드 + 시드 평균): 분기 뒤(step > 9,043,968) MA 평균 · arm MA ≥ off MA 인 update 비율(두 run 이 겹치는 update 만) · 끝 차이 arm−off(마지막 공통 update) · `offb−off` 끝 차이 = 재분기 잡음 N. 스펙 §7 규칙(비율 ≥ 90 % & 끝 차이 > |N|, 3/3)은 집계만 찍고 판정은 저자가 함.
+- 같은 시드 팔들의 분기 전 구간이 trunk 와 다르면 `★ … §8-1 분기 규약 확인` 경고를 찍음(그림은 그대로 그림).
+- 팔 색은 실행 이름에 고정(off 진회색, offb 연회색 점선, a6 파랑, a8 주황, a2 청록, a4 보라; z6/z12 = 파랑/주황). 모르는 팔은 남는 색을 `--arms` 순서로 받음.

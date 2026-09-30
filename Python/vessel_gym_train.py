@@ -873,6 +873,10 @@ def main():
     obs = env.reset()
     radar, goal, self_s, sit = parse_obs(obs)
     fs.reset_all(radar)
+    # ★2026-09-30 에피소드 return 누적기 [E,N] (로그 전용 — 학습·RNG·곡선 CSV 와 무관). env.reset() 직후 = 모든 배가 에피소드
+    #   시작이라 0 에서 정확히 출발하고, 재개·분기도 여기서 새로 만든다. 워밍업 동안도 (보상 누적·종료 시 0) 이어 가서 워밍업 뒤
+    #   첫 종료부터 온전한 return 이 나온다(워밍업 뒤에 0 으로 지우면 ~1 에피소드 길이 동안 부분합이 섞임).
+    ep_acc = torch.zeros(E, N, device=device)
 
     # ── 재개 워밍업: 학습·기록 없이 환경만 굴려 에이전트 위상을 흩는다 ──
     if args.resume and args.resume_warmup > 0:
@@ -882,7 +886,8 @@ def main():
                 _x = fs.get()
                 _om = torch.zeros(E, N, MSG_DIM, device=device)   # 항상 통신 OFF (두 팔 동일 상태)
                 _a, _, _, _ = policy.ctr_actor(_x, goal, self_s, _om, sit)
-            obs, _, _done, _ = env.step(_a)
+            obs, _r, _done, _ = env.step(_a)
+            ep_acc = (ep_acc + _r) * (1.0 - _done.float())         # ★2026-09-30 return 누적만(기록 없음)
             radar, goal, self_s, sit = parse_obs(obs)
             fs.push(radar, _done)
         print(f'[warmup] 재개 워밍업 {args.resume_warmup} 결정/에이전트 완료 ({time.time()-_t0w:.0f}s) - 학습·기록 없음', flush=True)
@@ -1036,6 +1041,23 @@ def main():
         if _aux_mode == 'w':
             aux_f.write('step,goal,self,sit,threat,future\n')
 
+    # ★2026-09-30 에피소드 return CSV (<run>_ep.csv): update 마다 그 update 안에 *종료한* 에피소드의 비할인 env 보상 합 평균과
+    #   종료 결과 %. 곡선 CSV(step,raw_reward,ema_reward)·stdout 창 줄 앞부분은 불변(창 줄 끝에 ' | epRet=' 만 추가).
+    #   골든(test_golden: curve/aux/state_dict/adam/value_norm) 비교 대상 아님. 재개·분기는 aux CSV 와 같은 규칙(자기 경로로
+    #   'a' 판정) — run_repro train_one 이 trunk 의 _ep.csv 를 갈래 이름으로 복사해 이어 쓴다.
+    ep_f = None
+    if csv_path:
+        _ep_path = os.path.splitext(csv_path)[0] + '_ep.csv'
+        _ep_mode = 'a' if (args.resume and os.path.exists(_ep_path)) else 'w'
+        ep_f = open(_ep_path, _ep_mode, encoding='utf-8')
+        if _ep_mode == 'w':
+            ep_f.write('step,n_ep,ep_return_mean,goal,vColl,oColl,TO\n')
+    # GPU 상주 누적(스텝당 호스트 동기화 0, update 당 .tolist() 1회): 종료 에피소드 return 합·수(float64), update 결과 bincount
+    _ep_sum = torch.zeros((), dtype=torch.float64, device=device)
+    _ep_cnt = torch.zeros((), dtype=torch.float64, device=device)
+    _ep_oc = torch.zeros(5, device=device)          # 이번 update 의 outcome 수 (outcome_counts 의 update 단위 사본)
+    _win_ep_sum = _win_ep_cnt = 0.0                 # 5-update 창(stdout 줄 끝 epRet)
+
     # ★통신 텔레메트리 CSV (2026-09-08): VESSEL_COMM_TELEMETRY=1 일 때만. 기본 0 = 비트동일.
     #   ON 팔에서만 의미 있음(OFF 는 others_msg≡0). 전용 CPU generator 로 학습 RNG 와 분리한다.
     _tele_f = None
@@ -1104,7 +1126,16 @@ def main():
                 obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
                 # ★2026-09-26 5회 루프(커널 ~15개) → bincount 1회. outcome 은 long 0..4(vessel_gym OUT_*)라 bincount 가 정확히
                 #   (outcome==oc).sum() 과 같은 정수. float32 로 옮겨 더해도 5-update 창 합이 2^24 미만이라 예전처럼 정확한 정수.
-                outcome_counts += torch.bincount(outcome.reshape(-1), minlength=5)[:5].to(outcome_counts.dtype)
+                _bc = torch.bincount(outcome.reshape(-1), minlength=5)[:5].to(outcome_counts.dtype)
+                outcome_counts += _bc
+                _ep_oc += _bc                                                # ★2026-09-30 같은 값을 update 단위로도 (_ep.csv)
+                # ★2026-09-30 에피소드 return: 종료 스텝 보상(도착·충돌·시간초과 항 포함)까지 더한 뒤 종료한 배의 합·수를 GPU 에
+                #   누적(스텝당 호스트 동기화 0)하고 그 배만 0 으로. done = outcome != OUT_RUNNING 이라 수 = 종료 결과 수.
+                _df = done.float()
+                ep_acc = ep_acc + reward
+                _ep_sum += (ep_acc * _df).double().sum()
+                _ep_cnt += _df.double().sum()
+                ep_acc = ep_acc * (1.0 - _df)
                 buf['x'].append(x); buf['goal'].append(goal); buf['self'].append(self_s)
                 # ★act = pre-tanh raw 저장(update가 그대로 재사용 → PPO ratio 정합)
                 buf['sit'].append(sit); buf['om'].append(om); buf['act'].append(action_raw)
@@ -1349,6 +1380,18 @@ def main():
                 _sr_n = 0
                 if update_i % 20 == 0:
                     aux_f.flush()
+            # ★2026-09-30 에피소드 return CSV(<run>_ep.csv): update 당 호스트 동기화 1회(7값). n_ep = 이번 update 안 종료 수,
+            #   ep_return_mean = 그 에피소드들의 비할인 env 보상 합 평균(없으면 빈칸), goal..TO = 종료 결과 %(분모 = 종료 수)
+            _ev = torch.cat([_ep_oc.double(), _ep_sum.view(1), _ep_cnt.view(1)]).tolist()
+            _ep_oc.zero_(); _ep_sum.zero_(); _ep_cnt.zero_()
+            _es, _en = _ev[5], _ev[6]
+            _win_ep_sum += _es; _win_ep_cnt += _en
+            if ep_f:
+                _eterm = max(sum(_ev[1:5]), 1.0)
+                _emean = f"{_es / _en:.4f}" if _en > 0 else ''
+                ep_f.write(f"{total_decisions},{int(_en)},{_emean}," + ",".join(f"{_v / _eterm * 100:.2f}" for _v in _ev[1:5]) + "\n")
+                if update_i % 20 == 0:
+                    ep_f.flush()
             # ★통신 텔레메트리: comm 이 실제로 켜져 있을 때만. 실패해도 학습은 계속한다.
             if _tele_f is not None and comm_active and update_i % _tele_every == 0:
                 try:
@@ -1372,10 +1415,13 @@ def main():
                 sps = (total_decisions - args.resume_at) / max(time.time() - t_start, 1e-6)
                 # ★2026-09-26 VESSEL_TIMING=1 일 때만 창(5 update) 평균 rollout/update 초를 뒤에 붙임. 0 이면 빈 문자열 = 줄 불변.
                 _tsfx = f" | roll={_t_roll/5:.1f}s upd={_t_upd/5:.1f}s" if _timing else ""
+                # ★2026-09-30 창(5 update) 안 종료 에피소드 return 평균을 줄 *끝*에만 붙임 — 앞 문구는 불변
+                _epsfx = f" | epRet={_win_ep_sum / _win_ep_cnt:.3f}" if _win_ep_cnt > 0 else " | epRet=nan"
                 print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
                       f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
-                      f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s" + _tsfx)
+                      f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s" + _tsfx + _epsfx)
                 _t_roll = _t_upd = 0.0
+                _win_ep_sum = _win_ep_cnt = 0.0
                 outcome_counts.zero_()
 
     finally:
@@ -1385,6 +1431,8 @@ def main():
             aux_f.flush(); aux_f.close()
         if _tele_f:
             _tele_f.flush(); _tele_f.close()
+        if ep_f:
+            ep_f.flush(); ep_f.close()
     # save (Unity CNNPolicy 호환 state_dict)
     save = args.save or f"vessel_gym_{args.arm}_s{args.seed}.pt"
     torch.save({'model_state_dict': policy.state_dict(), 'arm': args.arm, 'seed': args.seed,

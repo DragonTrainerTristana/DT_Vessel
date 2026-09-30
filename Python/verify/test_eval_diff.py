@@ -1,8 +1,9 @@
 """test_eval_diff.py — G8b: eval_ckpt 출력 바이트 차분 (2026-09-29, 스펙 §5). Windows(체크포인트가 있는 곳) 전용.
 
-옛 커밋(기본 ae58b93)의 eval_ckpt.py 와 현재 eval_ckpt.py 로 같은 체크포인트를 작은 창에서 평가해 stdout 을 비교한다.
-허용 차이는 ① 진행 표시 줄(경과·ETA·dec/s — 벽시계) ② 새 줄 '[role-promise]' 뿐. 나머지 줄은 글자 하나까지 같아야 한다
-(= 역할 약속 판정기를 켜도 기존 지표·난수·상태가 안 바뀜).
+옛 커밋(기본 9cc8f6d — 2026-09-30 보상 v3 직전)의 eval_ckpt.py 와 현재 eval_ckpt.py 로 같은 체크포인트를 작은 창에서 평가해 stdout 을 비교한다.
+허용 차이는 ① 진행 표시 줄(경과·ETA·dec/s — 벽시계) ② 새 줄 태그 NEW_TAGS('[fuel-diag]'·'[role-promise]'·'[role-promise/v2]') 중
+*옛 출력에 없는* 것뿐 — 옛 출력에 이미 있는 태그 줄(9cc8f6d 는 '[role-promise]')은 글자 하나까지 같아야 한다(옛 판정기 줄의 연속성).
+나머지 줄도 글자 하나까지 같아야 한다(= 판정기·진단 줄을 더해도 기존 지표·난수·상태가 안 바뀜). 새 줄은 맨 끝에 NEW_TAGS 순서로 온다.
 
   python verify/test_eval_diff.py --ckpt h_off_s43.pt [--ckpt h_a6_s43.pt] [--arm OFF|ON]...
   env: VESSEL_CKPT_DIR·VESSEL_DYN_PROFILE·VESSEL_OBSTACLES·VESSEL_COMM_EXT 등은 호출자(배치 스크립트)에서 물려받는다.
@@ -19,6 +20,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PYROOT = os.path.dirname(HERE)
 REPO = os.path.dirname(PYROOT)
 NOISE = ('경과', 'ETA', 'dec/s')
+# 허용되는 새 줄 태그 = eval 출력 맨 끝 3줄의 순서. '[role-promise]' 는 '[role-promise/v2] …' 줄에 부분 문자열로 들어가지 않는다(']' 위치).
+NEW_TAGS = ('[fuel-diag]', '[role-promise]', '[role-promise/v2]')
+
+
+def _tag(line):
+    """Return the NEW_TAGS entry contained in line, or None."""
+    for t in NEW_TAGS:
+        if t in line:
+            return t
+    return None
 
 
 def run_eval(root, ckpt, arm, env, extra):
@@ -35,7 +46,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ckpt', action='append', required=True)
     ap.add_argument('--arm', action='append', default=None, help='ckpt 마다 하나(기본 OFF)')
-    ap.add_argument('--base', default='ae58b93')
+    ap.add_argument('--base', default='9cc8f6d')
     a = ap.parse_args()
     arms = a.arm or ['OFF'] * len(a.ckpt)
     assert len(arms) == len(a.ckpt), '--arm 개수 = --ckpt 개수'
@@ -53,13 +64,20 @@ def main():
         for ck, arm in zip(a.ckpt, arms):
             lo = run_eval(os.path.join(old, 'Python'), ck, arm, env, [])
             ln = run_eval(PYROOT, ck, arm, env, [])
-            rp = [l for l in ln if '[role-promise]' in l]
-            rest = [l for l in ln if '[role-promise]' not in l]
-            same = rest == lo and len(rp) == 1 and ln[-1] == rp[0]
+            # 옛 출력에 없는 태그만 '새 줄'. 옛 출력에 있는 태그 줄은 rest 에 남아 글자 비교를 받는다(옛 판정기 줄 연속성)
+            old_tags = {t for t in (_tag(l) for l in lo) if t}
+            new_only = [t for t in NEW_TAGS if t not in old_tags]
+            added = [l for l in ln if _tag(l) in new_only]
+            rest = [l for l in ln if _tag(l) not in new_only]
+            tail_ok = ([_tag(l) for l in ln[-len(NEW_TAGS):]] == list(NEW_TAGS)     # 맨 끝 3줄 = NEW_TAGS 순서
+                       and len(added) == len(new_only)                             # 새 태그마다 정확히 1줄
+                       and all(sum(1 for l in ln if _tag(l) == t) == 1 for t in NEW_TAGS))
+            same = rest == lo and tail_ok
             res.append(same)
-            print(f"  {'PASS' if same else '★FAIL'}  {ck} ({arm}): 기존 줄 {len(lo)}개 동일={rest == lo} · 새 줄 1개·맨 끝={len(rp) == 1 and ln[-1] == rp[0]}")
-            if rp:
-                print('        ' + rp[0].strip())
+            print(f"  {'PASS' if same else '★FAIL'}  {ck} ({arm}): 기존 줄 {len(lo)}개 동일={rest == lo} · "
+                  f"새 줄 {len(added)}개({','.join(new_only) or '없음'}) 맨 끝 {'/'.join(NEW_TAGS)} 순서={tail_ok}")
+            for l in added:
+                print('        ' + l.strip())
             if rest != lo:
                 import difflib
                 for d in list(difflib.unified_diff(lo, rest, 'old', 'new', lineterm=''))[:20]:

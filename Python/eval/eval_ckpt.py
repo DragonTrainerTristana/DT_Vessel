@@ -77,6 +77,11 @@ def main():
                     help='궤적 덤프 경로(.pt). 앞 --traj_envs 개 env 의 위치·침로·속력·타각·명령·상황·목표·최대속력·종료를 결정마다 저장. '
                          "F5 '같은 조우 ON vs OFF' 는 --burnin 0 + 같은 --seed 로 돌려야 팔 간 초기 장면이 같다(run_repro.sh traj)")
     ap.add_argument('--traj_envs', type=int, default=4)
+    # ★2026-09-30 보상 v3: 역할 약속 판정기 선택. snapshot(기본) = 체크포인트 스냅샷의 ROLE_JUDGE(ckpt_io 가 vg 전역에 복원, 구 ckpt 는
+    #   config 기본 'end'). end/v2 = 평가 env 의 판정기만 강제(정책·상태·난수 불변 — 지표 정의만 바뀜; 스냅샷 ROLE_PROMISE_PEN>0 이면
+    #   epReward 의 벌점 항도 그 판정기를 따름). 옛 '[role-promise]' 줄은 항상 end 판정기 숫자(s_/r_/x_ 파일과 연속), v2 는 새 줄.
+    ap.add_argument('--role_judge', default='snapshot', choices=['snapshot', 'end', 'v2'],
+                    help="역할 약속 판정기: snapshot=체크포인트 값(기본) | end | v2 (지표만 바뀜, 헤더에 기록)")
     args = ap.parse_args()
 
     dev = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
@@ -109,7 +114,28 @@ def main():
 
     fs = FrameStack(E, N, dev)
     # ★2026-09-29 역할 약속 조우 지표: env 판정기를 켠다(보상 불변 — 보상은 스냅샷 ROLE_PROMISE_PEN 이 정함, 난수 없음, 상태 불변)
-    _rpt = env.enable_role_tracker()
+    # ★2026-09-30 판정기 둘: primary = vg.ROLE_JUDGE(스냅샷 복원값, --role_judge 로 덮어씀) · end = 옛 판정기(옛 줄의 연속성).
+    #   유효 판정기가 end 면 primary 가 곧 end 판정기(둘째는 안 만듦). v2 면 enable_legacy_role_tracker() 로 end 판정기를 하나 더
+    #   두고 env 가 같은 pw/outcome 으로 둘 다 갱신한다(지표 전용, 보상 무관). 구판 vessel_gym(그 메서드 없음)이면 옛 줄은 n/a.
+    _rj_snap = str(getattr(vg, 'ROLE_JUDGE', 'end')).lower()
+    if args.role_judge != 'snapshot':
+        vg.ROLE_JUDGE = args.role_judge          # enable_role_tracker(judge=None) 가 이 전역을 읽으므로 그 *전*에 덮어쓴다
+        print(f"[eval] role_judge={args.role_judge} (--role_judge 로 스냅샷/config 값 {_rj_snap!r} 을 덮어씀 — 판정기(지표)만, "
+              f"정책·상태·난수 불변; ROLE_PROMISE_PEN>0 이면 epReward 벌점 항은 이 판정기를 따름)", flush=True)
+    _rj_eff = str(getattr(vg, 'ROLE_JUDGE', 'end')).lower()
+    _rpt = env.enable_role_tracker()             # primary = vg.ROLE_JUDGE 판정기 (judge=None)
+    _rpt_end = _rpt_v2 = None                    # 옛 줄(end) / 새 줄(v2) 에 쓸 판정기
+    if _rj_eff == 'end':
+        _rpt_end = _rpt
+    elif hasattr(env, 'enable_legacy_role_tracker'):
+        _rpt_end = env.enable_legacy_role_tracker()   # 계약: primary 가 이미 end 면 None(그러면 primary 가 곧 옛 줄)
+        if _rpt_end is None:
+            _rpt_end, _rj_eff = _rpt, 'end'
+        else:
+            _rpt_v2 = _rpt
+    else:
+        _rpt_v2 = _rpt
+        print("[eval] vessel_gym 에 enable_legacy_role_tracker 없음(구판) → 옛 [role-promise](end) 줄은 n/a", flush=True)
     obs = env.reset()
     radar, goal, self_s, sit = parse_obs(obs); fs.reset_all(radar)
 
@@ -161,6 +187,7 @@ def main():
     ep_len = torch.zeros(E, N, device=dev)
     ep_minsep = torch.full((E, N), BIG, device=dev)   # 에피소드 중 최소 선박간 거리
     ep_reward = torch.zeros(E, N, device=dev)    # ★에피소드 누적 보상(연속 지표 — 효과크기 측정력↑)
+    ep_d0 = torch.zeros(E, N, device=dev)        # ★2026-09-30 [fuel-diag]: 이 에피소드 시작(respawn) 시 목표 거리(m)
     prev_head = env.heading.clone()
     # outcome별 지표 합계 (goal 에피소드 위주 비교)
     msum = {oc: dict(fuel=0.0, head=0.0, minsep=0.0, length=0.0, reward=0.0, n=0) for oc in range(1, 5)}
@@ -295,8 +322,33 @@ def main():
     ep_minsep.fill_(BIG)
     counted = torch.zeros(E, N, dtype=torch.bool, device=dev)   # 종료를 한 번 본 뒤부터 집계
     # ★2026-09-29 역할 약속 조우 지표 — burn-in 뒤 시작한 조우만(경계를 걸친 조우 제외 = pr_skip 과 같은 취지)
-    _rp_t0 = _rpt.t
+    #   ★2026-09-30 판정기별 누적기: _acc_rp = end 판정기(옛 줄, 7칸) · _acc_rp2 = v2 판정기(새 줄, 8칸 = 7 + resolved). 정수 0/1 합 = 정확
+    _rp_t0 = getattr(_rpt_end, 't', 0) if _rpt_end is not None else 0
+    _rp2_t0 = getattr(_rpt_v2, 't', 0) if _rpt_v2 is not None else 0
     _acc_rp = torch.zeros(7, **_i64)   # judged, success, both_comply, safe, pair_coll, discarded, started
+    _acc_rp2 = torch.zeros(8, **_i64)  # 같은 7 + resolved
+    _rp2_has_resolved = None            # v2 events 에 'resolved' 키가 있었나(없으면 n/a 로 출력 — 판정기 계약 이전 트리 가드)
+
+    def _rp_accum(tr, t0, acc, with_resolved):
+        """Add tracker tr's verdicts of this decision (tr.events) to acc; only pairs started after burn-in (t_start >= t0).
+        Returns whether events carried a 'resolved' key (v2 only), None otherwise."""
+        _ev = tr.events
+        _sel = _ev['t_start'] >= t0
+        _cols = [(_ev['judged'] & _sel).sum(), (_ev['success'] & _sel).sum(),
+                 (_ev['ok_i'] & _ev['ok_j'] & _sel).sum(), (_ev['safe'] & _sel).sum(),
+                 (_ev['coll'] & _sel).sum(), (_ev['discard'] & _sel).sum(), _ev['start'].sum()]
+        if not with_resolved:
+            acc.add_(torch.stack(_cols))
+            return None
+        _rs = _ev.get('resolved')
+        _cols.append((_rs & _sel).sum() if _rs is not None else torch.zeros((), **_i64))
+        acc.add_(torch.stack(_cols))
+        return _rs is not None
+
+    # ★2026-09-30 [fuel-diag]: 집계 에피소드의 진행거리 Σ(d_start − d_end). 시작 거리는 respawn 직후 env.prev_dist(= ‖goal−pos‖,
+    #   vessel_gym._respawn), 종료 거리는 종료 결정 *직전* env.prev_dist(_reward 가 직전 step 뒤 잰 ‖goal−pos‖ — 종료 결정 1개분
+    #   ≤0.72 m 차이, 도착이면 <3 m 남음). 새 지표라 옛 합산 순서와 맞출 것 없음. 동기화 없음.
+    _acc_prog = torch.zeros((), **_f64)
     # ★조우 누적기도 여기서 초기화 — burn-in 경계를 걸친 조우는 앞부분이 잘려 R_stb/R_ck 가 왜곡되므로
     #   현재 진행 중인 조우를 enc_skip 으로 표시해 첫 1건만 집계에서 뺀다(옛 counted 게이트와 같은 취지).
     enc_sit = env.situation.clone()
@@ -680,14 +732,14 @@ def main():
                 pr_skip = pr_skip & (~_endp)
 
         # ── step ──
+        _dpre = env.prev_dist        # ★2026-09-30 [fuel-diag] step 전 목표 거리. vessel_gym 은 이 텐서를 재바인딩만 하므로 참조 보관 안전
         obs, rew_step, done, outcome = env.step(a)
         ep_reward += rew_step
-        if _dstep < args.eval_decisions and _rpt.events is not None:
-            _ev = _rpt.events
-            _sel = _ev['t_start'] >= _rp_t0
-            _acc_rp.add_(torch.stack([(_ev['judged'] & _sel).sum(), (_ev['success'] & _sel).sum(),
-                                      (_ev['ok_i'] & _ev['ok_j'] & _sel).sum(), (_ev['safe'] & _sel).sum(),
-                                      (_ev['coll'] & _sel).sum(), (_ev['discard'] & _sel).sum(), _ev['start'].sum()]))
+        if _dstep < args.eval_decisions:
+            if _rpt_end is not None and _rpt_end.events is not None:
+                _rp_accum(_rpt_end, _rp_t0, _acc_rp, False)
+            if _rpt_v2 is not None and _rpt_v2.events is not None:
+                _rp2_has_resolved = _rp_accum(_rpt_v2, _rp2_t0, _acc_rp2, True)
         if _traj is not None and _dstep < args.eval_decisions:
             _traj['outcome'].append(outcome[:_te].clone())
         if _dstep < args.eval_decisions and _cctx:
@@ -722,6 +774,8 @@ def main():
         term = (outcome != 0)
         _rec = term & _cnt_gate
         _rorder = torch.argsort(_rec.view(-1).to(torch.int8), stable=True)
+        # ★2026-09-30 [fuel-diag] 집계 대상 종료 에피소드의 진행거리(위 _acc_prog 주석). 기존 누적기·순서는 건드리지 않음
+        _acc_prog.add_(torch.where(_rec, ep_d0 - _dpre, torch.zeros_like(ep_d0)).double().sum())
         # ★조우·쌍 마감 준비는 리셋(아래 where 재바인딩) *전* 값으로 — apply 는 전송 뒤(잡아둔 텐서는 안 바뀜)
         _encT = enc_prepare(term & (enc_sit > 0))
         _t3 = term.unsqueeze(-1) | term.unsqueeze(1)          # [E,N,N]
@@ -750,6 +804,7 @@ def main():
         ep_len = torch.where(term, torch.zeros_like(ep_len), ep_len)
         ep_minsep = torch.where(term, torch.full_like(ep_minsep, BIG), ep_minsep)
         ep_reward = torch.where(term, torch.zeros_like(ep_reward), ep_reward)
+        ep_d0 = torch.where(term, env.prev_dist, ep_d0)   # ★respawn 직후 prev_dist = 새 에피소드 시작 거리 ‖goal−pos‖ (vessel_gym._respawn)
         counted = counted | term          # 기록 *후* 갱신 → 첫 종료는 제외, 이후부터 집계
         if _pending is not None:
             _pending = _pending & (~term)   # ★2026-09-05 fix: drain — 마감된 에이전트는 대기에서 제외
@@ -853,17 +908,42 @@ def main():
         torch.save(_out, args.traj_out)
         print(f"   [traj] {args.traj_out} ← {tuple(_out['pos'].shape)} (결정×env×선박×2)", flush=True)
 
-    _rp_ = _acc_rp.tolist()
+    _rp_ = _acc_rp.tolist(); _rp2_ = _acc_rp2.tolist()
+    _prog_m = float(_acc_prog)
 
     def _print_rp():
-        # ★2026-09-29 역할 약속 조우 지표 — 항상 맨 끝 한 줄(기존 줄·파서 불변). 정의 = vessel_gym.RolePromiseTracker(보상과 같음)
-        _j, _s, _b, _sf, _c, _d, _st = _rp_
-        _pct = (lambda x: f"{100 * x / _j:5.1f}%") if _j else (lambda x: '  -  ')
-        _rate = f"{2 * _st / total:.3f}" if total else '  -  '
-        print(f"   [role-promise] judged n={_j}  roleKeptSafe={_pct(_s)}  both_comply={_pct(_b)}  safe={_pct(_sf)}  "
-              f"pair_coll={_c}  discarded={_d}  started={_st}  pair_enc_per_ship_ep={_rate}  "
-              f"(rule: gw/ho stbd>={vg.ROLE_GIVEWAY_MIN_DEG:g}deg port<={vg.ROLE_PORT_TOL_DEG:g}deg, "
-              f"so |dpsi|<={vg.ROLE_STANDON_MAX_DEG:g}deg before 17b, safe>={vg.ROLE_SAFE_DIST:g}m)", flush=True)
+        # ★2026-09-30 [fuel-diag] — 역할 약속 줄 바로 앞 한 줄. 연료 = ep_fuel 프록시(sr²+0.5·turn²) 합(집계 에피소드 전부, outcome 무관),
+        #   진행거리 = Σ(시작 목표거리 − 종료 직전 목표거리)(위 _acc_prog), headTravel_per_len = 도착 에피소드의 결정당 침로 변화(deg),
+        #   fleet_fuel_per_arrival = 전체 연료 합 / 도착 수(함대 관점 — 충돌·시간초과가 쓴 연료도 도착 한 건에 얹음). 기존 숫자 불변.
+        _fuel_all = sum(msum[oc]['fuel'] for oc in range(1, 5))
+        _ng = msum[1]['n']
+        _fpp = f"{_fuel_all / _prog_m:.4f}" if _prog_m > 0 else '  -  '
+        _hpl = f"{msum[1]['head'] / msum[1]['length']:.3f}" if msum[1]['length'] > 0 else '  -  '
+        _ffa = f"{_fuel_all / _ng:.1f}" if _ng > 0 else '  -  '
+        print(f"   [fuel-diag] fuel_per_progress_m={_fpp}  headTravel_per_len={_hpl}deg  fleet_fuel_per_arrival={_ffa}  "
+              f"n_all={total}  (fuel_sum={_fuel_all:.1f} progress_m={_prog_m:.0f} n_goal={_ng})", flush=True)
+        # ★2026-09-29 역할 약속 조우 지표 — 옛 줄(end 판정기; 문구·형식 불변 = s_/r_/x_ 파일과 연속). 정의 = vessel_gym.RolePromiseTracker
+        if _rpt_end is None:
+            print("   [role-promise] n/a (vessel_gym 에 enable_legacy_role_tracker 없음 — end 판정기 미집계)", flush=True)
+        else:
+            _j, _s, _b, _sf, _c, _d, _st = _rp_
+            _pct = (lambda x: f"{100 * x / _j:5.1f}%") if _j else (lambda x: '  -  ')
+            _rate = f"{2 * _st / total:.3f}" if total else '  -  '
+            print(f"   [role-promise] judged n={_j}  roleKeptSafe={_pct(_s)}  both_comply={_pct(_b)}  safe={_pct(_sf)}  "
+                  f"pair_coll={_c}  discarded={_d}  started={_st}  pair_enc_per_ship_ep={_rate}  "
+                  f"(rule: gw/ho stbd>={vg.ROLE_GIVEWAY_MIN_DEG:g}deg port<={vg.ROLE_PORT_TOL_DEG:g}deg, "
+                  f"so |dpsi|<={vg.ROLE_STANDON_MAX_DEG:g}deg before 17b, safe>={vg.ROLE_SAFE_DIST:g}m)", flush=True)
+        # ★2026-09-30 v2 판정기(위반 순간 판정) 줄 — 항상 맨 끝. 유효 판정기가 end 면 n/a
+        if _rpt_v2 is None:
+            print(f"   [role-promise/v2] n/a (judge={_rj_eff})", flush=True)
+        else:
+            _j, _s, _b, _sf, _c, _d, _st, _rv = _rp2_
+            _pct = (lambda x: f"{100 * x / _j:5.1f}%") if _j else (lambda x: '  -  ')
+            _rate = f"{2 * _st / total:.3f}" if total else '  -  '
+            _rvs = str(_rv) if _rp2_has_resolved else 'n/a'
+            print(f"   [role-promise/v2] judged n={_j}  roleKeptSafe={_pct(_s)}  both_comply={_pct(_b)}  safe={_pct(_sf)}  "
+                  f"pair_coll={_c}  discarded={_d}  started={_st}  resolved={_rvs}  pair_enc_per_ship_ep={_rate}  "
+                  f"(judge={_rj_eff})", flush=True)
 
     if total == 0:
         print(f"{os.path.basename(ckpt_path):26s} | no terminations"); _print_rp(); return

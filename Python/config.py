@@ -536,6 +536,22 @@ ROLE_END_FAR = 5                # 종료: 거리 > 판정 반경이 이만큼 �
 ROLE_MIN_STEPS = 5              # 판정 최소 결정 수(eval ENC_MIN_STEPS 와 같음). 두 배끼리 충돌은 길이 무관 판정
 ROLE_DECL_MATCH_M = 8.0         # p12 선언 대상 매칭 허용오차(m) — max(이것, 거리×FRAC)
 ROLE_DECL_MATCH_FRAC = 0.05
+# ★2026-09-30 보상 v3 (스펙 docs/superpowers/specs/2026-09-30-reward-v3-decode-sweep-design.md §3). 기본값 = 옛 동작 비트동일.
+#   FORWARD_COEF   : 결정당 전진 보너스 계수(옛 0.1 리터럴, vessel_gym._reward #2). 배치 v3 = 0
+#   TIME_PENALTY   : 결정당 시간 벌점(옛 0.07 리터럴, #1). 배치 v3 = 0.035
+#   RISK_DCPA_GATE_M: 보상용 위험(충돌코스 #6·per-pair #7)에 예상 CPA 게이트 g=clamp((G−dcpa)/(G−DCPA_RISK),0,1). 0 = 끔.
+#                    배치 v3 = 48 (dcpa ≤ 24 m 100 %, ≥ 48 m 0). near_risk·situation·danger_idx·eval 지표는 안 건드림
+#   ROLE_JUDGE     : 역할 약속 판정기 'end'(옛: 조우 끝 판정) | 'v2'(위반 순간 벌점·위반자만·주 상대·해소·늦은 시작). 아래 ROLE_V2_*
+FORWARD_COEF = _env_float('VESSEL_FORWARD_COEF', 0.1)
+TIME_PENALTY = _env_float('VESSEL_TIME_PENALTY', 0.07)
+RISK_DCPA_GATE_M = _env_float('VESSEL_RISK_DCPA_GATE_M', 0.0)
+assert RISK_DCPA_GATE_M == 0.0 or RISK_DCPA_GATE_M > 24.0, f"VESSEL_RISK_DCPA_GATE_M={RISK_DCPA_GATE_M} - 0(끔) 또는 > DCPA_RISK 24"
+ROLE_JUDGE = _env_str('VESSEL_ROLE_JUDGE', 'end').lower()
+assert ROLE_JUDGE in ('end', 'v2'), f"VESSEL_ROLE_JUDGE={ROLE_JUDGE!r} - 'end' | 'v2'"
+# 판정기 v2 상수(env 덮어쓰기 없음 — ROLE_JUDGE 값이 버전). hold 창 시작 = DYN['early_action_time'](imo 48.8 s)
+ROLE_V2_RESOLVE_DCPA_M = 30.0   # 해소: tcpa > 17(b) 구간에서 dcpa ≥ 이것이 연속 ROLE_V2_RESOLVE_N 결정 → 성공 종료
+ROLE_V2_RESOLVE_N = 5
+ROLE_V2_LATE_START_TCPA_S = 28.0   # 시작 tcpa < 이것이면 안전(24 m·충돌)만 판정(침로 기준 면제)
 MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS', os.environ.get('VESSEL_MAX_STEP', '45000')))   # 물리스텝. C# VESSEL_MAX_STEP 이름 호환 폴백
 COLLISION_PENALTY = _env_float('VESSEL_COLLISION_PENALTY', -300.0)
 FUEL_COEF = _env_float('VESSEL_FUEL_COEF', 0.02)
@@ -603,6 +619,7 @@ SIM_SNAPSHOT_KEYS = (
     'MAX_EPISODE_STEPS', 'COLLISION_PENALTY', 'FUEL_COEF', 'PROGRESS_COEF', 'COLREGS_SIM_COEF',
     'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE',
     'ROLE_PROMISE_PEN',
+    'FORWARD_COEF', 'TIME_PENALTY', 'RISK_DCPA_GATE_M', 'ROLE_JUDGE',   # ★2026-09-30 보상 v3 (+4 = 31)
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',

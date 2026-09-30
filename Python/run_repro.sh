@@ -65,6 +65,10 @@
 #   preflight 는 검사 11종(2026-09-29 +역할 약속·p12 코덱·p6 차분)을 동시에 돌리고 코드·env 지문이 같으면 캐시로 건너뜀(VESSEL_FORCE_PREFLIGHT=1 로 강제)
 #   bash run_repro.sh traj   F5 '같은 조우 ON vs OFF' 궤적 덤프: 팔마다 같은 시드·burn-in 0 으로 reset 직후 장면부터
 #                            1500 결정(16 env) 기록 → traj_<이름>_s<시드>.pt. 첫 재스폰 전까지 팔 간 초기 장면이 같다
+#   ★2026-09-30 decode sweep(스펙 2026-09-30-reward-v3-decode-sweep-design.md): a2/a4 = a6 과 같은 decode 팔, p6 코덱 k=2/4
+#     (comm_codecs/p6_k{2,4}_s0.pt, SHA 앞 16자 고정). offb = OFF 재분기(off 와 같은 trunk·설정, 워밍업만 BR_WARMUP+1) — 같은 팔
+#     반복의 잡음 자(N=|offb−off|). offb 는 통신 팔의 OFF 짝으로 안 셈(짝은 off), eval 은 OFF 로, ablate·traj 에는 없음
+#   학습 로그: <런>_ep.csv (step,n_ep,ep_return_mean,goal,vColl,oColl,TO — update 안 종료 에피소드의 return 평균·결과 %). 갈래는 trunk 것을 이어 씀
 # ─────────────────────────────────────────────────────────────────────────────
 set -u
 export PYTHONIOENCODING=utf-8   # ★Windows cp949 콘솔로 리다이렉트할 때 한글·기호 print 가 UnicodeEncodeError 로 죽는 것 방지 (2026-09-10)
@@ -286,10 +290,13 @@ train_one() {
     if [ -n "$trunk" ]; then
       # 같은 이름의 옛 CSV 가 남아 있으면 그 뒤에 이어 붙으므로 지우고, trunk 곡선(0~branch_at)으로 시작한다.
       local tstem="$OUT/$(basename "${trunk%.pt}")"
-      rm -f "$OUT/$run.csv" "$OUT/${run}_aux.csv" "$OUT/${run}_comm.csv"
+      rm -f "$OUT/$run.csv" "$OUT/${run}_aux.csv" "$OUT/${run}_comm.csv" "$OUT/${run}_ep.csv"
       [ -f "$tstem.csv" ] && cp "$tstem.csv" "$OUT/$run.csv"
       [ -f "${tstem}_aux.csv" ] && cp "${tstem}_aux.csv" "$OUT/${run}_aux.csv"
-      extra=(--resume "$trunk" --resume_at "$br_at" --comm_on_at "$br_at" --resume_warmup "$BR_WARMUP")
+      [ -f "${tstem}_ep.csv" ] && cp "${tstem}_ep.csv" "$OUT/${run}_ep.csv"   # ★2026-09-30 에피소드 return CSV 도 이어 씀
+      # ★2026-09-30 offb(OFF 재분기) = off 와 같은 trunk·같은 설정, 워밍업만 +1 결정(다른 환경 추첨) — 같은 팔 반복의 잡음 자
+      local wu="$BR_WARMUP"; [ "$variant" = offb ] && wu=$(( BR_WARMUP + 1 ))
+      extra=(--resume "$trunk" --resume_at "$br_at" --comm_on_at "$br_at" --resume_warmup "$wu")
     fi
     "$PY" -u "$HERE/vessel_gym_train.py" \
       --arm "$arm" --steps "$steps" "${extra[@]}" \
@@ -317,7 +324,8 @@ eval_one() {
     export VESSEL_MSG_DIM=$dim
     # 집계 방식·중앙critic 등은 eval_ckpt 가 체크포인트의 cfg_snapshot 에서 복원한다(2026-09-05).
     # 그래도 학습과 같은 env 를 주는 편이 안전하다 — 구 체크포인트엔 스냅샷이 없다.
-    "$PY" -u "$HERE/eval/eval_ckpt.py" \
+    # ★2026-09-30 VESSEL_EVAL_EXTRA = eval_ckpt 추가 인자(예 "--role_judge v2": 옛 체크포인트를 v2 판정으로 재채점). 기본 없음 = 불변
+    "$PY" -u "$HERE/eval/eval_ckpt.py" ${VESSEL_EVAL_EXTRA:-} \
       --ckpt "$CK/${nm}_s$s.pt" --arm "$arm" \
       --envs "$EVAL_ENVS" --eval_decisions "$EVAL_DEC" --burnin 2400 \
       > "$OUT/eval_${nm}_s$s.txt" 2>&1
@@ -335,12 +343,14 @@ arm_spec() {
     off12) echo "OFF 12" ;;     # on12 의 짝 — dim12 trunk 에서 분기한 OFF
     on2)   echo "ON 2" ;;
     off2)  echo "OFF 2" ;;      # on2 의 짝 — dim2 trunk 에서 분기한 OFF
+    offb)  echo "OFF 6" ;;      # ★2026-09-30 OFF 재분기(off 와 같은 trunk, 워밍업 +1) — 잡음 자. 통신 팔의 OFF 짝으로는 안 셈
     rand)  echo "RANDOM 6" ;;   # 난수 메시지 대조군 (random 모드)
     # ★2026-09-25 의도·역할 통신 사다리 (VESSEL_COMM_EXT=1 필요) + G6 2단계
     arpa6|onl6|ons6|oni6) echo "ON 6" ;;
     on6a0) echo "ON 6" ;;       # ON dim6 보조손실 0 (EXT 0) — aux 비대칭 절제
     # ★2026-09-28 grounded latent (스펙 2026-09-28-grounded-latent-small-design.md, VESSEL_COMM_EXT=1 필요)
     a6|c6) echo "ON 6" ;;       # a6 = 코덱 z → 수신측 복원 → 쌍 필드 / c6 = 코덱 z 를 k/v 가 직접 읽음
+    a2|a4) echo "ON 6" ;;       # ★2026-09-30 a6 과 같은 decode 팔, p6 코덱 k=2 / k=4 (스펙 2026-09-30-reward-v3-decode-sweep-design.md)
     # ★2026-09-29 역할 선언 latent (스펙 2026-09-29-role-promise-design.md): p12 코덱(운동 6 + 역할 선언 6) → z 8 → 수신측 복원
     a8|c8) echo "ON 6" ;;     # a8 = 수신측 고정 복원기로 풀어 읽음 / c8 = 수신 신경망이 z 를 직접 읽음(주 처치)
     # ★2026-09-29c latent 차원 sweep(스펙 2026-09-29-latent-sweep-design.md): p50 재료 50개(실제 상태로 학습한 코덱) → z(k) · 수신 신경망이 직접 읽음
@@ -364,6 +374,11 @@ comm_variant_env() {
                   VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=decode ;;
     c6)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
                   VESSEL_COMM_CODEC=comm_codecs/p6_k6_s0.pt VESSEL_COMM_CODEC_SHA=fbe4c71a6bf4af3d VESSEL_COMM_CODEC_MODE=direct ;;
+    # ★2026-09-30 a2/a4: a6 과 같은 decode 팔, p6 코덱 k=2 / k=4 (같은 recipe: hidden 64·bits 8·seed 0·6000 step·synth 400k). SHA = comm_codec.py info 앞 16자
+    a2)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p6_k2_s0.pt VESSEL_COMM_CODEC_SHA=11a9e56bced1e266 VESSEL_COMM_CODEC_MODE=decode ;;
+    a4)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
+                  VESSEL_COMM_CODEC=comm_codecs/p6_k4_s0.pt VESSEL_COMM_CODEC_SHA=a806563cee7c2660 VESSEL_COMM_CODEC_MODE=decode ;;
     # ★2026-09-29 a8: [13:18] = 나를 향한 선언 역할(아니면 없음), 나머지 필드는 a6 과 같은 식. 코덱 decode 전용
     a8)    export VESSEL_COMM_FIELDS=intent VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 \
                   VESSEL_COMM_CODEC=comm_codecs/p12_k8_s0.pt VESSEL_COMM_CODEC_SHA=ed43ecc4d2a3da60 VESSEL_COMM_CODEC_MODE=decode ;;
@@ -375,7 +390,7 @@ comm_variant_env() {
                   VESSEL_COMM_CODEC=comm_codecs/p50_k${1#z}_s0.pt VESSEL_COMM_CODEC_SHA=$(z_codec_sha "$1") VESSEL_COMM_CODEC_MODE=direct ;;
   esac
 }
-is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6|a8|c8|z2|z4|z6|z8|z10|z12) return 0 ;; *) return 1 ;; esac; }
+is_ext_arm() { case "$1" in arpa6|onl6|ons6|oni6|a6|c6|a2|a4|a8|c8|z2|z4|z6|z8|z10|z12) return 0 ;; *) return 1 ;; esac; }
 # ★2026-09-29c p50 코덱 SHA 고정(앞 16자). 코덱 파일은 git 추적(force-add) — 다르면 comm_codec.load_codec 가 중단
 z_codec_sha() {
   case "$1" in
@@ -406,7 +421,7 @@ branch_batch() {
   local arms="$1" br_at=$2 total=$3 pre=${4:-}
   local a spec dim s t dims=""
   for a in $arms; do
-    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6|a8|c8|z2..z12)"; exit 1; }
+    spec=$(arm_spec "$a") || { echo "모르는 팔: $a (off|offb|on6|on12|off12|on2|off2|rand|arpa6|onl6|ons6|oni6|on6a0|a6|c6|a2|a4|a8|c8|z2..z12)"; exit 1; }
     if is_ext_arm "$a" && [ "${VESSEL_COMM_EXT:-0}" != "1" ]; then
       echo "팔 $a 는 의도·역할 통신 구조가 필요함: VESSEL_COMM_EXT=1 로 배치를 돌릴 것(trunk 부터 EXT 구조)"; exit 1
     fi
@@ -417,7 +432,8 @@ branch_batch() {
     local has_comm=0 has_off=0
     for a in $arms; do
       spec=$(arm_spec "$a"); [ "${spec#* }" = "$dim" ] || continue
-      if [ "${spec% *}" = "OFF" ]; then has_off=1; else has_comm=1; fi
+      # ★2026-09-30 offb 는 OFF 이지만 통신 팔의 짝으로 안 셈(짝은 off/off12/off2) — 재분기는 덤
+      if [ "$a" = offb ]; then :; elif [ "${spec% *}" = "OFF" ]; then has_off=1; else has_comm=1; fi
     done
     if [ "$has_comm" = 1 ] && [ "$has_off" = 0 ]; then
       for s in $SEEDS; do
@@ -515,7 +531,7 @@ case "$MODE" in
     #   규약 이전 옛 배치 재평가만 VESSEL_ALLOW_UNBRANCHED=1 로 우회 — 그 숫자는 ON/OFF 짝 비교에 쓰지 말 것.
     _ev_files=""
     for s in $SEEDS; do
-      for nm in off on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12; do
+      for nm in off offb on6 off12 on12 off2 on2 rand arpa6 onl6 ons6 oni6 on6a0 a6 c6 a2 a4 a8 c8 z2 z4 z6 z8 z10 z12; do
         [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] && _ev_files="$_ev_files $CK/${RUN_PRE}${nm}_s$s.pt"; done
     done
     if [ -n "$_ev_files" ]; then
@@ -533,15 +549,16 @@ case "$MODE" in
     for s in $SEEDS; do
       if [ -n "$RUN_PRE" ]; then
         # ★2026-09-25 접두어 배치(COMM_EXT 등): 있는 것만 평가 (팔 구분은 스냅샷 — eval 헤더 comm_ext/fields 로 확인)
-        for nm in off arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6 a8 c8 z2 z4 z6 z8 z10 z12; do
+        for nm in off offb arpa6 onl6 ons6 oni6 on6 on6a0 rand a6 c6 a2 a4 a8 c8 z2 z4 z6 z8 z10 z12; do
           [ -f "$CK/${RUN_PRE}${nm}_s$s.pt" ] || continue
-          if [ "$nm" = off ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"
+          if [ "$nm" = off ] || [ "$nm" = offb ]; then eval_one "${RUN_PRE}$nm" OFF 6 "$s"   # ★2026-09-30 offb 도 OFF 로 평가
           elif [ "$nm" = rand ]; then eval_one "${RUN_PRE}$nm" RANDOM 6 "$s"
           else eval_one "${RUN_PRE}$nm" ON 6 "$s"; fi
         done
         continue
       fi
       eval_one off  OFF 6  "$s"
+      [ -f "$CK/offb_s$s.pt" ] && eval_one offb OFF 6 "$s"   # ★2026-09-30 OFF 재분기
       eval_one on6  ON  6  "$s"
       [ -f "$CK/on6a0_s$s.pt" ] && eval_one on6a0 ON 6 "$s"
       eval_one on12 ON  12 "$s"
@@ -588,7 +605,7 @@ case "$MODE" in
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
       for nm in ${VESSEL_EVAL_NAMES:?VESSEL_EVAL_NAMES 필요 (예: x_off h_off h_a6)}; do
-        case "$nm" in *off) eval_one "$nm" OFF 6 "$s" ;; *) eval_one "$nm" ON 6 "$s" ;; esac
+        case "$nm" in *off|*offb) eval_one "$nm" OFF 6 "$s" ;; *) eval_one "$nm" ON 6 "$s" ;; esac   # ★2026-09-30 offb 도 OFF
       done
     done
     wait
@@ -669,13 +686,13 @@ case "$MODE" in
       GPU_PIDS[$gpu]="${GPU_PIDS[$gpu]:-} $!"
     }
     for s in $SEEDS; do
-      for a in ${VESSEL_ABLATE_ARMS:-arpa6 onl6 ons6 oni6 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12}; do   # ★09-29b 팔 제한(이미 한 절제 재실행 방지)
+      for a in ${VESSEL_ABLATE_ARMS:-arpa6 onl6 ons6 oni6 a6 c6 a2 a4 a8 c8 z2 z4 z6 z8 z10 z12}; do   # ★09-29b 팔 제한(이미 한 절제 재실행 방지)
         nm="${RUN_PRE}$a"
         [ -f "$CK/${nm}_s$s.pt" ] || continue
         _abl_one "$nm" "$s" msgzero --arm OFF --allow_arm_mismatch
         case "$a" in onl6|ons6|oni6) _abl_one "$nm" "$s" latent0 --arm ON --latent_zero ;; esac   # a6·c6·arpa6 = latent 0
         # ★2026-09-29 decl0: 확장필드 [13:18](상대 역할 칸 — a8 은 선언, a6 은 수신측 추정)만 0 (스펙 §7)
-        case "$a" in a6|a8) _abl_one "$nm" "$s" decl0 --arm ON --decl_zero ;; esac
+        case "$a" in a6|a8|a2|a4) _abl_one "$nm" "$s" decl0 --arm ON --decl_zero ;; esac
         [ "$a" != onl6 ] && _abl_one "$nm" "$s" shuffle --arm ON --field_shuffle
         case "$a" in
           ons6|arpa6) _abl_one "$nm" "$s" state0 --arm ON --comm_groups role --allow_fields_mismatch
@@ -699,7 +716,7 @@ case "$MODE" in
     preflight
     : > "$OUT/_status_eval.txt"
     for s in $SEEDS; do
-      for nm in ${VESSEL_TRAJ_ARMS:-off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6 a8 c8 z2 z4 z6 z8 z10 z12}; do
+      for nm in ${VESSEL_TRAJ_ARMS:-off arpa6 onl6 ons6 oni6 on6 on6a0 a6 c6 a2 a4 a8 c8 z2 z4 z6 z8 z10 z12}; do
         f="$CK/${RUN_PRE}${nm}_s$s.pt"; [ -f "$f" ] || continue
         arm=ON; [ "$nm" = off ] && arm=OFF
         throttle

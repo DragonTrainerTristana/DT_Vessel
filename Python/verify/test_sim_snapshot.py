@@ -55,7 +55,8 @@ def test_snapshot_records_all_sim_keys():
     # ★2026-09-28 +1: COLREGS_FAR_RANGE (원거리 COLREGs 준수보상 반경, 기본 0 = 끔)
     # ★2026-09-28b +1: COLREGS_FAR_MODE (원거리 채점 방식, 기본 full)
     # ★2026-09-29 +1: ROLE_PROMISE_PEN (역할 약속 조우 판정 벌점, 기본 0 = 끔)
-    assert len(cfg.SIM_SNAPSHOT_KEYS) == 27, len(cfg.SIM_SNAPSHOT_KEYS)
+    # ★2026-09-30 +4: FORWARD_COEF·TIME_PENALTY·RISK_DCPA_GATE_M·ROLE_JUDGE (보상 v3, 기본값 = 옛 동작)
+    assert len(cfg.SIM_SNAPSHOT_KEYS) == 31, len(cfg.SIM_SNAPSHOT_KEYS)
     # torch.save/JSON 안전한 타입만 (텐서·객체가 섞이면 체크포인트가 커지거나 load 가 깨진다)
     for k, v in s['sim'].items():
         assert v is None or isinstance(v, (bool, int, float, str)), (k, type(v))
