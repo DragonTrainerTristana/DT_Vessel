@@ -2,7 +2,7 @@
 
 - 상태: **저자 승인**(2026-09-30 plan mode, 결정 4건: ① 판정기 v2 전체 ② 보상 (b)+(c') ③ 그림·지표 정의 고정 ④ Stage A + Stage B 전체).
 - 결과가 나오기 전에 고정한 문서임. 결과를 보고 지표·팔·기준·그림 정의를 바꾸지 않음. 불통과도 그대로 보고함.
-- 선행 주기: `2026-09-29-latent-sweep-design.md`(s_), `2026-09-29-role-promise-design.md`(r_). 코드: 브랜치 `feat/reward-v3`(9cc8f6d 위, worktree `C:\work\DT_Vessel_v3`).
+- 선행 주기: `2026-09-29-latent-sweep-design.md`(s_), `2026-09-29-role-promise-design.md`(r_). 코드: 브랜치 `feat/reward-v3`(9cc8f6d 위, worktree `C:\work\DT_Vessel_v3`) — 구현 커밋 **88f088d**(2026-09-30 13:45, 학습 전 검사 §6 전부 PASS).
 - 저자 고정 목표(09-29): ① 통신(latent msg)이 COLREGs 준수·DCPA·연료·궤적·goal·충돌 각각에서 명확히 우월 ② reward 그래프 우상향 + 통신이 압도. 방법을 고쳐 도달하며, 지표·시드·그림을 결과에 맞추지 않음.
 
 ## 1. 왜 (근거 = 09-26~29 배치 eval·log·코드)
@@ -12,7 +12,7 @@
 - "결정당 reward +0.16 이 천장" 진단(09-29 보고서)은 오류: +0.16 = 첫 update(32결정, 사건 0) 값(`s_trunk_d6_s43.csv:2`). 정상 상태: 학습 OFF −0.85/결정, 규칙 배 vo56 +0.11~0.15 → 여유 +1.0/결정. 곡선은 1.4M(−1.37: 이동 시작 → 충돌 88 %)부터 오름.
 - p50 코덱 decode 불가(`comm_codec.py:161-162`) → 복원형은 p6·p12 뿐. 3M 파일럿은 판별력 0(s_ trunk 5개 모두 3M 에서 goal 1.5–3 %·oColl 42–57 %, 갈라짐은 6.2M 뒤).
 
-## 2. Stage A — 탐색 배치(2026-09-30 즉시, 코드 변경 0, 확정 근거 아님)
+## 2. Stage A — 탐색 배치(2026-09-30 12:54 시작, 코드 변경 0 = 9cc8f6d, 확정 근거 아님)
 - `s_a6`·`s_c6` 를 기존 s_ trunk(43·44·45)에서 분기. s_ 스펙은 팔을 off/z6/z12 로 고정했으므로 **사후 추가 팔**임을 명시. 워밍업 1200(s_off 와 동일). 드라이버 `runs/2026-09-30_t/_run_stageA.sh`.
 - **예측(런 전 고정)**: s_a6 가 s_off 를 goal·vColl·통과최소거리 중앙 3/3 이김, fuel·headTravel(도착 에피소드 평균)은 짐. s_c6 는 goal·vColl 3/3 못 이김. 판정 = s_ 스펙 §7 규칙(3/3 + 평균차 > N). 절제 = msgzero·shuffle(·decl0), EVAL_DEC 5000(빠른 절제).
 - 용도: 같은 trunk·같은 보상에서 복원 vs 직접 확정(복제 확인). t_ 배치의 팔 선택은 이 결과와 무관하게 아래 §5 로 이미 고정함.
@@ -51,7 +51,8 @@
 - 운영: train `VESSEL_JOBS=8 VESSEL_GPU_CAP=2 VESSEL_LAUNCH_GAP=90`(GPU 당 ON 2개), eval·ablate·traj `JOBS=12 CAP=3`. 학습 GPU 에 테스트 금지. 정지 감지(로그 15분 무진행)·kill 절차 = s_.
 
 ## 6. 학습 전 검사(하나라도 FAIL 이면 학습 안 함)
-- `test_golden.py --check`(.win32, 기본값 비트동일) · `test_role_promise.py`(rp1–13 기본값 PASS + rp14–20 v2) · `test_reward_v3.py`(토글 기본값 → 30결정 롤아웃 torch.equal, 항 값, 게이트 형태) · `test_sim_snapshot.py`(키 31) · 미러 2종(a2·a4 케이스 추가) · `test_eval_diff.py`(새 줄 태그만 허용) · 순위 게이트 v2 · smoke(off a6 a2) · 코덱 p6 k2/k4 충실도 표(보고용).
+- 결과(88f088d, Windows): 골든 5/5 PASS · 통신 미러 50/50 · PPO 미러 PASS · rp1–13 PASS · v2 rp14–21 PASS(참조 구현 3 env×1500결정 불일치 0) · 보상 v3 18/18 · sim 스냅샷 31키 · eval 차분 PASS(base 9cc8f6d) · COMM_EXT·grounded PASS
+- `test_golden.py --check`(.win32, 기본값 비트동일) · `test_role_promise.py`(rp1–13 기본값 PASS) · `test_role_promise_v2.py`(rp14–21 v2) · `test_reward_v3.py`(토글 기본값 → 30결정 롤아웃 torch.equal, 항 값, 게이트 형태) · `test_sim_snapshot.py`(키 31) · 미러 2종(a2·a4 케이스 추가) · `test_eval_diff.py`(새 줄 태그만 허용) · 순위 게이트 v2 · smoke(off a6 a2) · 코덱 p6 k2/k4 충실도 표(보고용).
 
 ## 7. 사전등록 판정 (결과 전 고정)
 - 지표·방향: goal ↑ · vColl ↓(oColl 병기, N 넘게 오르면 표시) · DCPA = `[pair-detail]` 통과최소거리 중앙 ↑ · COLREGs = 레이더 안 `[encounter-COLREGs/실제타각] C` ↑(주, 역할별 병기) + `roleKeptSafe v2` ↑(300 m 정보격차 지표; 옛 판정값 병기) · fuel ↓ · headTravel ↓(둘 다 `[goal-ep]` 도착 에피소드 평균 = 저자 정의). 진단만(판정 아님): fuel/진행거리, headTravel/len, 함대 단위 fuel/도착 수, len, TO, epReward.
