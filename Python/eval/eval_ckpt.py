@@ -578,7 +578,7 @@ def main():
         # ── step 전 유효 상태로 지표 누적 ──
         a = act(fs.get(), goal, self_s, sit)
         sr = env.speed / torch.clamp(env.max_speed, min=1e-6)
-        turn01 = a[..., 0].abs().clamp(0, 1)
+        turn01 = env.rudder_fraction(a).abs().clamp(0, 1)          # ★2026-10-02 course 모드 = 제어기 명령 타각(기본 = a0 그대로)
         ep_fuel += sr ** 2 + 0.5 * turn01 ** 2                    # 연료 프록시(보상 항과 동일 형태)
         dh = wrap180(env.heading - prev_head).abs()
         ep_head += dh                                            # 방향 변화 누적
@@ -593,7 +593,7 @@ def main():
         if _pw is not None:
             _mrisk = _pw['risk'].max(dim=-1).values                  # [E,N]
             _sit = env.situation                                     # [E,N] 0~4
-            _rud = a[..., 0]                                         # [-1,1] >0=우현
+            _rud = env.rudder_fraction(a)                            # [-1,1] >0=우현 (★2026-10-02 course 모드 = 제어기 명령)
             _gate = (_mrisk > 0.3) & (_sit > 0)                      # 조우 + 위험
             _star = ((_sit == 1) | (_sit == 3) | (_sit == 4)).to(r_dtype := ep_fuel.dtype)
             _hold = (_sit == 2).to(r_dtype)
@@ -634,7 +634,8 @@ def main():
             _act_on = _sn > 0
             _f = _act_on.to(enc_len.dtype)
             enc_len = enc_len + _f
-            for _src, _db in (('act', env.rudder / vg.MAX_TURN_RATE), ('cmd', a[..., 0])):
+            # ★2026-10-02 'course' 모드면 a0 는 침로 변경량 → 명령 타각 = env 조타 제어기 출력(rudder 모드는 a0 그대로 = 비트동일)
+            for _src, _db in (('act', env.rudder / vg.MAX_TURN_RATE), ('cmd', env.rudder_fraction(a))):
                 enc_c[_src][0] = enc_c[_src][0] + (_act_on & (_db > EPS_S)).to(enc_len.dtype)
                 enc_c[_src][1] = enc_c[_src][1] + (_act_on & (_db < -EPS_P)).to(enc_len.dtype)
                 enc_c[_src][2] = enc_c[_src][2] + (_act_on & (_db.abs() < EPS_C)).to(enc_len.dtype)

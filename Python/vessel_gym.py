@@ -123,6 +123,9 @@ FORWARD_COEF       = _cfg.FORWARD_COEF          # 결정당 전진 보너스 계
 TIME_PENALTY       = _cfg.TIME_PENALTY          # 결정당 시간 벌점(옛 0.07 리터럴)
 RISK_DCPA_GATE_M   = _cfg.RISK_DCPA_GATE_M      # 보상용 위험(#6·#7)에 예상 CPA 게이트(0 = 끔)
 ROLE_JUDGE         = _cfg.ROLE_JUDGE            # 'end'(옛 판정기) | 'v2'(위반 순간 판정) — RolePromiseTrackerV2
+ACTION_MODE        = _cfg.ACTION_MODE           # ★2026-10-02 'rudder'(기본) | 'course'(a0 = 목표 방위 기준 침로 변경량)
+COURSE_ACT_DEG     = _cfg.COURSE_ACT_DEG
+COURSE_STEER_DEG   = _cfg.COURSE_STEER_DEG
 ROLE_V2_RESOLVE_DCPA_M    = _cfg.ROLE_V2_RESOLVE_DCPA_M
 ROLE_V2_RESOLVE_N         = _cfg.ROLE_V2_RESOLVE_N
 ROLE_V2_LATE_START_TCPA_S = _cfg.ROLE_V2_LATE_START_TCPA_S
@@ -1038,8 +1041,24 @@ class VesselBatchEnv:
         self.prev_danger_idx = torch.where(m, torch.full_like(self.prev_danger_idx, -1), self.prev_danger_idx)
 
     # ─────────────────────────── 동역학 (10 서브스텝) ───────────────────────────
+    def rudder_fraction(self, actions):
+        """a0 as the commanded-rudder fraction in [-1,1]. 'rudder' mode: clamp(a0) (unchanged). 'course' mode: the
+        steering controller output for the desired course goal bearing + a0 * COURSE_ACT_DEG (★2026-10-02)."""
+        a0 = torch.clamp(actions[..., 0], -1, 1)
+        if ACTION_MODE != 'course':
+            return a0
+        tg = self.goal - self.pos
+        course = torch.atan2(tg[..., 0], tg[..., 1]) / DEG + a0 * COURSE_ACT_DEG
+        return torch.clamp(_wrap180(course - self.heading) / COURSE_STEER_DEG, -1, 1)
+
+    def effective_actions(self, actions):
+        """actions with a0 replaced by the commanded-rudder fraction (identity in 'rudder' mode)."""
+        if ACTION_MODE != 'course':
+            return actions
+        return torch.stack([self.rudder_fraction(actions), actions[..., 1]], dim=-1)
+
     def _apply_action(self, actions):
-        """actions [E,N,2] ∈[-1,1] → 명령 타각·목표속도 세팅 (결정당 1회)."""
+        """actions [E,N,2] ∈[-1,1] → 명령 타각·목표속도 세팅 (결정당 1회). step() 이 effective_actions 로 a0 를 이미 타 비율로 바꿔 넘김."""
         a0 = torch.clamp(actions[..., 0], -1, 1)
         a1 = torch.clamp(actions[..., 1], -1, 1)
         self.cmd_rudder = a0 * MAX_TURN_RATE
@@ -1782,6 +1801,7 @@ class VesselBatchEnv:
 
     def step(self, actions):
         """actions [E,N,2] → obs[E,N,369], reward[E,N], done[E,N], outcome[E,N]."""
+        actions = self.effective_actions(actions)      # ★2026-10-02 'course' 모드: 보상·판정이 보는 a0 = 실제 명령 타각 비율(기본 = 그대로)
         self._apply_action(actions)
         for _ in range(SUBSTEPS):
             self._substep()

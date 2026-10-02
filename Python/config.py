@@ -547,6 +547,15 @@ TIME_PENALTY = _env_float('VESSEL_TIME_PENALTY', 0.07)
 RISK_DCPA_GATE_M = _env_float('VESSEL_RISK_DCPA_GATE_M', 0.0)
 assert RISK_DCPA_GATE_M == 0.0 or RISK_DCPA_GATE_M > 24.0, f"VESSEL_RISK_DCPA_GATE_M={RISK_DCPA_GATE_M} - 0(끔) 또는 > DCPA_RISK 24"
 ROLE_JUDGE = _env_str('VESSEL_ROLE_JUDGE', 'end').lower()
+# ★2026-10-02 Fig1 행동 방식 (스펙 docs/superpowers/specs/2026-10-02-fig1-latent-design.md):
+#   'rudder' = 현행(a0 = 명령 타각/MAX_TURN_RATE). 기본 = 비트동일.
+#   'course' = a0 = 목표 방위 기준 침로 변경량 / COURSE_ACT_DEG(±120°), a1 = 목표 속도(현행과 같음). env 의 조타 제어기가
+#              규칙 배 steer_to 와 같은 이득(오차 10° = 전타)으로 타 명령을 만듦. 보상·지표의 '명령 타각'은 그 제어기 출력.
+#   스냅샷 'action_mode' 는 'course' 일 때만 기록(기본 스냅샷 불변 → 골든 비트동일). 재개·평가는 스냅샷 값을 따름.
+ACTION_MODE = _env_str('VESSEL_ACTION_MODE', 'rudder').lower()
+assert ACTION_MODE in ('rudder', 'course'), f"VESSEL_ACTION_MODE={ACTION_MODE!r} - 'rudder' | 'course'"
+COURSE_ACT_DEG = 120.0
+COURSE_STEER_DEG = 10.0      # 조타 제어기: 침로 오차 10° = 전타 (규칙 배 steer_to 와 같음)
 assert ROLE_JUDGE in ('end', 'v2'), f"VESSEL_ROLE_JUDGE={ROLE_JUDGE!r} - 'end' | 'v2'"
 # 판정기 v2 상수(env 덮어쓰기 없음 — ROLE_JUDGE 값이 버전). hold 창 시작 = DYN['early_action_time'](imo 48.8 s)
 ROLE_V2_RESOLVE_DCPA_M = 30.0   # 해소: tcpa > 17(b) 구간에서 dcpa ≥ 이것이 연속 ROLE_V2_RESOLVE_N 결정 → 성공 종료

@@ -741,6 +741,10 @@ def main():
                 raise SystemExit(f"[resume] 거부: 체크포인트 dyn 상수 {_k} = {_prev_snap['dyn'].get(_k)} != "
                                  f"현재 {_cur_dyn.get(_k)} — 프로필 정의가 바뀐 코드로 재개 불가(스냅샷이 유일 근거)"
                                  + (f" / 다른 키도 다름: {_bad_dyn[1:]}" if len(_bad_dyn) > 1 else ""))
+        # ★2026-10-02 행동 방식(스냅샷 'action_mode', 없으면 'rudder')도 같아야 한다 — 행동의 뜻이 다른 체크포인트로 재개 불가
+        if str(_prev_snap.get('action_mode') or 'rudder').lower() != cfg.ACTION_MODE:
+            raise SystemExit(f"[resume] 거부: 체크포인트 action_mode={_prev_snap.get('action_mode') or 'rudder'} != "
+                             f"현재 {cfg.ACTION_MODE} — VESSEL_ACTION_MODE 를 맞출 것")
         # ★2026-09-23 sim 상수(보상 계수·게이트·COLREGS_MODE·에피소드 길이)도 같아야 한다 — 다르면 보상이 다른
         #   실험을 이어 붙이는 것. 체크포인트에 있는 키만 본다(구 체크포인트 호환). 우회 없음.
         if isinstance(_prev_snap.get('sim'), dict):

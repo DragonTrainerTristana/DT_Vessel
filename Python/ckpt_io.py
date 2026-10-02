@@ -104,6 +104,8 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'comm_codec_bits': (int(net.COMM_CODEC.bits) if net.COMM_CODEC is not None else None),
         # ★2026-09-29 코덱 레이아웃('p6' | 'p12' 역할 선언). SHA 가 내용을 고정하지만 레이아웃을 따로 적어 복원 때 교차검증. 키 추가만
         'comm_codec_layout': (str(getattr(net.COMM_CODEC, 'layout', 'p6')) if net.COMM_CODEC is not None else ''),
+        # ★2026-10-02 행동 방식. 'course' 일 때만 키를 넣음(기본 스냅샷 불변 = 골든 비트동일). 없으면 'rudder'
+        **({'action_mode': str(cfg.ACTION_MODE)} if cfg.ACTION_MODE != 'rudder' else {}),
     }
 
 
@@ -207,6 +209,15 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
     # RADAR_RANGE 는 위에서 이미 적용됨(가드 포함) → _apply_sim_dict 는 건너뛰지만, 그게 sim 딕셔너리의 24키 중
     #   하나였다면(top-level radar_range 만 있고 sim 딕셔너리 자체가 없는 구 스냅샷은 해당 안 됨) '다룬 키' 수에 넣는다.
     n_applied = _apply_sim_dict(ck_sim) if ck_sim is not None else 0
+    # ★2026-10-02 행동 방식: 스냅샷 값(없으면 'rudder')을 따름. import 시점 값과 다르면 중단(다른 실험이 조용히 섞이지 않게)
+    ck_am = str(snap.get('action_mode') or 'rudder').lower()
+    if ck_am != cfg.ACTION_MODE:
+        msg = f"action_mode ckpt={ck_am} 현재={cfg.ACTION_MODE} — VESSEL_ACTION_MODE={ck_am} 로 다시 실행할 것"
+        if not allow_sim_mismatch:
+            raise SystemExit(f"{tag} 중단: {msg}")
+        notes.append(msg + " (allow_sim_mismatch — 스냅샷 값 적용)")
+    cfg.ACTION_MODE = ck_am
+    vg.ACTION_MODE = ck_am
     radar_in_sim = ck_rr is not None and ck_sim is not None and 'RADAR_RANGE' in ck_sim
     n_sim = n_applied + (1 if radar_in_sim else 0)
     if not snap.get('dyn_profile'):
@@ -576,6 +587,8 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
         # ★2026-09-23: 보상 계수·게이트도 스냅샷 값으로 (restore_policy 가 이미 했어도 멱등).
         #   VesselBatchEnv.__init__ 이 _cfg.FARPAIR_*/REWARD_RANGE 를 읽으므로 생성 *전*이어야 한다.
         _apply_sim_dict(snap['sim'])
+    if snap:
+        vg.ACTION_MODE = cfg.ACTION_MODE = str(snap.get('action_mode') or 'rudder').lower()   # ★2026-10-02 (멱등)
     src = {}
 
     def pick(name, given, snap_key, default):
