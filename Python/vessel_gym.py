@@ -356,6 +356,7 @@ def comm_pair_features(env, topi, partner_range, role_gate=True, sender=None):
     else:
         rot_j = sender['rot'][b, topi]
         cmd_r_j, cmd_s_j = sender['cmd_rudder'][b, topi], sender['target_speed'][b, topi]
+    _intent = sender is not None and 'intent_deg' in sender     # ★2026-10-02 p46: [18] = 상대 계획 침로 변경량(상대 선수 기준)/120
     feats = torch.cat([
         torch.sin(dh).unsqueeze(-1), torch.cos(dh).unsqueeze(-1),
         (spd_j / COMM_EXT_SOG_NORM).unsqueeze(-1),
@@ -364,7 +365,7 @@ def comm_pair_features(env, topi, partner_range, role_gate=True, sender=None):
         ((rvx * torch.sin(h_i) + rvz * torch.cos(h_i)) / COMM_EXT_VREL_NORM).unsqueeze(-1),   # 전방
         dcpa_risk.unsqueeze(-1), tcpa_risk.unsqueeze(-1),
         oh(my_role), oh(their_role),
-        (cmd_r_j / MAX_TURN_RATE).unsqueeze(-1),
+        ((sender['intent_deg'][b, topi] / COURSE_ACT_DEG) if _intent else (cmd_r_j / MAX_TURN_RATE)).unsqueeze(-1),
         (cmd_s_j / COMM_EXT_SOG_NORM).unsqueeze(-1),
     ], dim=-1)
     return feats.to(dt)
@@ -422,6 +423,24 @@ def own_payload12(env, decl_role, decl_pos):
     p6 = own_payload(env)
     oh = _F.one_hot(decl_role, 5)[..., 1:].to(p6.dtype)
     return torch.cat([p6, oh, (decl_pos / float(COMM_RANGE)).to(p6.dtype)], dim=-1)
+
+
+def own_core16(env, decl_role, decl_pos):
+    """★2026-10-02 Fig1 p46 핵심 16칸 [E,N,16] (스펙 2026-10-02-fig1-latent-design.md §2) = own_payload 6 ·
+    의도 2 [계획 침로 − 현재 침로 (deg)/120 (±1.5 로 자름), 목표 방위 기준 변경량 a0] · 선언 역할 one-hot 4 ·
+    선언 대상 위치 / COMM_RANGE 2 · 목표 방향 [sin, cos](목표 방위 − 현재 침로). 'course' 모드가 아니면 의도 = 0."""
+    import torch.nn.functional as _F
+    p6 = own_payload(env)
+    pc = getattr(env, 'plan_course', None)
+    if ACTION_MODE == 'course' and pc is not None:
+        intent = torch.stack([(_wrap180(pc - env.heading) / COURSE_ACT_DEG).clamp(-1.5, 1.5), env.plan_offset], dim=-1)
+    else:
+        intent = torch.zeros_like(p6[..., :2])
+    oh = _F.one_hot(decl_role, 5)[..., 1:].to(p6.dtype)
+    tg = env.goal - env.pos
+    gb = (torch.atan2(tg[..., 0], tg[..., 1]) / DEG - env.heading) * DEG
+    gdir = torch.stack([torch.sin(gb), torch.cos(gb)], dim=-1)
+    return torch.cat([p6, intent.to(p6.dtype), oh, (decl_pos / float(COMM_RANGE)).to(p6.dtype), gdir.to(p6.dtype)], dim=-1)
 
 
 def own_payload50(env, decl_role, decl_pos, goal_obs, radar36):
@@ -1801,6 +1820,12 @@ class VesselBatchEnv:
 
     def step(self, actions):
         """actions [E,N,2] → obs[E,N,369], reward[E,N], done[E,N], outcome[E,N]."""
+        if ACTION_MODE == 'course':
+            # ★2026-10-02 Fig1 의도: 이번 결정의 계획 침로(절대 deg)·목표 방위 기준 변경량 — 다음 결정의 메시지(p46)가 실음(1결정 늦음)
+            _a0 = torch.clamp(actions[..., 0], -1, 1)
+            _tg = self.goal - self.pos
+            self.plan_course = torch.atan2(_tg[..., 0], _tg[..., 1]) / DEG + _a0 * COURSE_ACT_DEG
+            self.plan_offset = _a0
         actions = self.effective_actions(actions)      # ★2026-10-02 'course' 모드: 보상·판정이 보는 a0 = 실제 명령 타각 비율(기본 = 그대로)
         self._apply_action(actions)
         for _ in range(SUBSTEPS):
@@ -1839,6 +1864,9 @@ class VesselBatchEnv:
         _had_reset = any(_col_any)
         if _had_reset:
             self._respawn(done, initial=False, col_any=_col_any)
+            if ACTION_MODE == 'course' and getattr(self, 'plan_course', None) is not None:
+                self.plan_course = torch.where(done, self.heading, self.plan_course)     # ★2026-10-02 재스폰 = 계획 없음
+                self.plan_offset = torch.where(done, torch.zeros_like(self.plan_offset), self.plan_offset)
         if RADAR_DROPOUT_P > 0:
             # 센서고장 상태 전이(결정당 1회): 재스폰 초기화 → 잔여 감소 → 신규 진입 추첨
             self.dropout_left = torch.where(done, torch.zeros_like(self.dropout_left), self.dropout_left)

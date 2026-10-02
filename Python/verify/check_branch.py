@@ -58,6 +58,10 @@ def load_meta(path):
         #   표시만 한다 — 스냅샷 arm 이 전부 'ON' 이라 팔 구분 근거가 이 키들뿐(파일명으로 판단 금지).
         'comm_ext': int(snap.get('comm_ext', 0) or 0),
         'variant': _variant(snap),
+        # ★2026-10-02 'ARPA@레이더범위·메시지 없음' ON 갈래 = 통신 정보 없음 → OFF 짝으로 인정(스펙 2026-10-02-fig1-latent-design.md §2)
+        'no_msg': bool(snap.get('comm_ext')) and float(snap.get('comm_latent', 1.0)) == 0.0
+                  and not snap.get('comm_codec_sha256') and snap.get('partner_range') is not None
+                  and float(snap['partner_range']) <= float((snap.get('sim') or {}).get('RADAR_RANGE', 56.0)) + 1e-6,
     }
 
 
@@ -132,7 +136,7 @@ def main():
             if len(vals) > 1:
                 fails.append(f'{tag}: sim 불일치 {sim_diff_keys(ms)}' if key == 'sim'
                              else f'{tag}: {key} 불일치 {vals}')
-        arms = {m['arm'] for m in ms}
+        arms = {('OFF' if m.get('no_msg') else m['arm']) for m in ms}     # ★2026-10-02 메시지 없는 ARPA 갈래 = OFF 짝
         comm = sorted(arms & set(COMM_ARMS))
         if comm and 'OFF' not in arms:
             fails.append(f'{tag}: 통신 팔 {comm} 에 같은 trunk 의 OFF 갈래가 없음')

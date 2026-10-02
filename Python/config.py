@@ -556,6 +556,12 @@ ACTION_MODE = _env_str('VESSEL_ACTION_MODE', 'rudder').lower()
 assert ACTION_MODE in ('rudder', 'course'), f"VESSEL_ACTION_MODE={ACTION_MODE!r} - 'rudder' | 'course'"
 COURSE_ACT_DEG = 120.0
 COURSE_STEER_DEG = 10.0      # 조타 제어기: 침로 오차 10° = 전타 (규칙 배 steer_to 와 같음)
+# ★2026-10-02 흉내 보조손실(스펙 2026-10-02-fig1-latent-design.md §2): PPO 손실 += coef(t)·(−log π(선생님 행동)).
+#   선생님 = imitation/vo_teacher.TEACHERS 이름(rollout 마다 같은 env 상태로 라벨). coef(t) = BC_COEF·max(0, 1 − Δ/BC_DECAY_DEC),
+#   Δ = 이 런(갈래면 분기점, trunk 면 0)부터 진행한 결정 수. 기본 '' = 끔 = 비트동일(라벨 계산·버퍼·손실 전부 없음).
+BC_TEACHER = _env_str('VESSEL_BC_TEACHER', '').lower()
+BC_COEF = _env_float('VESSEL_BC_COEF', 0.0)
+BC_DECAY_DEC = _env_float('VESSEL_BC_DECAY_DEC', 3000000.0)
 assert ROLE_JUDGE in ('end', 'v2'), f"VESSEL_ROLE_JUDGE={ROLE_JUDGE!r} - 'end' | 'v2'"
 # 판정기 v2 상수(env 덮어쓰기 없음 — ROLE_JUDGE 값이 버전). hold 창 시작 = DYN['early_action_time'](imo 48.8 s)
 ROLE_V2_RESOLVE_DCPA_M = 30.0   # 해소: tcpa > 17(b) 구간에서 dcpa ≥ 이것이 연속 ROLE_V2_RESOLVE_N 결정 → 성공 종료

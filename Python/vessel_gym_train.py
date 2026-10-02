@@ -349,7 +349,18 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
             with torch.no_grad():
                 _lay = getattr(_cdc, 'layout', 'p6')
                 _p12 = _lay == 'p12'
-                if _lay == 'p50':
+                if _lay == 'p46':
+                    # ★2026-10-02 Fig1(스펙 2026-10-02-fig1-latent-design.md §2): 송신자 [동결 레이더 임베딩 30 + 핵심 16] → z(k).
+                    #   수신: 복원값으로 상대 필드를 채우되 56 m(레이더) 안은 [0:13] 을 센서 참값으로(OFF 의 ARPA 와 같은 정보),
+                    #   [13:18] 선언 역할·[18] 의도·[19] 계획 속력은 메시지 복원값만(센서로 못 봄). decode 전용(install 이 강제).
+                    _pay = comm_codec.payload46(_cdc.embed, env, x, topi, topd < BIG, PART_R)
+                    _zq = _cdc.encode(_pay.to(_cdc.enc[0].weight.dtype))
+                    _snd = comm_codec.decode_sender(_cdc.decode(_zq))
+                    _ext_m = vg.apply_declaration(env, topi, vg.comm_pair_features(env, topi, PART_R, sender=_snd), _snd)
+                    _ext_t = vg.comm_pair_features(env, topi, PART_R)
+                    _near = (topd <= float(vg.RADAR_RANGE)).unsqueeze(-1)
+                    ext = torch.cat([torch.where(_near, _ext_t[..., :13], _ext_m[..., :13]), _ext_m[..., 13:]], dim=-1)
+                elif _lay == 'p50':
                     # ★2026-09-29c p50(latent 차원 sweep z2–z12): 움직임 6 + 목표 2 + 역할 선언 6 + 내 레이더 36방향(10° 최솟값) 36
                     #   = 송신자가 결정 시점에 가진 값. direct 전용 — 수신 신경망이 z 를 직접 읽음.
                     _pay = payload50(env, x, goal, topi, topd < BIG, PART_R)
@@ -360,8 +371,11 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
                     _pay = vg.own_payload12(env, _drole, _dpos)
                 else:
                     _pay = vg.own_payload(env)
-                _zq = _cdc.encode(_pay.to(_cdc.enc[0].weight.dtype))                          # [E,N,k]
-                if net_mod.COMM_CODEC_MODE == 'decode':
+                if _lay != 'p46':
+                    _zq = _cdc.encode(_pay.to(_cdc.enc[0].weight.dtype))                      # [E,N,k]
+                if _lay == 'p46':
+                    pass                                                       # ext 는 위에서 완성(★2026-10-02)
+                elif net_mod.COMM_CODEC_MODE == 'decode':
                     # A6: 수신측 동결 디코더로 복원 → 송신자 값 자리에만 대입(수신자·위치는 참값) → 같은 20 필드
                     _snd = comm_codec.decode_sender(_cdc.decode(_zq))
                     ext = vg.comm_pair_features(env, topi, PART_R, sender=_snd)
@@ -783,8 +797,16 @@ def main():
                 + " - VESSEL_COMM_EXT/COMM_FIELDS/COMM_LATENT/PARTNER_RANGE/AUX_LOSS_SCALE 를 체크포인트와 맞출 것")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
-                raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '
-                                 '분기점 trunk 는 통신 OFF 로 학습한 모델이어야 함')
+                # ★2026-10-02 공통 뿌리 정의(스펙 2026-10-02-fig1-latent-design.md §2): 'ARPA 있음·메시지 없음' trunk 도 인정 —
+                #   latent 0 · 코덱 없음 · 파트너 반경 ≤ 레이더 범위 = 상대 필드는 자기 레이더 범위의 센서 정보뿐(통신 정보 0).
+                _pr_t = _prev_comm.get('partner_range')
+                _no_msg = (float(_prev_comm.get('comm_latent', 1.0)) == 0.0 and not _prev_comm.get('comm_codec_sha256')
+                           and _pr_t is not None and float(_pr_t) <= float(vg.RADAR_RANGE) + 1e-6)
+                if not _no_msg:
+                    raise SystemExit('[branch] 거부: trunk 가 통신이 켜진 뒤의 모델임(comm_active=True). '
+                                     '분기점 trunk 는 통신 OFF 로 학습한 모델이어야 함')
+                print(f"[branch] trunk = ARPA@{float(_pr_t):g} m·메시지 없음 모델 → 통신 정보 없는 공통 뿌리로 인정 "
+                      "(스펙 2026-10-02 §2)", flush=True)
             if _ck.get('steps') is not None and int(_ck['steps']) != args.resume_at:
                 raise SystemExit(f"[branch] 거부: trunk steps={_ck['steps']} != --resume_at {args.resume_at}")
             if _ck.get('seed') is not None and int(_ck['seed']) != args.seed:
@@ -874,6 +896,14 @@ def main():
               f'기본(미적용) run 과 학습 결과가 다름', flush=True)
 
     fs = FrameStack(E, N, device)
+    # ★2026-10-02 흉내 보조손실 선생님(VESSEL_BC_TEACHER). 기본 '' = 없음 = 비트동일
+    _bc_teacher = None
+    if cfg.BC_TEACHER:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'imitation'))
+        from vo_teacher import Teacher as _BCTeacher
+        _bc_teacher = _BCTeacher(cfg.BC_TEACHER, env)
+        print(f"[bc] 흉내 보조손실 선생님={cfg.BC_TEACHER} coef={cfg.BC_COEF} → 0 over {cfg.BC_DECAY_DEC:.0f} 결정 "
+              f"(action_mode={cfg.ACTION_MODE})", flush=True)
     obs = env.reset()
     radar, goal, self_s, sit = parse_obs(obs)
     fs.reset_all(radar)
@@ -1089,6 +1119,8 @@ def main():
                 print(f"[comm] ON at dec={total_decisions/1e6:.3f}M (comm_on_at={args.comm_on_at}) - 이 rollout 부터 학습형 통신 + 텔레메트리", flush=True)
             _comm_was_active = comm_active
             keys = ['x', 'goal', 'self', 'sit', 'om', 'act', 'logp', 'val', 'rew', 'done', 'trunc']
+            if _bc_teacher is not None:
+                keys += ['tlab']
             if cfg.CENTRAL_CRITIC:
                 keys += ['gf']
             # ★2026-09-25 AUX_LOSS_SCALE=0 이면 ON 전용 보조손실을 통째로 끈다 → 라벨 버퍼·state_recon 계산도 생략
@@ -1127,7 +1159,13 @@ def main():
                 #     기본 설정 run 은 비트동일.
                 if use_intent:
                     buf['pos'].append(env.pos.clone()); buf['hdg'].append(env.heading.clone())
+                if _bc_teacher is not None:
+                    with torch.no_grad():
+                        _tl, _ = _bc_teacher.act(env)                        # 같은 결정 시점 상태의 선생님 행동
+                    buf['tlab'].append(torch.atanh(_tl.clamp(-0.995, 0.995)))
                 obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
+                if _bc_teacher is not None:
+                    _bc_teacher.after_step(env, action, done)                # 의도 = 실제 실행 행동(1결정 늦음)
                 # ★2026-09-26 5회 루프(커널 ~15개) → bincount 1회. outcome 은 long 0..4(vessel_gym OUT_*)라 bincount 가 정확히
                 #   (outcome==oc).sum() 과 같은 정수. float32 로 옮겨 더해도 5-update 창 합이 2^24 미만이라 예전처럼 정확한 정수.
                 _bc = torch.bincount(outcome.reshape(-1), minlength=5)[:5].to(outcome_counts.dtype)
@@ -1193,6 +1231,11 @@ def main():
             def flat(t): return t.reshape(-1, *t.shape[3:]) if t.dim() > 3 else t.reshape(-1)
             fx = flat(S['x']); fg = flat(S['goal']); fsf = flat(S['self']); fsit = flat(S['sit'])
             fom = flat(S['om']); fact = flat(S['act']); flogp = flat(S['logp'])
+            ftl = flat(S['tlab']) if _bc_teacher is not None else None
+            _bc_c = 0.0
+            if _bc_teacher is not None:
+                _bc_start = int((_branch or {}).get('branch_at') or 0)
+                _bc_c = float(cfg.BC_COEF) * max(0.0, 1.0 - (total_decisions - _bc_start) / max(1.0, float(cfg.BC_DECAY_DEC)))
             fret = flat(returns); fadv = flat(adv)
             fgf = flat(S['gf']) if cfg.CENTRAL_CRITIC else None      # [M, N_ships, 6]
             M = fx.shape[0]
@@ -1255,6 +1298,13 @@ def main():
                         #   1.0(기본)이면 곱하지 않음 = 비트동일.
                         if cfg.AUX_LOSS_SCALE != 1.0:
                             aux = aux * cfg.AUX_LOSS_SCALE
+                        if _bc_c > 0.0:
+                            # ★2026-10-02 흉내 보조손실: 같은 평가 경로(파트너 필드·attention 포함)로 선생님 행동의 log π
+                            _, _lpt, *_ = policy.evaluate_actions(
+                                fx[mi], fg[mi], fsf[mi], fpx[mi], fpg[mi], fps[mi], fpmask[mi], fprel[mi], ftl[mi],
+                                situation=fsit[mi], partner_situations=fpsit[mi],
+                                global_feat=fgf[mi] if fgf is not None else None)
+                            aux = aux + _bc_c * (-_lpt.mean())
                     else:
                         # ctr_actor/critic는 [batch, n_agent, dim] 기대 → n_agent=1로 unsqueeze
                         x_b = fx[mi].unsqueeze(1); g_b = fg[mi].unsqueeze(1); s_b = fsf[mi].unsqueeze(1)
@@ -1265,6 +1315,9 @@ def main():
                         value_new = policy.critic(x_b, g_b, s_b, om_b, sit_b,
                                                   global_feat=fgf[mi] if fgf is not None else None
                                                   ).squeeze(1).squeeze(-1)
+                        if _bc_c > 0.0:
+                            _lpt, _, _, _ = policy.ctr_actor.get_logprob_entropy(x_b, g_b, s_b, om_b, ftl[mi].unsqueeze(1), sit_b)
+                            aux = aux + _bc_c * (-_lpt.mean())                 # ★2026-10-02 흉내 보조손실
                     ratio = torch.exp(logp_new - flogp[mi])
                     a_mb = fadv[mi]
                     pg1 = ratio * a_mb

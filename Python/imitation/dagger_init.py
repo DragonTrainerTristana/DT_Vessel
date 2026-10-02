@@ -39,7 +39,7 @@ import torch.nn.functional as F  # noqa: E402
 import config as cfg  # noqa: E402
 import vessel_gym as vg  # noqa: E402
 from vessel_gym_train import (parse_obs, FrameStack, make_others_msg, batched_gae, ValueNorm,  # noqa: E402
-                              build_global_feat)
+                              build_global_feat, comm_gather)
 from ckpt_io import restore_policy, make_env_from_snapshot  # noqa: E402
 from vo_teacher import TEACHER, TEACHERS, Teacher  # noqa: E402
 
@@ -101,15 +101,19 @@ def main():
     torch.manual_seed(a.seed)
     t_start = time.time()
 
-    r = restore_policy(a.init, dev, arm='OFF', tag='[dagger]')
+    r = restore_policy(a.init, dev, tag='[dagger]')        # 팔은 스냅샷 값(OFF 또는 ARPA@56·메시지 없음 ON)
     raw = r.raw
     if int(raw.get('steps', -1)) != 0:
         raise SystemExit(f"[dagger] --init must be a step-0 checkpoint (steps={raw.get('steps')}); "
                          f"make it with vessel_gym_train.py --steps 0")
     if int(raw.get('seed', -1)) != a.seed:
         raise SystemExit(f"[dagger] --init seed {raw.get('seed')} != --seed {a.seed}")
-    if r.arm != 'OFF' or bool(raw.get('comm_active', False)):
-        raise SystemExit('[dagger] --init must be an OFF (comm inactive) checkpoint')
+    if r.arm != 'OFF':
+        _sn = r.snap or {}
+        _no_msg = (float(_sn.get('comm_latent', 1.0)) == 0.0 and not _sn.get('comm_codec_sha256')
+                   and _sn.get('partner_range') is not None and float(_sn['partner_range']) <= float(vg.RADAR_RANGE) + 1e-6)
+        if not _no_msg:
+            raise SystemExit('[dagger] --init 은 OFF 이거나 ARPA@레이더범위·메시지 없음 ON 체크포인트여야 함(공통 뿌리)')
     policy = r.policy
     policy.train()
     E, N = a.envs, a.vessels
@@ -126,10 +130,33 @@ def main():
     fs.reset_all(radar)
     om = make_others_msg(env, 'OFF', E, N, dev)
     gen = torch.Generator(device=dev).manual_seed(a.seed + 101)   # driver choice + minibatch draws (env.gen untouched)
+    # ★2026-10-02 ON 경로(ARPA@56·메시지 없음 trunk, 스펙 2026-10-02-fig1-latent-design.md §2): 상대 필드가 comm_gather 로
+    #   들어오므로 흉내도 PPO 업데이트와 같은 평가 경로(evaluate_actions)로 −log π(선생님 행동)을 줄인다(attention 까지 학습).
+    #   메시지는 latent 0 이라 파트너 obs(px·pg·ps)는 결과에 영향 없음 → 0 텐서로 넘김. logstd 는 학습하지 않음.
+    on = (r.arm == 'ON')
+    K = int(r.max_partners or cfg.MAX_COMM_PARTNERS)
+
+    def gather(x_, goal_, self_, sit_):
+        if not on:
+            return om, None
+        with torch.no_grad():
+            om_, parts = comm_gather(policy, env, x_, goal_, self_, sit_, K)
+        return om_, parts
 
     # ── 1. DAgger ──
     ctr_params = [p for p in policy.ctr_actor.parameters()]
-    opt = torch.optim.Adam(ctr_params, lr=a.lr)
+    if on:
+        _ids, train_params = set(), []
+        for mod in (policy.ctr_actor, getattr(policy, 'attn', None), getattr(policy, 'msg_encoder', None)):
+            if mod is None:
+                continue
+            for n_, p_ in mod.named_parameters():
+                if 'logstd' in n_ or id(p_) in _ids:
+                    continue
+                _ids.add(id(p_)); train_params.append(p_)
+    else:
+        train_params = ctr_params
+    opt = torch.optim.Adam(train_params, lr=a.lr)
     cap = a.buffer * E * N
     xdim = fs.get().shape[-1]
     bx = torch.zeros(cap, xdim, device=dev, dtype=torch.float16)   # radar stack in [-0.5, 0.5] → fp16 is exact enough
@@ -139,6 +166,17 @@ def main():
     ba = torch.zeros(cap, 2, device=dev)
     wvec = torch.tensor([1.0, a.w_thrust], device=dev)
     om_mb = torch.zeros(a.mb, 1, om.shape[-1], device=dev)
+    if on:
+        _om0, _p0 = gather(fs.get(), goal, self_s, sit)
+        _prel_dim = _p0[4].shape[-1]
+        _Kc = _p0[4].shape[2]
+        bprel = torch.zeros(cap, _Kc, _prel_dim, device=dev)
+        bpm = torch.zeros(cap, _Kc, 1, device=dev)
+        bpsit = torch.zeros(cap, _Kc, device=dev, dtype=torch.long)
+        bgf = torch.zeros(cap, N, 6, device=dev) if cfg.CENTRAL_CRITIC else None
+        zpx = torch.zeros(a.mb, _Kc, xdim, device=dev)
+        zpg = torch.zeros(a.mb, _Kc, goal.shape[-1], device=dev)
+        zps = torch.zeros(a.mb, _Kc, self_s.shape[-1], device=dev)
     ptr, filled = 0, 0
     drive_t = torch.ones(E, N, device=dev, dtype=torch.bool)       # beta = 1 at t = 0
     win = {'loss': 0.0, 'nl': 0, 'agree': 0.0, 'na': 0}
@@ -148,8 +186,9 @@ def main():
     for t in range(a.decisions):
         beta = _beta(t, a.beta_hold, a.beta_end)
         x = fs.get()
+        om_t, parts = gather(x, goal, self_s, sit)
         with torch.no_grad():
-            act_s, _, mean_s, _ = policy.ctr_actor(x, goal, self_s, om, sit)
+            act_s, _, mean_s, _ = policy.ctr_actor(x, goal, self_s, om_t, sit)
             a_star, _ = teacher.act(env)
             tgt = a_star.clamp(-TARGET_CLIP, TARGET_CLIP)
             win['agree'] += float(((torch.tanh(mean_s[..., 0]) - tgt[..., 0]).abs() < AGREE_TOL).float().mean())
@@ -162,6 +201,12 @@ def main():
             bs[idx] = self_s.reshape(n_new, -1)
             bsit[idx] = sit.reshape(n_new)
             ba[idx] = tgt.reshape(n_new, 2)
+            if on:
+                bprel[idx] = parts[4].reshape(n_new, _Kc, -1)
+                bpm[idx] = parts[3].reshape(n_new, _Kc, 1)
+                bpsit[idx] = parts[5].reshape(n_new, _Kc)
+                if bgf is not None:
+                    bgf[idx] = build_global_feat(env).reshape(n_new, N, 6)
             ptr = (ptr + n_new) % cap
             filled = min(cap, filled + n_new)
         obs, _, done, outcome = env.step(a_exec)
@@ -176,13 +221,19 @@ def main():
 
         for _ in range(a.sgd_per_dec):
             mi = torch.randint(0, filled, (a.mb,), generator=gen, device=dev)
-            _, _, mean_b, _ = policy.ctr_actor(bx[mi].float().unsqueeze(1), bg[mi].unsqueeze(1), bs[mi].unsqueeze(1),
-                                               om_mb, bsit[mi].unsqueeze(1))
-            pred = torch.tanh(mean_b.squeeze(1))
-            loss = (((pred - ba[mi]) ** 2) * wvec).sum(-1).mean()
+            if on:
+                _, lp, *_ = policy.evaluate_actions(
+                    bx[mi].float(), bg[mi], bs[mi], zpx, zpg, zps, bpm[mi], bprel[mi], torch.atanh(ba[mi]),
+                    situation=bsit[mi], partner_situations=bpsit[mi], global_feat=bgf[mi] if bgf is not None else None)
+                loss = -lp.mean()
+            else:
+                _, _, mean_b, _ = policy.ctr_actor(bx[mi].float().unsqueeze(1), bg[mi].unsqueeze(1), bs[mi].unsqueeze(1),
+                                                   om_mb, bsit[mi].unsqueeze(1))
+                pred = torch.tanh(mean_b.squeeze(1))
+                loss = (((pred - ba[mi]) ** 2) * wvec).sum(-1).mean()
             opt.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(ctr_params, cfg.MAX_GRAD_NORM)
+            torch.nn.utils.clip_grad_norm_(train_params, cfg.MAX_GRAD_NORM)
             opt.step()
             win['loss'] += float(loss)
             win['nl'] += 1
@@ -204,6 +255,8 @@ def main():
             oc_s.zero_()
             oc_t.zero_()
     del bx, bg, bs, bsit, ba
+    if on:
+        del bprel, bpm, bpsit, bgf, zpx, zpg, zps
 
     # ── 2. critic warm-up (actor frozen) ──
     ctr_ids = {id(p) for p in policy.ctr_actor.parameters()}
@@ -216,26 +269,28 @@ def main():
     T = a.rollout
     vlog = {}
     for u in range(a.value_updates):
-        B = {k: [] for k in ('x', 'goal', 'self', 'sit', 'gf', 'val', 'rew', 'done', 'trunc')}
+        B = {k: [] for k in ('x', 'goal', 'self', 'sit', 'om', 'gf', 'val', 'rew', 'done', 'trunc')}
         ocv = torch.zeros(5, device=dev)
         for _ in range(T):
             x = fs.get()
+            om_t, _ = gather(x, goal, self_s, sit)
             with torch.no_grad():
-                action, _, _, _ = policy.ctr_actor(x, goal, self_s, om, sit)
+                action, _, _, _ = policy.ctr_actor(x, goal, self_s, om_t, sit)
                 gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
-                value = vnorm.denormalize(policy.critic(x, goal, self_s, om, sit, global_feat=gf).squeeze(-1))
+                value = vnorm.denormalize(policy.critic(x, goal, self_s, om_t, sit, global_feat=gf).squeeze(-1))
             obs, reward, done, outcome = env.step(action)
             ocv += torch.bincount(outcome.reshape(-1), minlength=5)[:5].float()
-            B['x'].append(x); B['goal'].append(goal); B['self'].append(self_s); B['sit'].append(sit)
+            B['x'].append(x); B['goal'].append(goal); B['self'].append(self_s); B['sit'].append(sit); B['om'].append(om_t)
             if gf is not None:
                 B['gf'].append(gf)
             B['val'].append(value); B['rew'].append(reward); B['done'].append(done.float())
             B['trunc'].append((outcome == vg.OUT_TIMEOUT).float() if cfg.TIMEOUT_BOOTSTRAP else torch.zeros_like(done.float()))
             radar, goal, self_s, sit = parse_obs(obs)
             fs.push(radar, done)
+        om_t, _ = gather(fs.get(), goal, self_s, sit)
         with torch.no_grad():
             gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
-            last_v = vnorm.denormalize(policy.critic(fs.get(), goal, self_s, om, sit, global_feat=gf).squeeze(-1))
+            last_v = vnorm.denormalize(policy.critic(fs.get(), goal, self_s, om_t, sit, global_feat=gf).squeeze(-1))
         S = {k: torch.stack(v) for k, v in B.items() if v}
         del B
         returns, _ = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v, cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
@@ -246,14 +301,15 @@ def main():
             return t_.reshape(-1, *t_.shape[3:]) if t_.dim() > 3 else t_.reshape(-1)
         fx, fg, fsf, fsit, fret = flat(S['x']), flat(S['goal']), flat(S['self']), flat(S['sit']), flat(ret_n)
         fgf = flat(S['gf']) if 'gf' in S else None
-        om1 = torch.zeros(cfg.MINIBATCH_SIZE, 1, om.shape[-1], device=dev)
+        fom = flat(S['om'])
         M = fx.shape[0]
         vl, nv = 0.0, 0
         for _ in range(cfg.N_EPOCH):
             perm = torch.randperm(M, generator=gen, device=dev)
             for i in range(0, M - cfg.MINIBATCH_SIZE + 1, cfg.MINIBATCH_SIZE):
                 mi = perm[i:i + cfg.MINIBATCH_SIZE]
-                v = policy.critic(fx[mi].unsqueeze(1), fg[mi].unsqueeze(1), fsf[mi].unsqueeze(1), om1, fsit[mi].unsqueeze(1),
+                v = policy.critic(fx[mi].unsqueeze(1), fg[mi].unsqueeze(1), fsf[mi].unsqueeze(1), fom[mi].unsqueeze(1),
+                                  fsit[mi].unsqueeze(1),
                                   global_feat=fgf[mi] if fgf is not None else None).squeeze(1).squeeze(-1)
                 vloss = ((v - fret[mi]) ** 2).mean()
                 vopt.zero_grad()
@@ -262,7 +318,7 @@ def main():
                 vopt.step()
                 vl += float(vloss)
                 nv += 1
-        del S, fx, fg, fsf, fsit, fret, fgf
+        del S, fx, fg, fsf, fsit, fret, fgf, fom
         n_end = float(ocv[1:].sum())
         vlog = dict(update=u + 1, value_loss=vl / max(1, nv), ret_mean=vnorm.state()['mean'], ret_std=vnorm.state()['std'],
                     student_eps=n_end, student_goal=100.0 * float(ocv[1]) / n_end if n_end else float('nan'),
@@ -287,7 +343,7 @@ def main():
     ck['model_state_dict'] = policy.state_dict()
     ck['value_norm'] = vnorm.state()
     ck.pop('optimizer_state_dict', None)
-    ck.update(arm='OFF', comm_active=False, seed=a.seed, steps=0)
+    ck.update(arm=r.arm, comm_active=bool(raw.get('comm_active', False)), seed=a.seed, steps=0)
     snap = dict(ck.get('cfg_snapshot') or {})
     snap['init_imitation'] = info
     ck['cfg_snapshot'] = snap

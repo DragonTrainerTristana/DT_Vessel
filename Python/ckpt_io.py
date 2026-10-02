@@ -106,6 +106,9 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'comm_codec_layout': (str(getattr(net.COMM_CODEC, 'layout', 'p6')) if net.COMM_CODEC is not None else ''),
         # ★2026-10-02 행동 방식. 'course' 일 때만 키를 넣음(기본 스냅샷 불변 = 골든 비트동일). 없으면 'rudder'
         **({'action_mode': str(cfg.ACTION_MODE)} if cfg.ACTION_MODE != 'rudder' else {}),
+        # ★2026-10-02 흉내 보조손실(켰을 때만 기록 = 골든 비트동일). 가중치에 흔적 없음 = 스냅샷이 유일 근거
+        **({'bc_teacher': str(cfg.BC_TEACHER), 'bc_coef': float(cfg.BC_COEF), 'bc_decay_dec': float(cfg.BC_DECAY_DEC)}
+           if cfg.BC_TEACHER else {}),
     }
 
 
