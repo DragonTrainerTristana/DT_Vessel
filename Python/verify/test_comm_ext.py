@@ -211,13 +211,13 @@ def test_intent_timing_is_last_command():
     env = _env(E, N)
     env.reset()
     a = torch.tensor([[[0.5, 0.2], [-1.3, -0.4], [0.0, 1.0]]])
+    a0 = env.rudder_fraction(a)        # ★2026-10-02 명령 타 비율: rudder 모드 = clamp(a0), course 모드 = 조타 제어기 출력(결정 시점 상태)
     env.step(a)
     dmat = torch.cdist(env.pos, env.pos) + torch.eye(N)[None] * 1e9
     _, topi = torch.topk(dmat, N - 1, dim=-1, largest=False)
     f = vg.comm_pair_features(env, topi, 1e9)
     b = torch.arange(E)[:, None, None]
-    a0 = a[..., 0].clamp(-1, 1)
-    ts = ((a[..., 1].clamp(-1, 1) + 1) * 0.5 * env.max_speed).clamp(max=env.max_speed)
+    ts =((a[..., 1].clamp(-1, 1) + 1) * 0.5 * env.max_speed).clamp(max=env.max_speed)
     assert torch.allclose(f[..., 18], a0[b, topi], atol=1e-6)
     assert torch.allclose(f[..., 19], (ts / 1.8)[b, topi], atol=1e-6)
 
