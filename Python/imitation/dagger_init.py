@@ -41,7 +41,7 @@ import vessel_gym as vg  # noqa: E402
 from vessel_gym_train import (parse_obs, FrameStack, make_others_msg, batched_gae, ValueNorm,  # noqa: E402
                               build_global_feat)
 from ckpt_io import restore_policy, make_env_from_snapshot  # noqa: E402
-from vo_teacher import TEACHER, teacher_action  # noqa: E402
+from vo_teacher import TEACHER, TEACHERS, Teacher  # noqa: E402
 
 TARGET_CLIP = 0.995      # tanh(3) ≈ 0.9951 = largest reachable |action| (mean clamp ±3)
 AGREE_TOL = 0.2          # rudder agreement: |tanh(mean) − a*| < 0.2
@@ -75,6 +75,8 @@ def main():
     ap.add_argument('--init', required=True, help='step-0 checkpoint made by vessel_gym_train.py --steps 0 (same seed)')
     ap.add_argument('--save', required=True)
     ap.add_argument('--seed', type=int, required=True)
+    ap.add_argument('--teacher', default='vo56', choices=sorted(TEACHERS),
+                    help='★2026-10-02 vo56(기본, 0a3e70e 와 같음) | vo56h150 | vo300i. 라벨 단위는 VESSEL_ACTION_MODE 를 따름')
     ap.add_argument('--envs', type=int, default=128)
     ap.add_argument('--vessels', type=int, default=16)
     ap.add_argument('--decisions', type=int, default=3000)
@@ -113,7 +115,8 @@ def main():
     E, N = a.envs, a.vessels
     env = make_env_from_snapshot(r.snap, device=dev, num_envs=E, seed=a.seed, n_vessels=N, tag='[dagger]')
     print(f"[dagger] {r.header()}", flush=True)
-    print(f"[dagger] teacher={TEACHER} dyn={getattr(cfg, 'DYN_PROFILE', '?')} obst={getattr(cfg, 'OBSTACLES_MODE', '?')} "
+    teacher = Teacher(a.teacher, env)
+    print(f"[dagger] teacher={a.teacher} {TEACHERS[a.teacher]} action_mode={vg.ACTION_MODE} dyn={getattr(cfg, 'DYN_PROFILE', '?')} obst={getattr(cfg, 'OBSTACLES_MODE', '?')} "
           f"envs={E} vessels={N} D={a.decisions} beta hold/end={a.beta_hold}/{a.beta_end} buffer={a.buffer} "
           f"sgd={a.sgd_per_dec}x{a.mb} lr={a.lr} w_thrust={a.w_thrust} value_updates={a.value_updates} dev={dev}", flush=True)
 
@@ -137,7 +140,6 @@ def main():
     wvec = torch.tensor([1.0, a.w_thrust], device=dev)
     om_mb = torch.zeros(a.mb, 1, om.shape[-1], device=dev)
     ptr, filled = 0, 0
-    prev = torch.zeros(E, N, device=dev, dtype=env.dtype)
     drive_t = torch.ones(E, N, device=dev, dtype=torch.bool)       # beta = 1 at t = 0
     win = {'loss': 0.0, 'nl': 0, 'agree': 0.0, 'na': 0}
     oc_s = torch.zeros(5, device=dev)    # outcomes of student-driven ships (RUNNING/GOAL/vColl/oColl/TO)
@@ -148,7 +150,7 @@ def main():
         x = fs.get()
         with torch.no_grad():
             act_s, _, mean_s, _ = policy.ctr_actor(x, goal, self_s, om, sit)
-            a_star, prev = teacher_action(env, prev)
+            a_star, _ = teacher.act(env)
             tgt = a_star.clamp(-TARGET_CLIP, TARGET_CLIP)
             win['agree'] += float(((torch.tanh(mean_s[..., 0]) - tgt[..., 0]).abs() < AGREE_TOL).float().mean())
             win['na'] += 1
@@ -166,7 +168,7 @@ def main():
         oc1 = F.one_hot(outcome.reshape(-1), 5).float()
         oc_t += (oc1 * drive_t.reshape(-1, 1).float()).sum(0)
         oc_s += (oc1 * (~drive_t).reshape(-1, 1).float()).sum(0)
-        prev = torch.where(done, torch.zeros_like(prev), prev)
+        teacher.after_step(env, a_exec, done)
         new_drv = torch.rand(E, N, generator=gen, device=dev) < beta
         drive_t = torch.where(done, new_drv, drive_t)
         radar, goal, self_s, sit = parse_obs(obs)
@@ -274,7 +276,8 @@ def main():
 
     # ── 3. save (trainer format, step 0) ──
     info = dict(spec='docs/superpowers/specs/2026-10-02-imitation-init-design.md', code=_git_head(),
-                teacher=dict(TEACHER, source='verify/check_reward_rank.vo_action (true pos/vel of ships <= R)'),
+                teacher=dict(TEACHERS[a.teacher], name=a.teacher, action_mode=vg.ACTION_MODE,
+                             source='imitation/vo_teacher.py (vo_action / vo_cost_intent; true pos/vel of ships <= R)'),
                 init=os.path.basename(a.init), init_sha256=_sha256(a.init), seed=a.seed, envs=E, vessels=N,
                 decisions=a.decisions, beta_hold=a.beta_hold, beta_end=a.beta_end, buffer=a.buffer,
                 sgd_per_dec=a.sgd_per_dec, mb=a.mb, lr=a.lr, w_thrust=a.w_thrust, target_clip=TARGET_CLIP,
