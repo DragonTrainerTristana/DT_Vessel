@@ -17,6 +17,8 @@
 # 실행(Git Bash, 클론 루트에서):
 #   VESSEL_F_AUTO1=1 bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase0   # P0 통과 시 phase1 까지 이어서
 #   bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1                     # phase1 만 다시
+#   ★2026-10-06 P0 불통과여도 저자 결정으로 phase1 진행: VESSEL_F_P0_OVERRIDE="<저자 결정 문구>" 를 앞에 붙임
+#     → _p0_override.txt 에 문구·시각·P0 판정 줄을 남기고 _fig1.md 맨 위에 그대로 적음(_p0.md 는 안 건드림). trunk 관문 이후는 그대로
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
@@ -69,7 +71,15 @@ if [ -d "$DROPF" ]; then RES=$DROPF/out; else RES=$O/results; fi   # 결과 사�
 mkdir -p "$RES"
 HEAD_NOW=$(git -C "$R" rev-parse HEAD)
 if [ -f "$O/_commit.txt" ]; then
-  [ "$(cat "$O/_commit.txt")" = "$HEAD_NOW" ] || { echo "★멈춤: 이 배치는 $(cat "$O/_commit.txt") 로 시작 — 지금 HEAD $HEAD_NOW → VESSEL_F_PREFIX=f2_ 로 새로"; exit 1; }
+  _c0=$(head -1 "$O/_commit.txt")
+  if [ "$_c0" != "$HEAD_NOW" ]; then
+    # ★2026-10-06 실행 묶음(Python/runs_fig1)만 바뀐 커밋이면 계속(학습·평가 코드 동일). 그 밖의 변경이면 멈춤
+    if git -C "$R" diff --quiet "$_c0" HEAD -- . ':(exclude)Python/runs_fig1'; then
+      grep -q "$HEAD_NOW" "$O/_commit.txt" || echo "$HEAD_NOW runs_fig1-only $(date '+%F %T')" >> "$O/_commit.txt"
+    else
+      echo "★멈춤: 이 배치는 $_c0 로 시작 — 지금 HEAD $HEAD_NOW 는 학습·평가 코드가 다름 → 새 접두어(VESSEL_F_PREFIX)로"; exit 1
+    fi
+  fi
 else
   echo "$HEAD_NOW" > "$O/_commit.txt"
 fi
@@ -278,12 +288,21 @@ eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scri
 }
 fig1_table() {
   sync_out
-  "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE" > "$O/_fig1.md" 2>&1; local rc=$?
+  { [ -f "$O/_p0_override.txt" ] && { cat "$O/_p0_override.txt"; echo; }
+    "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE"; } > "$O/_fig1.md" 2>&1; local rc=$?
   cat "$O/_fig1.md"; cp "$O/_fig1.md" "$RES/"
   return $rc
 }
 phase1() {
-  grep -q "P0 판정: 통과" "$O/_p0.md" 2>/dev/null || { log "★멈춤: P0 통과 기록 없음($O/_p0.md) — phase0 먼저"; exit 1; }
+  if ! grep -q "P0 판정: 통과" "$O/_p0.md" 2>/dev/null; then
+    [ -f "$O/_p0.md" ] && [ -n "${VESSEL_F_P0_OVERRIDE:-}" ] || { log "★멈춤: P0 통과 기록 없음($O/_p0.md) — phase0 먼저(불통과를 저자 결정으로 넘기려면 VESSEL_F_P0_OVERRIDE)"; exit 1; }
+    if [ ! -f "$O/_p0_override.txt" ]; then
+      { echo "> ★ P0(흉내 관문, 스펙 §4-2) 불통과 — 저자 결정으로 phase1 진행 ($(date '+%F %T'))"
+        echo "> 저자 결정: $VESSEL_F_P0_OVERRIDE"
+        echo "> $(grep 'P0 판정' "$O/_p0.md")"; } > "$O/_p0_override.txt"
+    fi
+    log "★P0 불통과 — 저자 결정으로 진행: $VESSEL_F_P0_OVERRIDE"
+  fi
   step trunk    trunk_all
   step gate     gate9
   SEEDS=$(cat "$O/_seeds.txt") || exit 1
