@@ -28,7 +28,7 @@
 | 보상 | v3(시간 0.035 · 전진 0 · DCPA 게이트 48 · 판정기 v2 · PEN 20 · 반경 300 m 두 팔 동일) + R1 + R2 | |
 | R1 주 상대 `VESSEL_ROLE_V2_PRIMARY=cum` | 쌍마다 조우 시작부터 `pw['risk']`(300 m, 56 m 안 상황 가중, 자기 시각) 를 결정마다 더함. 진행 중 조우 가운데 합 최대 = 주 상대. 판정기 침로 규칙(F1·F2·F6)과 메시지 역할 선언이 같은 주 상대·같은 고정 역할을 씀 | 순간 위험 최대(조우 아닌 배 포함) → 누적 |
 | R2 `VESSEL_ROLE_V2_RES_F6=1` | 양보 역할(정면·교차 양보)이 '해소'로 닫힐 때도 F6(우현 10° 이상 변침 없음) 검사 → 걸리면 그 배만 −20, 판정 실패 | 정상 종료에서만 → 해소 종료도 |
-| 갈래 | 시드 43–47 trunk 9,043,968 → 관문 통과 앞 3개 → off · comm · offb → 16,056,320 | 같음(흉내 없음) |
+| 시드 | ★저자 지시(10-07): 먼저 시드 1개(43). trunk 9,043,968 → 관문 → off · comm · offb → 16,056,320. 시뮬이 성공하면(저자 판단) 같은 코드로 시드 3개 확증(43–47 중 관문 통과 앞 3개, 접두어 n3_) | f2_ = 처음부터 3개 |
 | 선생님 쓰임 | 코덱 학습 데이터 수집(vo300i 함대)·참고 줄에만. 정책 학습 손실에는 없음 | |
 
 ## 4. 지표·그림 (결과 전 고정)
@@ -42,14 +42,16 @@
 
 1. preflight(smoke): 골든(기본값 비트동일) · 미러 · 판정기 테스트(`verify/test_role_v2_cum.py` 포함) ALL PASS
 2. 순위 관문: `verify/check_reward_rank.py --settings v4`(v4 = v3 + R1 + R2), 규칙 (i)–(v) 시드마다 성립 → 학습 시작. 불통과 → 멈추고 보고(대체 설정 없음)
-3. trunk 관문: t_ 규칙(마지막 4창 goal ≥ 30 % · oColl ≤ 5 %), 시드 순서 앞 3개. 3개 미만 → 멈추고 보고(= 순수 PPO 로 회피 못 배움)
+3. trunk 관문: t_ 규칙(마지막 4창 goal ≥ 30 % · oColl ≤ 5 %). 1시드 단계 = 시드 43 통과해야 진행, 확증 단계 = 시드 순서 앞 3개. 모자라면 멈추고 보고(= 순수 PPO 로 회피 못 배움)
+   - 1시드 결과는 단독 주장 금지(루트 CLAUDE.md §2). 표의 '통과'는 다음 단계(시드 3개) 판단용
 4. 코덱 관문: 10-02 스펙 §4-1 그대로
 5. check_branch ALL PASS
 6. M(V자 판정, 보고만 · 멈추지 않음): 시드·팔 시리즈 c_t 에서 최대 하락 = max_t(max_{s≤t} c_s − c_t). 최대 하락 ≤ 0.1 × (최고 − 첫 값) 이고 최고 > 첫 값이면 '우상향'. 팔마다 통과 시드 수를 적음. 불통과여도 축 자르기·구간 고르기 없이 그대로 그림
 
 ## 6. 실행 (Windows 전용)
 
-- 클론 루트(브랜치 `feat/fig1-latent`, 얕은 클론 금지): `VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1`
+- 클론 루트(브랜치 `feat/fig1-latent`, 얕은 클론 금지): `VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1` (시드 43 하나)
+- 성공 뒤 확증: `VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n3_ VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3 bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1`
 - 단계: smoke → rank(v4) → trunk → gate → codec → branches → eval → curve → fig1. 결과 = `Python/_repro_out_n/`(+ Dropbox `runs/2026-10-02_fig1/out/`)
 - GPU 당 학습 2개 상한 · 15분 무진행 kill · 1회 재시도 = 기존 그대로
 

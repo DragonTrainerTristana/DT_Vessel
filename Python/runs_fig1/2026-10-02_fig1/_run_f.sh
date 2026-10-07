@@ -20,7 +20,8 @@
 #   ★2026-10-06 P0 불통과여도 저자 결정으로 phase1 진행: VESSEL_F_P0_OVERRIDE="<저자 결정 문구>" 를 앞에 붙임
 #     → _p0_override.txt 에 문구·시각·P0 판정 줄을 남기고 _fig1.md 맨 위에 그대로 적음(_p0.md 는 안 건드림). trunk 관문 이후는 그대로
 # ★2026-10-07 배치 n_ (스펙 docs/superpowers/specs/2026-10-07-pure-rl-fig1-design.md, 저자 승인): 흉내 없는 순수 PPO
-#   VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1
+#   VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1      # 시드 1개(43)
+#   성공 뒤 확증(시드 3개): VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n3_ VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3 bash ... phase1
 #   → preflight(smoke) · 순위 관문 v4 · trunk 처음부터(DAgger·흉내 보조손실 없음) · 관문 · 코덱 · 갈래(흉내 없음) · 평가 · 곡선(M) · 표.
 #   보상 = v3 + VESSEL_ROLE_V2_PRIMARY=cum(누적 주 상대) + VESSEL_ROLE_V2_RES_F6=1(해소 종료에도 F6). phase0 없음
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
@@ -42,6 +43,11 @@ fi
 OFF_T=vo56h150                          # 위 주석(스펙 §5 규칙 적용 결과)
 COMM_T=vo300i
 SEEDS_ALL="43 44 45 46 47"
+NGATE=3                                 # trunk 관문 통과 시드 수(갈래 시드 수)
+# ★2026-10-07 저자 지시: n_ 는 시드 1개(43)로 먼저. 시뮬이 성공하면 같은 코드로 시드 3개(확증) = VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3
+if [ "$IMIT" = 0 ]; then SEEDS_ALL="43"; NGATE=1; fi
+SEEDS_ALL=${VESSEL_F_SEEDS:-$SEEDS_ALL}; NGATE=${VESSEL_F_NGATE:-$NGATE}
+[ "$NGATE" -ge 1 ] && [ "$NGATE" -le $(echo $SEEDS_ALL | wc -w) ] || { echo "★멈춤: VESSEL_F_NGATE=$NGATE · 시드 [$SEEDS_ALL]"; exit 1; }
 K=8                                     # 스펙 §4-1 파트너 수
 BRANCH_AT=9043968
 TOTAL=16056320
@@ -219,7 +225,7 @@ trunk_all() {
   for s in $SEEDS_ALL; do [ -f "$CK/${PRE}trunk_d6_s$s.pt" ] || echo "★FAIL trunk s$s — $O/${PRE}trunk_d6_s$s.log"; done
   return 1
 }
-gate9() {   # t_ 와 같은 관문(결과 전 고정): 마지막 4창 평균 goal ≥ 30 · oColl ≤ 5. 시드 순서로 앞 3개. G1 은 기록만
+gate9() {   # t_ 와 같은 관문(결과 전 고정): 마지막 4창 평균 goal ≥ 30 · oColl ≤ 5. 시드 순서로 앞 NGATE 개(f_ 3 · n_ 1). G1 은 기록만
   local s L st pass="" g1
   for s in $SEEDS_ALL; do
     L="$O/${PRE}trunk_d6_s$s.log"
@@ -228,10 +234,10 @@ gate9() {   # t_ 와 같은 관문(결과 전 고정): 마지막 4창 평균 goa
     g1=$(grep '^\[ON\] dec=' "$L" 2>/dev/null | tail -1 | sed -E 's/.*goal=([0-9.]+)%.*vColl=([0-9.]+)%.*oColl=([0-9.]+)%.*/\1 \2 \3/' \
          | awk '{printf "G1(마지막 창 goal %.1f · vColl %.1f · oColl %.1f) %s", $1, $2, $3, ($1>=90 && $2<=5 && $3<=2) ? "충족" : "미충족"}')
     echo "s$s $st | $g1"
-    case "$st" in *" 통과") [ $(echo $pass | wc -w) -lt 3 ] && pass="$pass $s" ;; esac
+    case "$st" in *" 통과") [ $(echo $pass | wc -w) -lt $NGATE ] && pass="$pass $s" ;; esac
   done
   pass=$(echo $pass)
-  if [ $(echo $pass | wc -w) -lt 3 ]; then echo "trunk 관문: 통과 시드 3개 미만($pass) — 멈춤(기준 안 바꿈, 그대로 보고)"; return 1; fi
+  if [ $(echo $pass | wc -w) -lt $NGATE ]; then echo "trunk 관문: 통과 시드 ${NGATE}개 미만($pass) — 멈춤(기준 안 바꿈, 그대로 보고)"; return 1; fi
   echo "$pass" > "$O/_seeds.txt"; echo "trunk 관문 통과 시드: $pass"
 }
 codec_all() {   # 스펙 §4-1: 시드마다 그 trunk 레이더 인코더 + vo300i 함대로 수집 → k=4·6·8·12 → 관문 → 공통 k = 모든 시드 통과하는 가장 작은 k(6→8→12)
@@ -361,7 +367,7 @@ phase1() {
   log "phase1 완료 — 결과 $RES/_fig1.md"
 }
 
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all
