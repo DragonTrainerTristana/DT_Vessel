@@ -46,7 +46,7 @@ def main():
     off, comm, offb = load(d, pre, 'off'), load(d, pre, 'comm'), load(d, pre, 'offb')
     seeds = sorted(set(off) & set(comm))
     print(f"# Fig1 — 통신(comm) vs OFF (같은 trunk 짝 {len(seeds)}개: {seeds})\n")
-    print("판정(결과 전 고정): 같은 시드 짝 전부 승 + |평균차| > N, N = max(OFF 시드 범위, |offb − off| 평균, 고정 하한)\n")
+    print("판정(결과 전 고정): 같은 시드 짝 전부 승 + |평균차| > N, N = max(OFF 시드 범위, |offb − off| 평균(offb 없으면 빠짐), 고정 하한)\n")
     pool = {'off': off, 'offb': offb, 't_off': load(os.path.join(HERE, '..', '2026-10-01_scripted', 'out'), 't_', 'off')}
     pool_mean = {}
     for nm, runs in pool.items():

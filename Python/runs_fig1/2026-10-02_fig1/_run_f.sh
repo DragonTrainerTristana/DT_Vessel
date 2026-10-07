@@ -46,6 +46,8 @@ SEEDS_ALL="43 44 45 46 47"
 NGATE=3                                 # trunk 관문 통과 시드 수(갈래 시드 수)
 # ★2026-10-07 저자 지시: n_ 는 시드 1개(43)로 먼저. 시뮬이 성공하면 같은 코드로 시드 3개(확증) = VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3
 if [ "$IMIT" = 0 ]; then SEEDS_ALL="43"; NGATE=1; fi
+ARMS="off comm offb"
+[ "$IMIT" = 0 ] && ARMS="off comm"      # ★2026-10-07 저자 결정: n_ 은 잡음 자 offb 없음 — 갈래 off · comm 둘만
 SEEDS_ALL=${VESSEL_F_SEEDS:-$SEEDS_ALL}; NGATE=${VESSEL_F_NGATE:-$NGATE}
 [ "$NGATE" -ge 1 ] && [ "$NGATE" -le $(echo $SEEDS_ALL | wc -w) ] || { echo "★멈춤: VESSEL_F_NGATE=$NGATE · 시드 [$SEEDS_ALL]"; exit 1; }
 K=8                                     # 스펙 §4-1 파트너 수
@@ -288,22 +290,22 @@ branches_all() {
   for try in 1 2; do
     : > "$O/_status_f.txt"
     watch_stalls & local wp=$!
-    for a in off comm offb; do for s in $SEEDS; do branch_one $a $s || { kill $wp 2>/dev/null; return 1; }; done; done   # offb 마지막(슬롯 모자라면 잡음 자가 늦게)
+    for a in $ARMS; do for s in $SEEDS; do branch_one $a $s || { kill $wp 2>/dev/null; return 1; }; done; done   # offb 마지막(슬롯 모자라면 잡음 자가 늦게)
     wait_all; kill $wp 2>/dev/null
-    local miss=0; for s in $SEEDS; do for a in off comm offb; do [ -f "$CK/${PRE}${a}_s$s.pt" ] || miss=1; done; done
+    local miss=0; for s in $SEEDS; do for a in $ARMS; do [ -f "$CK/${PRE}${a}_s$s.pt" ] || miss=1; done; done
     [ $miss -eq 0 ] && break
     echo "갈래 시도 $try: 빠진 런 있음 — $(tr '\n' ' ' < "$O/_status_f.txt")"
     [ $try -eq 2 ] && return 1
   done
   : > "$O/_status_f.txt"
-  for s in $SEEDS; do for a in off comm offb; do files="$files $CK/${PRE}${a}_s$s.pt"; done; done
+  for s in $SEEDS; do for a in $ARMS; do files="$files $CK/${PRE}${a}_s$s.pt"; done; done
   "$PY" -u verify/check_branch.py --trunk_dir "$CK" --csv_dir "$O" $files > "$O/_branch_check.txt" 2>&1
   cat "$O/_branch_check.txt"
   grep -q "ALL PASS" "$O/_branch_check.txt" || { echo "★FAIL 분기 검사"; return 1; }
 }
 eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scripted.py learned 모드(신경망 그대로, 지표 줄만 덧붙임)
   : > "$O/_status_f.txt"; local s a envset
-  for s in $SEEDS; do for a in off comm offb; do
+  for s in $SEEDS; do for a in $ARMS; do
     grep -q "R8=" "$O/lr_${PRE}${a}_s$s.txt" 2>/dev/null && continue
     if [ "$a" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
     launch 3000 "$O/lr_${PRE}${a}_s$s.txt" bash -c "$envset
@@ -319,7 +321,7 @@ rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순
 }
 curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
   : > "$O/_status_f.txt"; local s a f x run envset
-  for s in $SEEDS; do for run in trunk_d6 off comm offb; do
+  for s in $SEEDS; do for run in trunk_d6 $ARMS; do
     if [ "$run" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
     for f in "$CK/${PRE}${run}_s$s".step*M.pt "$CK/${PRE}${run}_s$s.pt"; do
       [ -f "$f" ] || continue
@@ -367,7 +369,7 @@ phase1() {
   log "phase1 완료 — 결과 $RES/_fig1.md"
 }
 
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all
