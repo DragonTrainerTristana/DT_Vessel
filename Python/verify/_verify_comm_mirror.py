@@ -97,7 +97,10 @@ BASE = dict(VESSEL_USE_COMM='1', VESSEL_MOE_SHARED='1', VESSEL_THREAT_COEF='0.5'
             VESSEL_COMM_CODEC=None, VESSEL_COMM_CODEC_SHA=None, VESSEL_COMM_CODEC_MODE=None,
             VESSEL_COLREGS_FAR_RANGE=None, VESSEL_COLREGS_FAR_MODE=None,
             # ★2026-09-29 역할 약속 벌점도 기본(끔)으로 고정 — 배치 env(VESSEL_ROLE_PROMISE_PEN=20)가 새지 않게
-            VESSEL_ROLE_PROMISE_PEN=None)
+            VESSEL_ROLE_PROMISE_PEN=None,
+            # ★2026-10-07 판정기 v2 토글도 기본(risk·0)으로 고정 — 배치 env(n_: VESSEL_ROLE_V2_PRIMARY=cum)가 새면
+            #   판정기 없는 p12 케이스(역할 약속 벌점 0)가 role_declaration 에서 RuntimeError 로 죽음
+            VESSEL_ROLE_V2_PRIMARY=None, VESSEL_ROLE_V2_RES_F6=None)
 _EXT = {'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1', 'VESSEL_COMM_EXT': '1'}
 _CDC = {'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_COMM_LATENT': '0.0', 'VESSEL_AUX_LOSS_SCALE': '0.0',
         'VESSEL_DYN_PROFILE': 'imo', 'VESSEL_OBSTACLES': 'none',
