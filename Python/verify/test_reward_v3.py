@@ -154,7 +154,7 @@ def v6_judge_class():
 def v7_snapshot_keys():
     import ckpt_io
     keys = ('FORWARD_COEF', 'TIME_PENALTY', 'RISK_DCPA_GATE_M', 'ROLE_JUDGE')
-    check('v7 SIM_SNAPSHOT_KEYS 에 4키', all(k in cfg.SIM_SNAPSHOT_KEYS for k in keys) and len(cfg.SIM_SNAPSHOT_KEYS) == 31)
+    check('v7 SIM_SNAPSHOT_KEYS 에 4키', all(k in cfg.SIM_SNAPSHOT_KEYS for k in keys) and len(cfg.SIM_SNAPSHOT_KEYS) == 33)   # 31 + 2026-10-07 판정기 토글 2
     snap = {'dyn_profile': cfg.DYN_PROFILE, 'obstacles': cfg.OBSTACLES_MODE, 'dyn': cfg.dyn_profile_constants(cfg.DYN_PROFILE),
             'radar_range': float(cfg.RADAR_RANGE), 'sim': dict(cfg.sim_constants())}
     snap['sim'].update({'FORWARD_COEF': 0.0, 'TIME_PENALTY': 0.035, 'RISK_DCPA_GATE_M': 48.0, 'ROLE_JUDGE': 'v2'})

@@ -129,6 +129,8 @@ COURSE_STEER_DEG   = _cfg.COURSE_STEER_DEG
 ROLE_V2_RESOLVE_DCPA_M    = _cfg.ROLE_V2_RESOLVE_DCPA_M
 ROLE_V2_RESOLVE_N         = _cfg.ROLE_V2_RESOLVE_N
 ROLE_V2_LATE_START_TCPA_S = _cfg.ROLE_V2_LATE_START_TCPA_S
+ROLE_V2_PRIMARY           = _cfg.ROLE_V2_PRIMARY   # ★2026-10-07 'risk'(옛) | 'cum'(조우 시작부터 위험 합 최대 = 주 상대)
+ROLE_V2_RES_F6            = _cfg.ROLE_V2_RES_F6    # ★2026-10-07 1 = '해소' 종료에도 F6 검사
 CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
 PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
 PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
@@ -398,15 +400,30 @@ def role_declaration(env, topi, valid, true_feats):
     Target = among valid slots with my_role > 0 (already dcpa < DCPA_RISK gated), the max dcpa_risk + tcpa_risk;
     ties -> nearest (topi is sorted by distance; argmax takes the first). Returns (role [E,N] long 0..4,
     pos [E,N,2] target position in the sender's body frame (starboard, forward) in metres; zeros when role 0)."""
-    my_role = true_feats[..., 8:13].argmax(dim=-1)                                   # [E,N,K] 0..4
-    cand = valid & (my_role > 0)
-    score = torch.where(cand, true_feats[..., 6] + true_feats[..., 7], torch.full_like(true_feats[..., 6], -1.0))
-    best, kstar = score.max(dim=-1)                                                  # [E,N]
-    has = best > -0.5
-    role = torch.where(has, my_role.gather(-1, kstar.unsqueeze(-1)).squeeze(-1), torch.zeros_like(kstar))
     E = topi.shape[0]
     b = torch.arange(E, device=topi.device)[:, None]
-    tgt = topi.gather(-1, kstar.unsqueeze(-1)).squeeze(-1)                           # [E,N]
+    if ROLE_V2_PRIMARY == 'cum':
+        # ★2026-10-07 판정기 v2 의 주 상대(조우 시작부터 위험 합 최대)와 그 조우의 고정 역할을 선언 — 판정·선언이 같은 상대
+        rp = getattr(env, '_rp', None)
+        if rp is None and not (ROLE_PROMISE_PEN > 0.0 or getattr(env, '_rp_on', False)):
+            raise RuntimeError("VESSEL_ROLE_V2_PRIMARY=cum 인데 판정기가 없음 — ROLE_PROMISE_PEN>0 또는 enable_role_tracker() 필요")
+        if rp is None:                       # 첫 step 전(판정기는 step 에서 만들어짐) = 진행 중 조우 없음
+            tgt = torch.zeros_like(topi[..., 0])
+            role = torch.zeros_like(tgt)
+        else:
+            if not isinstance(rp, RolePromiseTrackerV2):
+                raise RuntimeError("VESSEL_ROLE_V2_PRIMARY=cum 은 판정기 v2 에서만 (env._rp 가 v2 아님)")
+            has, tgt = rp.primary()
+            role = torch.where(has, rp.role_full().gather(-1, tgt.unsqueeze(-1)).squeeze(-1), torch.zeros_like(tgt))
+        has = role > 0
+    else:
+        my_role = true_feats[..., 8:13].argmax(dim=-1)                               # [E,N,K] 0..4
+        cand = valid & (my_role > 0)
+        score = torch.where(cand, true_feats[..., 6] + true_feats[..., 7], torch.full_like(true_feats[..., 6], -1.0))
+        best, kstar = score.max(dim=-1)                                              # [E,N]
+        has = best > -0.5
+        role = torch.where(has, my_role.gather(-1, kstar.unsqueeze(-1)).squeeze(-1), torch.zeros_like(kstar))
+        tgt = topi.gather(-1, kstar.unsqueeze(-1)).squeeze(-1)                       # [E,N]
     rel = env.pos[b, tgt] - env.pos                                                  # [E,N,2] target − sender (world x,z)
     h = env.heading * DEG
     stb = rel[..., 0] * torch.cos(h) - rel[..., 1] * torch.sin(h)
@@ -649,6 +666,8 @@ class RolePromiseTrackerV2(RolePromiseTracker):
          never turned >= ROLE_GIVEWAY_MIN_DEG to starboard                -> that ship only (omission)
     Scope: course rules (F1/F2/F6 and the dmax/dmin/so accumulators) count only on decisions where the partner is the
       ship's PRIMARY partner = argmax of the 300 m reward risk (pw['risk'], ungated); safety (F4/F5) is pairwise.
+      ★2026-10-07 ROLE_V2_PRIMARY='cum': PRIMARY = the active encounter with the largest sum of pw['risk'] (own view)
+      since it started (self.cum); ROLE_V2_RES_F6=1: F6 is also checked when a pair ends by 'resolve'.
     Resolve: dcpa >= ROLE_V2_RESOLVE_DCPA_M for ROLE_V2_RESOLVE_N decisions in a row while tcpa > RULE_17B_TIME
       -> the pair ends as SUCCESS (no bonus, no penalty).
     Late start: a pair that starts with tcpa < ROLE_V2_LATE_START_TCPA_S is judged on safety only.
@@ -669,6 +688,18 @@ class RolePromiseTrackerV2(RolePromiseTracker):
         self.res = zf()                              # 해소 연속 카운터
         self.f_i, self.f_j = zb(), zb()              # 위반자 표시(둘 다면 둘 다)
         self.fail_type = torch.zeros(E, N, N, device=dev, dtype=torch.long)
+        self.cum = zf()                              # ★2026-10-07 [i,j] = 조우 시작부터 i 시각 위험 합(ROLE_V2_PRIMARY='cum')
+
+    def primary(self):
+        """(has [E,N] bool, idx [E,N] long): ship i's primary partner under ROLE_V2_PRIMARY='cum' = among its active
+        encounters, the one with the largest risk sum since the start (self.cum, i's own view)."""
+        actf = self.active | self.active.transpose(1, 2)
+        mx, arg = torch.where(actf, self.cum, torch.full_like(self.cum, -1.0)).max(dim=-1)
+        return mx > 0, arg
+
+    def role_full(self):
+        """[E,N,N] long: frozen role of the row ship toward the column ship (pairs live in the upper triangle)."""
+        return torch.where(self.upper, self.role_i, self.role_j.transpose(1, 2))
 
     def update(self, env, pw, outcome):
         R = float(COMM_RANGE)
@@ -678,9 +709,15 @@ class RolePromiseTrackerV2(RolePromiseTracker):
         hi = env.heading[:, :, None].expand(-1, -1, N)
         hj = env.heading[:, None, :].expand(-1, N, -1)
         # 주 상대(300 m 보상 risk argmax, 게이트 전 값). prim_row[e,i,j] = j 가 i 의 주 상대 · prim_col[e,i,j] = i 가 j 의 주 상대
-        _mx, _arg = pw['risk'].max(dim=-1)                                  # [E,N]
+        if ROLE_V2_PRIMARY == 'cum':                                        # ★2026-10-07 조우 시작부터 위험 합 최대
+            actf = act | act.transpose(1, 2)
+            self.cum = torch.where(actf, self.cum + pw['risk'], self.cum)
+            _has, _arg = self.primary()
+        else:
+            _mx, _arg = pw['risk'].max(dim=-1)                              # [E,N]
+            _has = _mx > 0
         _idx = torch.arange(N, device=self.device).view(1, 1, N)
-        prim_row = (_mx > 0)[:, :, None] & (_arg[:, :, None] == _idx)
+        prim_row = _has[:, :, None] & (_arg[:, :, None] == _idx)
         prim_col = prim_row.transpose(1, 2)
         pi, pj = act & prim_row, act & prim_col
         self.wp_i, self.wp_j = self.wp_i | pi, self.wp_j | pj
@@ -726,8 +763,9 @@ class RolePromiseTrackerV2(RolePromiseTracker):
         end_norm = act & (~dany) & ((self.cpa >= ROLE_END_CPA) | (self.far >= ROLE_END_FAR))
         end_res = live & (~fail_now) & (~dany) & (~end_norm) & (self.res >= ROLE_V2_RESOLVE_N)   # 해소 = 성공 종료
         endj = end_norm & (self.n >= ROLE_MIN_STEPS)
-        F6_i = endj & course & (~fail_now) & give_i & self.wp_i & (self.dmax_i < ROLE_GIVEWAY_MIN_DEG)
-        F6_j = endj & course & (~fail_now) & give_j & self.wp_j & (self.dmax_j < ROLE_GIVEWAY_MIN_DEG)
+        endF6 = (endj | end_res) if ROLE_V2_RES_F6 else endj        # ★2026-10-07 해소 종료에도 F6
+        F6_i = endF6 & course & (~fail_now) & give_i & self.wp_i & (self.dmax_i < ROLE_GIVEWAY_MIN_DEG)
+        F6_j = endF6 & course & (~fail_now) & give_j & self.wp_j & (self.dmax_j < ROLE_GIVEWAY_MIN_DEG)
         chg_i = F1_i | F2_i | F4 | F5 | F6_i           # i(행) 가 벌점을 받는 쌍
         chg_j = F1_j | F2_j | F4 | F5 | F6_j           # j(열) 가 벌점을 받는 쌍
         n_fail = chg_i.to(self.dtype).sum(dim=2) + chg_j.to(self.dtype).sum(dim=1)
@@ -774,6 +812,8 @@ class RolePromiseTrackerV2(RolePromiseTracker):
         self.so_i, self.so_j = torch.where(start, zf, self.so_i), torch.where(start, zf, self.so_j)
         self.cpa, self.far = torch.where(start, zf, self.cpa), torch.where(start, zf, self.far)
         self.res = torch.where(start, zf, self.res)
+        if ROLE_V2_PRIMARY == 'cum':
+            self.cum = torch.where(start | start.transpose(1, 2), zf, self.cum)
         self.mind = torch.where(start, dist, self.mind)
         self.n = torch.where(start, torch.ones_like(zf), self.n)
         self.t_start = torch.where(start, torch.full_like(self.t_start, self.t), self.t_start)

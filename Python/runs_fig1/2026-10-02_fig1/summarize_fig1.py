@@ -21,7 +21,8 @@ MAIN = [('vColl', '배끼리 충돌 %', -1, 12.1), ('goal', '도착 %', +1, 0.0)
         ('w_score', 'COLREGs(Woerner) %', +1, 0.0), ('fuel', '연료(도착 ep)', -1, 0.0),
         ('fleet_fuel', '도착 1회당 함대 연료', -1, 0.0)]
 POOL_KEYS = ('goal', 'vColl', 'dcpa')
-AUX = [('head', '방향 바꾼 총량 °', -1, 0.0), ('rud_trav', '타 이동량 °/ep', -1, 0.0), ('C', '옛 COLREGs %', +1, 0.0),
+AUX = [('head', '방향 바꾼 총량 °', -1, 0.0), ('rud_trav', '타 이동량 °/ep', -1, 0.0), ('rud_abs', '평균 타각 크기 °', -1, 0.0),  # rud_abs ★2026-10-07 (c 궤적)
+       ('C', '옛 COLREGs %', +1, 0.0),
        ('TO', '시간초과 %', -1, 0.0), ('oColl', '벽 충돌 %', -1, 0.0), ('epReward', 'epReward', +1, 0.0)]
 
 

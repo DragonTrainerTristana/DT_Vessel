@@ -567,6 +567,16 @@ assert ROLE_JUDGE in ('end', 'v2'), f"VESSEL_ROLE_JUDGE={ROLE_JUDGE!r} - 'end' |
 ROLE_V2_RESOLVE_DCPA_M = 30.0   # 해소: tcpa > 17(b) 구간에서 dcpa ≥ 이것이 연속 ROLE_V2_RESOLVE_N 결정 → 성공 종료
 ROLE_V2_RESOLVE_N = 5
 ROLE_V2_LATE_START_TCPA_S = 28.0   # 시작 tcpa < 이것이면 안전(24 m·충돌)만 판정(침로 기준 면제)
+# ★2026-10-07 n_ 배치(스펙 docs/superpowers/specs/2026-10-07-pure-rl-fig1-design.md). 기본 = 비트동일
+#   ROLE_V2_PRIMARY: 판정기 v2 주 상대 'risk'(매 결정 300 m 위험 최대 — 옛) | 'cum'(진행 중 조우 가운데 시작부터 위험 합 최대).
+#                    'cum' 이면 메시지 역할 선언(vessel_gym.role_declaration)도 같은 주 상대를 선언함
+#   ROLE_V2_RES_F6 : 1 이면 양보 역할(정면·교차 양보)이 '해소'로 닫힐 때도 F6(우현 ROLE_GIVEWAY_MIN_DEG 이상 변침 없음) 검사
+ROLE_V2_PRIMARY = _env_str('VESSEL_ROLE_V2_PRIMARY', 'risk').lower()
+ROLE_V2_RES_F6 = _env_int('VESSEL_ROLE_V2_RES_F6', 0)
+assert ROLE_V2_PRIMARY in ('risk', 'cum'), f"VESSEL_ROLE_V2_PRIMARY={ROLE_V2_PRIMARY!r} - 'risk' | 'cum'"
+assert ROLE_V2_RES_F6 in (0, 1), f"VESSEL_ROLE_V2_RES_F6={ROLE_V2_RES_F6} - 0 | 1"
+assert (ROLE_V2_PRIMARY == 'risk' and ROLE_V2_RES_F6 == 0) or ROLE_JUDGE == 'v2', \
+    "VESSEL_ROLE_V2_PRIMARY=cum · VESSEL_ROLE_V2_RES_F6=1 은 VESSEL_ROLE_JUDGE=v2 에서만"
 MAX_EPISODE_STEPS = int(os.environ.get('VESSEL_MAX_EP_STEPS', os.environ.get('VESSEL_MAX_STEP', '45000')))   # 물리스텝. C# VESSEL_MAX_STEP 이름 호환 폴백
 COLLISION_PENALTY = _env_float('VESSEL_COLLISION_PENALTY', -300.0)
 FUEL_COEF = _env_float('VESSEL_FUEL_COEF', 0.02)
@@ -635,6 +645,7 @@ SIM_SNAPSHOT_KEYS = (
     'FARPAIR_COEF', 'FARPAIR_EXP', 'REWARD_RANGE', 'COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE',
     'ROLE_PROMISE_PEN',
     'FORWARD_COEF', 'TIME_PENALTY', 'RISK_DCPA_GATE_M', 'ROLE_JUDGE',   # ★2026-09-30 보상 v3 (+4 = 31)
+    'ROLE_V2_PRIMARY', 'ROLE_V2_RES_F6',                                # ★2026-10-07 n_ 판정기 (+2 = 33)
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',

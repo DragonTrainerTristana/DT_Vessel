@@ -34,6 +34,8 @@
   결정(사전등록 §4, 결과 전 고정): v3 통과 → v3 로 진행 / v3 실패 & v3nogate 통과 → 'DECISION: run without DCPA gate' /
         둘 다 실패 → 'DECISION: stop, report'. rc 0 = v3 또는 v3nogate 통과. old·s 에도 같은 규칙을 찍지만 기록만.
 
+  ★2026-10-07 설정 v4 = v3 + VESSEL_ROLE_V2_PRIMARY=cum + VESSEL_ROLE_V2_RES_F6=1. v4 를 돌리면 판정 = v4 통과 여부 하나
+        ('DECISION: run v4' / 'DECISION: stop, report'). n_ 배치는 --settings v3,v4 로 부름(v3 는 기록용)
   python verify/check_reward_rank.py --out <json>          # 마지막 줄 'RANK GATE v2: PASS' 여야 함. rc 0/1(불통과)/2(자식 중단)
   env: 학습 배치와 같은 VESSEL_*(imo·none·COMM_RANGE 300·COLREGS_FAR_RANGE 0 …) 를 부모에서 물려받는다. 설정 키 5개만 설정별로 덮어씀.
   --settings old,s 처럼 일부만 돌리면 v3·v3nogate 없이는 판정 없음(SKIP, rc 1). --jobs N 으로 설정 서브프로세스를 동시에.
@@ -57,20 +59,24 @@ OTHERS = tuple(p for p in POLICIES if p not in AVOIDERS)      # 나머지 10
 BASE3 = ('goal', 'stbd', 'radar')                              # (ii) 기준선
 # 설정 → 자식 env(키 이름은 config.py 의 _env_* 이름 그대로 — ENV2CFG 로 실제 읽힌 값과 대조)
 _LEGACY = {'VESSEL_ROLE_JUDGE': 'end', 'VESSEL_FORWARD_COEF': '0.1', 'VESSEL_TIME_PENALTY': '0.07',
-           'VESSEL_RISK_DCPA_GATE_M': '0'}
+           'VESSEL_RISK_DCPA_GATE_M': '0', 'VESSEL_ROLE_V2_PRIMARY': 'risk', 'VESSEL_ROLE_V2_RES_F6': '0'}
 _V3 = {'VESSEL_ROLE_PROMISE_PEN': '20', 'VESSEL_ROLE_JUDGE': 'v2', 'VESSEL_FORWARD_COEF': '0',
-       'VESSEL_TIME_PENALTY': '0.035', 'VESSEL_RISK_DCPA_GATE_M': '48'}
+       'VESSEL_TIME_PENALTY': '0.035', 'VESSEL_RISK_DCPA_GATE_M': '48',
+       'VESSEL_ROLE_V2_PRIMARY': 'risk', 'VESSEL_ROLE_V2_RES_F6': '0'}
 SETTINGS = {
     'old': dict(_LEGACY, VESSEL_ROLE_PROMISE_PEN='0'),
     's': dict(_LEGACY, VESSEL_ROLE_PROMISE_PEN='20'),
     'v3': dict(_V3),
     'v3nogate': dict(_V3, VESSEL_RISK_DCPA_GATE_M='0'),
+    # ★2026-10-07 n_ 배치(스펙 2026-10-07-pure-rl-fig1-design.md 관문 2): v3 + 누적 주 상대 + 해소 종료 F6
+    'v4': dict(_V3, VESSEL_ROLE_V2_PRIMARY='cum', VESSEL_ROLE_V2_RES_F6='1'),
 }
-SETTING_ORDER = ('old', 's', 'v3', 'v3nogate')
-JUDGED = ('v3', 'v3nogate')                                    # 판정 대상. old·s 는 기록만
+SETTING_ORDER = ('old', 's', 'v3', 'v3nogate', 'v4')
+JUDGED = ('v3', 'v3nogate', 'v4')                              # 판정 대상. old·s 는 기록만
 ENV2CFG = {'VESSEL_ROLE_PROMISE_PEN': 'ROLE_PROMISE_PEN', 'VESSEL_ROLE_JUDGE': 'ROLE_JUDGE',
            'VESSEL_FORWARD_COEF': 'FORWARD_COEF', 'VESSEL_TIME_PENALTY': 'TIME_PENALTY',
-           'VESSEL_RISK_DCPA_GATE_M': 'RISK_DCPA_GATE_M'}
+           'VESSEL_RISK_DCPA_GATE_M': 'RISK_DCPA_GATE_M',
+           'VESSEL_ROLE_V2_PRIMARY': 'ROLE_V2_PRIMARY', 'VESSEL_ROLE_V2_RES_F6': 'ROLE_V2_RES_F6'}
 REL_MARGIN = 0.05        # (i)(iii): min(회피) − max(나머지) > 0.05·|max|  (부호 무관 여유)
 RDEC_MARGIN = 0.05       # (ii): vo56 − max(goal, stbd, radar) ≥ 0.05
 LAZY_MARGIN = 0.2        # (ii): drift·idle < goal − 0.2
@@ -393,7 +399,12 @@ def main():
         else:
             print(f"RANK GATE v2 [{s}] (기록만): {n_ok}/{len(verdict[s])} seeds 가 규칙 (i)–(v) 전부 성립, judge={res[s]['judge']}")
     v3_ok, ng_ok = passed.get('v3', False), passed.get('v3nogate', False)
-    if not any(s in res for s in JUDGED):
+    if 'v4' in res:
+        # ★2026-10-07 v4 를 돌렸으면 v4 하나로 판정(n_ 배치 보상). 대체 경로 없음 — 불통과면 멈추고 보고
+        gate = passed['v4']
+        decision = 'DECISION: run v4' if gate else 'DECISION: stop, report'
+        print(f"RANK GATE v2: {'PASS' if gate else '★FAIL'}  (v4 {'PASS' if gate else 'FAIL'})")
+    elif not any(s in res for s in JUDGED):
         gate, decision = False, 'DECISION: 없음 — v3·v3nogate 를 안 돌렸음(기록만)'
         print('RANK GATE v2: SKIP (v3·v3nogate 미실행)')
     else:
@@ -404,7 +415,7 @@ def main():
               f"v3nogate {'PASS' if ng_ok else 'FAIL' if 'v3nogate' in res else '미실행'})")
     print(decision)
     res['verdict'] = verdict
-    res['gate'] = {'v3': v3_ok, 'v3nogate': ng_ok, 'pass': gate, 'decision': decision}
+    res['gate'] = {'v3': v3_ok, 'v3nogate': ng_ok, 'v4': passed.get('v4'), 'pass': gate, 'decision': decision}
     res['args'] = {'seeds': a.seeds, 'E': a.E, 'burn': a.burn, 'T': a.T, 'device': a.device, 'settings': settings,
                    'policies': POLICIES, 'avoiders': AVOIDERS, 'rules': {'rel_margin': REL_MARGIN, 'rdec_margin': RDEC_MARGIN,
                                                                          'lazy_margin': LAZY_MARGIN, 'G_tail_cut': G_TAIL_CUT}}

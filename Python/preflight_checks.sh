@@ -69,6 +69,8 @@ vessel_run_checks() {
     # ★2026-09-30 보상 v3 토글(기본값 비트동일·항 값·게이트) · 판정기 v2(위반 시점·참조 구현)
     _vc_launch "보상 v3" "$OUT/_reward_v3.txt" 1 env $_o "$PY" -u "$HERE/verify/test_reward_v3.py"
     _vc_launch "역할 약속 v2" "$OUT/_role_promise_v2.txt" 1 env $_o "$PY" -u "$HERE/verify/test_role_promise_v2.py"
+    # ★2026-10-07 판정기 v2 토글(누적 주 상대·해소 종료 F6) — n_ 배치 보상
+    _vc_launch "판정기 v2 토글" "$OUT/_role_v2_cum.txt" 1 env $_o "$PY" -u "$HERE/verify/test_role_v2_cum.py"
   else
     echo "  (VESSEL_SKIP_GOLDEN=1 — 골든·충실도·동역학·sim·COMM_EXT 건너뜀, 미러만)"
   fi

@@ -19,6 +19,10 @@
 #   bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1                     # phase1 만 다시
 #   ★2026-10-06 P0 불통과여도 저자 결정으로 phase1 진행: VESSEL_F_P0_OVERRIDE="<저자 결정 문구>" 를 앞에 붙임
 #     → _p0_override.txt 에 문구·시각·P0 판정 줄을 남기고 _fig1.md 맨 위에 그대로 적음(_p0.md 는 안 건드림). trunk 관문 이후는 그대로
+# ★2026-10-07 배치 n_ (스펙 docs/superpowers/specs/2026-10-07-pure-rl-fig1-design.md, 저자 승인): 흉내 없는 순수 PPO
+#   VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1
+#   → preflight(smoke) · 순위 관문 v4 · trunk 처음부터(DAgger·흉내 보조손실 없음) · 관문 · 코덱 · 갈래(흉내 없음) · 평가 · 곡선(M) · 표.
+#   보상 = v3 + VESSEL_ROLE_V2_PRIMARY=cum(누적 주 상대) + VESSEL_ROLE_V2_RES_F6=1(해소 종료에도 F6). phase0 없음
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
@@ -29,6 +33,12 @@ R=${VESSEL_F_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)} || { echo "★�
 IDROP=$BUNDLE/2026-10-02_imitation                            # summarize_p0.py
 SDROP=$BUNDLE/2026-10-01_scripted                             # eval_scripted.py (+ colregs_*.py)
 PRE=${VESSEL_F_PREFIX:-f_}
+IMIT=${VESSEL_F_IMIT:-1}                # ★2026-10-07 0 = 흉내 없음(n_ 배치)
+case "$IMIT" in 0|1) ;; *) echo "★멈춤: VESSEL_F_IMIT=$IMIT — 0 | 1"; exit 1 ;; esac
+if [ "$IMIT" = 0 ]; then
+  case "$PRE" in f_|f2_) echo "★멈춤: VESSEL_F_IMIT=0 은 새 접두어로(VESSEL_F_PREFIX=n_) — f_·f2_ 결과와 섞지 않음"; exit 1 ;; esac
+  [ "$MODE" = phase1 ] || { echo "★멈춤: VESSEL_F_IMIT=0 은 phase1 만(phase0 = DAgger·P0)"; exit 1; }
+fi
 OFF_T=vo56h150                          # 위 주석(스펙 §5 규칙 적용 결과)
 COMM_T=vo300i
 SEEDS_ALL="43 44 45 46 47"
@@ -60,9 +70,11 @@ export VESSEL_BRANCH_WARMUP=2400
 unset VESSEL_REQUIRE_TRUNK VESSEL_REUSE_ARMS VESSEL_SKIP_GOLDEN VESSEL_SEEDS VESSEL_NGPU
 unset VESSEL_USE_COMM VESSEL_COMM_FIELDS VESSEL_COMM_LATENT VESSEL_PARTNER_RANGE VESSEL_AUX_LOSS_SCALE
 unset VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC
+unset VESSEL_ROLE_V2_PRIMARY VESSEL_ROLE_V2_RES_F6
 export VESSEL_RUN_PREFIX=$PRE VESSEL_ROLE_PROMISE_PEN=20 VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full
 export VESSEL_ROLE_JUDGE=v2 VESSEL_FORWARD_COEF=0 VESSEL_TIME_PENALTY=0.035 VESSEL_RISK_DCPA_GATE_M=48
 export VESSEL_ACTION_MODE=course
+[ "$IMIT" = 0 ] && export VESSEL_ROLE_V2_PRIMARY=cum VESSEL_ROLE_V2_RES_F6=1   # ★2026-10-07 n_ 보상 = v3 + 판정기 토글 2
 export VESSEL_OUT_DIR=$PWD/_repro_out_${PRE%_}
 CK=$VESSEL_CKPT_DIR
 O=$VESSEL_OUT_DIR; TL=$O/_timeline.txt; mkdir -p "$O" "$O/codec" "$CK"
@@ -188,10 +200,16 @@ trunk_all() {
     for s in $SEEDS_ALL; do
       [ -f "$CK/${PRE}trunk_d6_s$s.pt" ] && continue
       rm -f "$O/${PRE}trunk_d6_s$s.csv" "$O/${PRE}trunk_d6_s$s"_aux.csv "$O/${PRE}trunk_d6_s$s"_ep.csv
+      if [ "$IMIT" = 0 ]; then   # ★2026-10-07 처음부터 순수 PPO(초기 모델 = 학습기 기본 초기화, 선생님 없음)
+        launch 3000 "$O/${PRE}trunk_d6_s$s.log" bash -c "$ENV_ARPA
+          '$PY' -u vessel_gym_train.py --arm ON --steps $BRANCH_AT --comm_on_at 0 \
+            $TARGS --seed $s --ckpt_every 2 --save '$CK/${PRE}trunk_d6_s$s.pt' --csv '$O/${PRE}trunk_d6_s$s.csv'"
+      else
       launch 3000 "$O/${PRE}trunk_d6_s$s.log" bash -c "$ENV_ARPA
         export VESSEL_BC_TEACHER=$OFF_T VESSEL_BC_COEF=1.0 VESSEL_BC_DECAY_DEC=$BC_DECAY
         '$PY' -u vessel_gym_train.py --arm ON --resume '$CK/${PRE}dagger_d6_s$s.pt' --resume_at 0 --steps $BRANCH_AT --comm_on_at 0 \
           $TARGS --seed $s --ckpt_every 2 --save '$CK/${PRE}trunk_d6_s$s.pt' --csv '$O/${PRE}trunk_d6_s$s.csv'"
+      fi
     done
     wait_all; kill $wp 2>/dev/null
     local miss=0; for s in $SEEDS_ALL; do [ -f "$CK/${PRE}trunk_d6_s$s.pt" ] || miss=1; done
@@ -252,8 +270,10 @@ branch_one() {   # branch_one <off|comm|offb> <seed>
   cp "$O/${PRE}trunk_d6_s$s.csv" "$O/$run.csv"
   [ -f "$O/${PRE}trunk_d6_s${s}_aux.csv" ] && cp "$O/${PRE}trunk_d6_s${s}_aux.csv" "$O/${run}_aux.csv"
   [ -f "$O/${PRE}trunk_d6_s${s}_ep.csv" ] && cp "$O/${PRE}trunk_d6_s${s}_ep.csv" "$O/${run}_ep.csv"
+  local bcset="export VESSEL_BC_TEACHER=$teach VESSEL_BC_COEF=1.0 VESSEL_BC_DECAY_DEC=$BC_DECAY"
+  [ "$IMIT" = 0 ] && bcset="unset VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC"   # ★2026-10-07 갈래도 흉내 없음
   launch 3000 "$O/$run.log" bash -c "$envset
-    export VESSEL_BC_TEACHER=$teach VESSEL_BC_COEF=1.0 VESSEL_BC_DECAY_DEC=$BC_DECAY
+    $bcset
     '$PY' -u vessel_gym_train.py --arm ON --resume '$CK/${PRE}trunk_d6_s$s.pt' --resume_at $BRANCH_AT --comm_on_at $BRANCH_AT \
       --resume_warmup $wu --steps $TOTAL $TARGS --seed $s --ckpt_every 2 --save '$CK/$run.pt' --csv '$O/$run.csv'"
 }
@@ -286,6 +306,29 @@ eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scri
   done; done
   wait_all
 }
+rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순위 관문, 설정 v4 하나로 판정. 불통과 = 멈추고 보고
+  "$PY" -u verify/check_reward_rank.py --settings v4 --jobs 1 --out "$O/_rank_v4.json"; local rc=$?
+  [ $rc -eq 0 ] || echo "★FAIL 순위 관문 v4 rc=$rc"
+  return $rc
+}
+curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
+  : > "$O/_status_f.txt"; local s a f x run envset
+  for s in $SEEDS; do for run in trunk_d6 off comm offb; do
+    if [ "$run" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
+    for f in "$CK/${PRE}${run}_s$s".step*M.pt "$CK/${PRE}${run}_s$s.pt"; do
+      [ -f "$f" ] || continue
+      case "$f" in *.step*M.pt) x=$(echo "$f" | sed -E 's/.*\.step([0-9.]+)M\.pt$/\1/') ;;
+                   *) [ "$run" = trunk_d6 ] && x=$(awk "BEGIN{print $BRANCH_AT/1e6}") || x=$(awk "BEGIN{print $TOTAL/1e6}") ;; esac
+      grep -q "epReward=" "$O/curve_${PRE}${run}_s${s}_${x}M.txt" 2>/dev/null && continue
+      launch 2500 "$O/curve_${PRE}${run}_s${s}_${x}M.txt" bash -c "$envset
+        '$PY' -u eval/eval_ckpt.py --ckpt '$f' --arm ON --envs 256 --eval_decisions 3000 --burnin 2400 --drain 3000 --seed 999"
+    done
+  done; done
+  wait_all
+  "$PY" "$HERE/curve_fig1.py" "$O" "$PRE" > "$O/_curve.md" 2>&1; local rc=$?
+  cat "$O/_curve.md"; cp "$O/_curve.md" "$O/${PRE}curve.csv" "$RES/" 2>/dev/null; cp "$O/${PRE}curve.pdf" "$RES/" 2>/dev/null
+  return $rc
+}
 fig1_table() {
   sync_out
   { [ -f "$O/_p0_override.txt" ] && { cat "$O/_p0_override.txt"; echo; }
@@ -294,7 +337,10 @@ fig1_table() {
   return $rc
 }
 phase1() {
-  if ! grep -q "P0 판정: 통과" "$O/_p0.md" 2>/dev/null; then
+  if [ "$IMIT" = 0 ]; then   # ★2026-10-07 흉내 없음: P0 대신 preflight + 순위 관문 v4
+    step smoke env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+    step rank  rank_v4
+  elif ! grep -q "P0 판정: 통과" "$O/_p0.md" 2>/dev/null; then
     [ -f "$O/_p0.md" ] && [ -n "${VESSEL_F_P0_OVERRIDE:-}" ] || { log "★멈춤: P0 통과 기록 없음($O/_p0.md) — phase0 먼저(불통과를 저자 결정으로 넘기려면 VESSEL_F_P0_OVERRIDE)"; exit 1; }
     if [ ! -f "$O/_p0_override.txt" ]; then
       { echo "> ★ P0(흉내 관문, 스펙 §4-2) 불통과 — 저자 결정으로 phase1 진행 ($(date '+%F %T'))"
@@ -310,11 +356,12 @@ phase1() {
   step codec    codec_all
   step branches branches_all
   step eval     eval_all
+  [ "$IMIT" = 0 ] && step curve curve_all
   step fig1     fig1_table
   log "phase1 완료 — 결과 $RES/_fig1.md"
 }
 
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all

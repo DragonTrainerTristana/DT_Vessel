@@ -4,6 +4,7 @@
 - 스펙: `docs/superpowers/specs/2026-10-02-fig1-latent-design.md`
 - 실행(Git Bash, 클론 루트, 브랜치 `feat/fig1-latent`, 얕은 클론 금지):
   - `VESSEL_F_AUTO1=1 bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase0`
+  - ★2026-10-07 배치 n_(흉내 없음, 스펙 `docs/superpowers/specs/2026-10-07-pure-rl-fig1-design.md`): `VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1`
   - python 경로가 `$HOME/anaconda3/envs/mltest/python.exe` 가 아니면 `VESSEL_PY=<경로>` 를 앞에 붙임
 - 결과: `Python/_repro_out_f/` (git 밖). `$HOME/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/` 가 있으면 표·로그 사본을 그 `out/` 에도 씀
 - 폴더 구성 = Dropbox `runs/` 와 같은 상대 경로(스크립트끼리 `../` 로 서로 import)
