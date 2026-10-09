@@ -24,6 +24,9 @@
 #   성공 뒤 확증(시드 3개): VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n3_ VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3 bash ... phase1
 #   → preflight(smoke) · 순위 관문 v4 · trunk 처음부터(DAgger·흉내 보조손실 없음) · 관문 · 코덱 · 갈래(흉내 없음) · 평가 · 곡선(M) · 표.
 #   보상 = v3 + VESSEL_ROLE_V2_PRIMARY=cum(누적 주 상대) + VESSEL_ROLE_V2_RES_F6=1(해소 종료에도 F6). phase0 없음
+#   ★2026-10-09 순위 관문 v4 불통과(10-07, 기록 _rank_v4.json)를 저자 결정으로 넘김: VESSEL_F_RANK_OVERRIDE="<저자 결정 문구>" 를 앞에 붙임
+#     → 관문이 한 번 돌아 기록이 있을 때만 통함. _rank_override.txt 에 문구·시각·판정 줄을 남기고 _fig1.md 맨 위에 적음. 관문 재실행 없음
+#     관문 자체는 타각 모드(VESSEL_ACTION_MODE=rudder)로 잼 — 규칙 배 14종이 타각 단위 행동이라 침로 모드 env 에서는 엉뚱하게 움직였음(10-07 결함)
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
@@ -94,7 +97,7 @@ if [ -f "$O/_commit.txt" ]; then
   _c0=$(head -1 "$O/_commit.txt")
   if [ "$_c0" != "$HEAD_NOW" ]; then
     # ★2026-10-06 실행 묶음(Python/runs_fig1)만 바뀐 커밋이면 계속(학습·평가 코드 동일). 그 밖의 변경이면 멈춤
-    if git -C "$R" diff --quiet "$_c0" HEAD -- . ':(exclude)Python/runs_fig1'; then
+    if git -C "$R" diff --quiet "$_c0" HEAD -- . ':(exclude)Python/runs_fig1' ':(exclude)docs'; then   # ★2026-10-09 스펙 기록도 학습 코드 아님
       grep -q "$HEAD_NOW" "$O/_commit.txt" || echo "$HEAD_NOW runs_fig1-only $(date '+%F %T')" >> "$O/_commit.txt"
     else
       echo "★멈춤: 이 배치는 $_c0 로 시작 — 지금 HEAD $HEAD_NOW 는 학습·평가 코드가 다름 → 새 접두어(VESSEL_F_PREFIX)로"; exit 1
@@ -315,7 +318,8 @@ eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scri
   wait_all
 }
 rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순위 관문, 설정 v4 하나로 판정. 불통과 = 멈추고 보고
-  "$PY" -u verify/check_reward_rank.py --settings v4 --jobs 1 --out "$O/_rank_v4.json"; local rc=$?
+  # ★2026-10-09 타각 모드로 고정: 규칙 배(steer_to·goal_a0)가 타각 단위라 침로 모드 env 에서는 다른 배가 됨(10-07 불통과의 결함 부분)
+  env VESSEL_ACTION_MODE=rudder "$PY" -u verify/check_reward_rank.py --settings v4 --jobs 1 --out "$O/_rank_v4.json"; local rc=$?
   [ $rc -eq 0 ] || echo "★FAIL 순위 관문 v4 rc=$rc"
   return $rc
 }
@@ -340,6 +344,7 @@ curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026
 fig1_table() {
   sync_out
   { [ -f "$O/_p0_override.txt" ] && { cat "$O/_p0_override.txt"; echo; }
+    [ -f "$O/_rank_override.txt" ] && { cat "$O/_rank_override.txt"; echo; }
     "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE"; } > "$O/_fig1.md" 2>&1; local rc=$?
   cat "$O/_fig1.md"; cp "$O/_fig1.md" "$RES/"
   return $rc
@@ -347,7 +352,17 @@ fig1_table() {
 phase1() {
   if [ "$IMIT" = 0 ]; then   # ★2026-10-07 흉내 없음: P0 대신 preflight + 순위 관문 v4
     step smoke env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
-    step rank  rank_v4
+    if grep -q " 끝 rank\$" "$TL" 2>/dev/null || [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ]; then
+      step rank  rank_v4
+    else   # ★2026-10-09 저자 결정으로 불통과 관문을 넘김 — 관문이 돌아 기록(_rank_v4.json)이 있을 때만
+      [ -f "$O/_rank_v4.json" ] || { log "★멈춤: VESSEL_F_RANK_OVERRIDE 는 순위 관문이 한 번 돌아 _rank_v4.json 이 있을 때만"; exit 1; }
+      if [ ! -f "$O/_rank_override.txt" ]; then
+        { echo "> ★ 순위 관문 v4(스펙 2026-10-07 §5-2) 불통과 — 저자 결정으로 phase1 진행 ($(date '+%F %T'))"
+          echo "> 저자 결정: $VESSEL_F_RANK_OVERRIDE"
+          grep -h "RANK GATE v2\|^DECISION" "$O/_rank.log" 2>/dev/null | sed 's/^/> /'; } > "$O/_rank_override.txt"
+      fi
+      log "★순위 관문 불통과 — 저자 결정으로 진행: $VESSEL_F_RANK_OVERRIDE"; sync_out
+    fi
   elif ! grep -q "P0 판정: 통과" "$O/_p0.md" 2>/dev/null; then
     [ -f "$O/_p0.md" ] && [ -n "${VESSEL_F_P0_OVERRIDE:-}" ] || { log "★멈춤: P0 통과 기록 없음($O/_p0.md) — phase0 먼저(불통과를 저자 결정으로 넘기려면 VESSEL_F_P0_OVERRIDE)"; exit 1; }
     if [ ! -f "$O/_p0_override.txt" ]; then
