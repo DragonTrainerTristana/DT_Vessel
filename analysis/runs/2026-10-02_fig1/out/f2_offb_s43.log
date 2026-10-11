@@ -1,0 +1,32 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+[branch] trunk = ARPA@56 m·메시지 없음 모델 → 통신 정보 없는 공통 뿌리로 인정 (스펙 2026-10-02 §2)
+[resume] f2_trunk_d6_s43.pt 에서 이어감 | 9.04M 완료분 | ValueNorm {'m1': 11.817350387573242, 'm2': 18107.095703125, 'debias': 0.9545440673828125, 'beta': 0.98, 'mean': 12.380099296569824, 'std': 137.17178344726562} | Adam 복원
+[branch] trunk=f2_trunk_d6_s43.pt sha256=80f9af099b51 branch_at=9043968 arm=ON
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[bc] 흉내 보조손실 선생님=vo56h150 coef=1.0 → 0 over 3000000 결정 (action_mode=course)
+[warmup] 재개 워밍업 2401 결정/에이전트 완료 (196s) - 학습·기록 없음
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[comm] ON at dec=9.044M (comm_on_at=9043968) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[ON] dec=9.37M | ep=321 len~1021 | goal=75.7% vColl=22.7% oColl=0.0% TO=1.6% | R=0.025 | 957 dec/s | epRet=251.705
+[ON] dec=9.70M | ep=333 len~984 | goal=71.8% vColl=27.0% oColl=0.0% TO=1.2% | R=0.145 | 972 dec/s | epRet=36.292
+[ON] dec=10.03M | ep=325 len~1008 | goal=79.4% vColl=19.7% oColl=0.0% TO=0.9% | R=0.016 | 982 dec/s | epRet=286.663
+[ON] dec=10.35M | ep=356 len~920 | goal=65.7% vColl=33.7% oColl=0.0% TO=0.6% | R=-0.031 | 979 dec/s | epRet=71.531
+[ON] dec=10.68M | ep=315 len~1040 | goal=75.2% vColl=24.1% oColl=0.0% TO=0.6% | R=0.131 | 981 dec/s | epRet=226.799
+[ON] dec=11.01M | ep=295 len~1111 | goal=76.6% vColl=22.0% oColl=0.0% TO=1.4% | R=0.131 | 980 dec/s | epRet=124.120
+[ON] dec=11.34M | ep=315 len~1040 | goal=71.1% vColl=28.6% oColl=0.0% TO=0.3% | R=0.194 | 979 dec/s | epRet=107.101
+[ON] dec=11.67M | ep=313 len~1047 | goal=75.7% vColl=23.6% oColl=0.0% TO=0.6% | R=0.333 | 980 dec/s | epRet=159.727
+[ON] dec=11.99M | ep=327 len~1002 | goal=83.8% vColl=15.3% oColl=0.0% TO=0.9% | R=0.282 | 982 dec/s | epRet=198.192
+[ON] dec=12.32M | ep=318 len~1030 | goal=73.3% vColl=26.1% oColl=0.0% TO=0.6% | R=0.252 | 1018 dec/s | epRet=238.748
+[ON] dec=12.65M | ep=306 len~1071 | goal=78.8% vColl=20.9% oColl=0.0% TO=0.3% | R=0.208 | 1031 dec/s | epRet=235.729
+[ON] dec=12.98M | ep=276 len~1187 | goal=83.3% vColl=16.7% oColl=0.0% TO=0.0% | R=0.280 | 1045 dec/s | epRet=426.955
+[ON] dec=13.30M | ep=298 len~1100 | goal=84.9% vColl=14.8% oColl=0.0% TO=0.3% | R=0.110 | 1053 dec/s | epRet=375.488
+[ON] dec=13.63M | ep=315 len~1040 | goal=78.1% vColl=21.0% oColl=0.0% TO=1.0% | R=0.203 | 1061 dec/s | epRet=227.124
+[ON] dec=13.96M | ep=337 len~972 | goal=75.7% vColl=24.3% oColl=0.0% TO=0.0% | R=0.167 | 1071 dec/s | epRet=235.567
+[ON] dec=14.29M | ep=295 len~1111 | goal=78.6% vColl=21.0% oColl=0.0% TO=0.3% | R=0.237 | 1080 dec/s | epRet=191.511
+[ON] dec=14.61M | ep=281 len~1166 | goal=75.8% vColl=22.8% oColl=0.0% TO=1.4% | R=0.034 | 1085 dec/s | epRet=179.567
+[ON] dec=14.94M | ep=313 len~1047 | goal=74.4% vColl=24.3% oColl=0.0% TO=1.3% | R=0.197 | 1093 dec/s | epRet=171.835
+[ON] dec=15.27M | ep=291 len~1126 | goal=80.1% vColl=18.6% oColl=0.0% TO=1.4% | R=0.210 | 1099 dec/s | epRet=282.574
+[ON] dec=15.60M | ep=275 len~1192 | goal=75.3% vColl=23.3% oColl=0.0% TO=1.5% | R=0.217 | 1102 dec/s | epRet=110.452
+[ON] dec=15.93M | ep=293 len~1118 | goal=76.8% vColl=21.2% oColl=0.0% TO=2.0% | R=0.296 | 1105 dec/s | epRet=164.469
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/f2_offb_s43.pt (16.06M decisions, 105.6min)

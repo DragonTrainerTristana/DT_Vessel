@@ -1,0 +1,33 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[comm] ON at dec=0.000M (comm_on_at=0) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[ON] dec=0.33M | ep=71 len~4615 | goal=0.0% vColl=0.0% oColl=0.0% TO=100.0% | R=0.159 | 3598 dec/s | epRet=-52.924
+[ON] dec=0.66M | ep=102 len~3213 | goal=0.0% vColl=19.6% oColl=0.0% TO=80.4% | R=-0.807 | 2674 dec/s | epRet=-312.556
+[ON] dec=0.98M | ep=188 len~1743 | goal=0.0% vColl=67.0% oColl=0.0% TO=33.0% | R=-0.664 | 2433 dec/s | epRet=-1083.683
+[ON] dec=1.31M | ep=173 len~1894 | goal=0.0% vColl=68.2% oColl=0.0% TO=31.8% | R=-0.927 | 2295 dec/s | epRet=-1035.929
+[ON] dec=1.64M | ep=162 len~2023 | goal=0.0% vColl=67.9% oColl=0.0% TO=32.1% | R=-1.000 | 2206 dec/s | epRet=-1031.700
+[ON] dec=1.97M | ep=199 len~1647 | goal=0.0% vColl=71.4% oColl=0.0% TO=28.6% | R=-0.906 | 2157 dec/s | epRet=-1323.904
+[ON] dec=2.29M | ep=190 len~1725 | goal=9.5% vColl=60.0% oColl=0.0% TO=30.5% | R=-0.560 | 2124 dec/s | epRet=-920.904
+[ON] dec=2.62M | ep=256 len~1280 | goal=37.9% vColl=46.1% oColl=0.0% TO=16.0% | R=-0.481 | 2098 dec/s | epRet=-610.451
+[ON] dec=2.95M | ep=251 len~1305 | goal=38.2% vColl=42.2% oColl=0.0% TO=19.5% | R=-0.455 | 2080 dec/s | epRet=-556.004
+[ON] dec=3.28M | ep=264 len~1241 | goal=37.1% vColl=51.5% oColl=0.0% TO=11.4% | R=-0.607 | 2066 dec/s | epRet=-865.147
+[ON] dec=3.60M | ep=255 len~1285 | goal=43.1% vColl=46.3% oColl=0.0% TO=10.6% | R=-0.506 | 2059 dec/s | epRet=-660.782
+[ON] dec=3.93M | ep=205 len~1598 | goal=31.7% vColl=57.6% oColl=0.0% TO=10.7% | R=-0.487 | 2050 dec/s | epRet=-935.904
+[ON] dec=4.26M | ep=230 len~1425 | goal=33.0% vColl=61.7% oColl=0.0% TO=5.2% | R=-0.849 | 2043 dec/s | epRet=-775.237
+[ON] dec=4.59M | ep=206 len~1591 | goal=30.6% vColl=61.2% oColl=0.0% TO=8.3% | R=-0.717 | 2036 dec/s | epRet=-929.613
+[ON] dec=4.92M | ep=235 len~1394 | goal=34.0% vColl=61.3% oColl=0.0% TO=4.7% | R=-0.843 | 2030 dec/s | epRet=-900.568
+[ON] dec=5.24M | ep=207 len~1583 | goal=23.2% vColl=72.5% oColl=0.0% TO=4.3% | R=-1.151 | 2025 dec/s | epRet=-918.489
+[ON] dec=5.57M | ep=185 len~1771 | goal=22.2% vColl=71.4% oColl=1.6% TO=4.9% | R=-1.133 | 2023 dec/s | epRet=-1517.188
+[ON] dec=5.90M | ep=201 len~1630 | goal=28.9% vColl=64.7% oColl=1.0% TO=5.5% | R=-0.860 | 2023 dec/s | epRet=-1309.977
+[ON] dec=6.23M | ep=153 len~2142 | goal=21.6% vColl=65.4% oColl=4.6% TO=8.5% | R=-1.115 | 2023 dec/s | epRet=-1656.378
+[ON] dec=6.55M | ep=141 len~2324 | goal=26.2% vColl=61.0% oColl=5.0% TO=7.8% | R=-0.847 | 2021 dec/s | epRet=-1717.168
+[ON] dec=6.88M | ep=217 len~1510 | goal=39.2% vColl=52.5% oColl=2.8% TO=5.5% | R=-0.900 | 2019 dec/s | epRet=-1191.645
+[ON] dec=7.21M | ep=204 len~1606 | goal=35.8% vColl=61.8% oColl=0.5% TO=2.0% | R=-0.927 | 2017 dec/s | epRet=-1126.987
+[ON] dec=7.54M | ep=200 len~1638 | goal=29.5% vColl=65.0% oColl=1.5% TO=4.0% | R=-1.120 | 2014 dec/s | epRet=-1191.977
+[ON] dec=7.86M | ep=203 len~1614 | goal=22.7% vColl=75.9% oColl=0.0% TO=1.5% | R=-1.018 | 2012 dec/s | epRet=-1384.145
+[ON] dec=8.19M | ep=173 len~1894 | goal=31.2% vColl=65.9% oColl=1.2% TO=1.7% | R=-1.098 | 2011 dec/s | epRet=-866.923
+[ON] dec=8.52M | ep=190 len~1725 | goal=24.7% vColl=71.6% oColl=0.0% TO=3.7% | R=-1.050 | 2010 dec/s | epRet=-1276.498
+[ON] dec=8.85M | ep=186 len~1762 | goal=30.6% vColl=65.6% oColl=1.1% TO=2.7% | R=-1.118 | 2008 dec/s | epRet=-1227.902
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/n_trunk_d6_s43.pt (9.04M decisions, 75.1min)

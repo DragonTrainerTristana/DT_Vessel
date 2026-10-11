@@ -1,0 +1,58 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/f2_init_d6_s43.pt (0.00M decisions, 0.0min)
+[dagger] ckpt=f2_init_d6_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[dagger] envs=128 vessels=16 ring=1.0 crossing=0 comm_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=43 dyn=imo obst=none
+[dagger] ckpt=f2_init_d6_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[dagger] teacher=vo56h150 {'R': 56.0, 'H': 150.0, 'dt': 4.0, 'intent': False} action_mode=course dyn=imo obst=none envs=128 vessels=16 D=3000 beta hold/end=500/2000 buffer=64 sgd=4x2048 lr=0.0003 w_thrust=0.1 value_updates=15 dev=cuda
+C:\work\DT_Vessel_v3\Python\imitation\dagger_init.py:238: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:837.)
+  win['loss'] += float(loss)
+[dagger] dec=  100 beta=1.00 loss=-2.6243 agree=100.0% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=42 goal=  0.0% vColl=  0.0% | 0.8min
+[dagger] dec=  200 beta=1.00 loss=-4.2641 agree= 99.0% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=58 goal=  0.0% vColl=  0.0% | 1.8min
+[dagger] dec=  300 beta=1.00 loss=-4.2627 agree= 98.1% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=45 goal=  0.0% vColl=  4.4% | 2.8min
+[dagger] dec=  400 beta=1.00 loss=-4.2634 agree= 98.0% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=61 goal=  0.0% vColl=  9.8% | 3.8min
+[dagger] dec=  500 beta=1.00 loss=-4.2640 agree= 97.7% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=54 goal=  0.0% vColl= 44.4% | 4.9min
+[dagger] dec=  600 beta=0.93 loss=-4.2630 agree= 97.2% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=62 goal=  0.0% vColl= 41.9% | 6.0min
+[dagger] dec=  700 beta=0.87 loss=-4.2670 agree= 98.0% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=66 goal= 12.1% vColl= 30.3% | 7.0min
+[dagger] dec=  800 beta=0.80 loss=-4.2672 agree= 98.4% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=244 goal= 73.8% vColl= 10.7% | 8.2min
+[dagger] dec=  900 beta=0.73 loss=-4.2677 agree= 99.1% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=331 goal= 87.9% vColl=  4.2% | 9.3min
+[dagger] dec= 1000 beta=0.67 loss=-4.2662 agree= 99.0% | student eps=1 goal=  0.0% vColl=100.0% oColl= 0.0% TO= 0.0% | teacher eps=312 goal= 85.9% vColl=  3.5% | 10.5min
+[dagger] dec= 1100 beta=0.60 loss=-4.2676 agree= 99.2% | student eps=2 goal=  0.0% vColl=100.0% oColl= 0.0% TO= 0.0% | teacher eps=242 goal= 91.3% vColl=  3.3% | 11.6min
+[dagger] dec= 1200 beta=0.53 loss=-4.2682 agree= 99.2% | student eps=6 goal=  0.0% vColl=100.0% oColl= 0.0% TO= 0.0% | teacher eps=206 goal= 85.4% vColl=  7.8% | 12.8min
+[dagger] dec= 1300 beta=0.47 loss=-4.2660 agree= 98.8% | student eps=6 goal=  0.0% vColl=100.0% oColl= 0.0% TO= 0.0% | teacher eps=188 goal= 87.8% vColl=  6.4% | 13.9min
+[dagger] dec= 1400 beta=0.40 loss=-4.2674 agree= 98.8% | student eps=5 goal=  0.0% vColl=100.0% oColl= 0.0% TO= 0.0% | teacher eps=151 goal= 90.1% vColl=  3.3% | 15.0min
+[dagger] dec= 1500 beta=0.33 loss=-4.2685 agree= 98.7% | student eps=15 goal=  6.7% vColl= 93.3% oColl= 0.0% TO= 0.0% | teacher eps=120 goal= 85.0% vColl= 13.3% | 16.1min
+[dagger] dec= 1600 beta=0.27 loss=-4.2667 agree= 98.2% | student eps=21 goal= 14.3% vColl= 85.7% oColl= 0.0% TO= 0.0% | teacher eps=132 goal= 84.1% vColl= 13.6% | 17.2min
+[dagger] dec= 1700 beta=0.20 loss=-4.2661 agree= 98.6% | student eps=33 goal= 21.2% vColl= 78.8% oColl= 0.0% TO= 0.0% | teacher eps=170 goal= 84.1% vColl= 14.1% | 18.4min
+[dagger] dec= 1800 beta=0.13 loss=-4.2674 agree= 98.5% | student eps=33 goal= 36.4% vColl= 63.6% oColl= 0.0% TO= 0.0% | teacher eps=143 goal= 83.2% vColl= 14.7% | 19.5min
+[dagger] dec= 1900 beta=0.07 loss=-4.2671 agree= 98.7% | student eps=54 goal= 38.9% vColl= 61.1% oColl= 0.0% TO= 0.0% | teacher eps=168 goal= 89.3% vColl= 10.1% | 20.6min
+[dagger] dec= 2000 beta=0.00 loss=-4.2679 agree= 98.6% | student eps=43 goal= 58.1% vColl= 41.9% oColl= 0.0% TO= 0.0% | teacher eps=155 goal= 92.9% vColl=  6.5% | 21.7min
+[dagger] dec= 2100 beta=0.00 loss=-4.2671 agree= 98.3% | student eps=52 goal= 26.9% vColl= 73.1% oColl= 0.0% TO= 0.0% | teacher eps=149 goal= 85.9% vColl= 12.1% | 22.9min
+[dagger] dec= 2200 beta=0.00 loss=-4.2663 agree= 98.1% | student eps=83 goal= 41.0% vColl= 59.0% oColl= 0.0% TO= 0.0% | teacher eps=141 goal= 91.5% vColl=  7.8% | 24.0min
+[dagger] dec= 2300 beta=0.00 loss=-4.2655 agree= 98.1% | student eps=93 goal= 44.1% vColl= 55.9% oColl= 0.0% TO= 0.0% | teacher eps=104 goal= 92.3% vColl=  5.8% | 25.1min
+[dagger] dec= 2400 beta=0.00 loss=-4.2661 agree= 97.9% | student eps=120 goal= 39.2% vColl= 60.8% oColl= 0.0% TO= 0.0% | teacher eps=81 goal= 87.7% vColl= 11.1% | 26.2min
+[dagger] dec= 2500 beta=0.00 loss=-4.2638 agree= 97.9% | student eps=111 goal= 33.3% vColl= 66.7% oColl= 0.0% TO= 0.0% | teacher eps=74 goal= 90.5% vColl=  8.1% | 27.4min
+[dagger] dec= 2600 beta=0.00 loss=-4.2647 agree= 98.0% | student eps=125 goal= 42.4% vColl= 57.6% oColl= 0.0% TO= 0.0% | teacher eps=55 goal= 87.3% vColl= 10.9% | 28.5min
+[dagger] dec= 2700 beta=0.00 loss=-4.2658 agree= 97.7% | student eps=140 goal= 40.0% vColl= 60.0% oColl= 0.0% TO= 0.0% | teacher eps=57 goal= 80.7% vColl= 17.5% | 29.6min
+[dagger] dec= 2800 beta=0.00 loss=-4.2657 agree= 97.9% | student eps=150 goal= 44.0% vColl= 56.0% oColl= 0.0% TO= 0.0% | teacher eps=42 goal= 83.3% vColl=  9.5% | 30.7min
+[dagger] dec= 2900 beta=0.00 loss=-4.2652 agree= 98.1% | student eps=125 goal= 44.8% vColl= 55.2% oColl= 0.0% TO= 0.0% | teacher eps=19 goal= 89.5% vColl=  5.3% | 31.9min
+[dagger] dec= 3000 beta=0.00 loss=-4.2640 agree= 98.2% | student eps=138 goal= 47.1% vColl= 52.9% oColl= 0.0% TO= 0.0% | teacher eps=23 goal= 65.2% vColl= 30.4% | 33.0min
+[value] update 1/15 value_loss=0.4511 ret mean=-4.4 std=40.2 | student(sampled) eps=55 goal= 52.7% vColl= 47.3% | 33.2min
+[value] update 2/15 value_loss=0.3578 ret mean=-6.8 std=52.1 | student(sampled) eps=63 goal= 49.2% vColl= 50.8% | 33.3min
+[value] update 3/15 value_loss=0.3229 ret mean=-7.4 std=60.8 | student(sampled) eps=51 goal= 37.3% vColl= 62.7% | 33.5min
+[value] update 4/15 value_loss=0.2802 ret mean=-7.4 std=66.5 | student(sampled) eps=62 goal= 58.1% vColl= 41.9% | 33.7min
+[value] update 5/15 value_loss=0.2704 ret mean=-8.1 std=70.9 | student(sampled) eps=53 goal= 34.0% vColl= 64.2% | 33.9min
+[value] update 6/15 value_loss=0.3359 ret mean=-10.7 std=77.3 | student(sampled) eps=50 goal= 52.0% vColl= 48.0% | 34.1min
+[value] update 7/15 value_loss=0.3193 ret mean=-13.0 std=82.7 | student(sampled) eps=46 goal= 52.2% vColl= 47.8% | 34.3min
+[value] update 8/15 value_loss=0.2725 ret mean=-15.4 std=88.3 | student(sampled) eps=50 goal= 44.0% vColl= 56.0% | 34.5min
+[value] update 9/15 value_loss=0.2609 ret mean=-16.8 std=92.0 | student(sampled) eps=62 goal= 51.6% vColl= 48.4% | 34.6min
+[value] update 10/15 value_loss=0.2550 ret mean=-17.9 std=94.2 | student(sampled) eps=57 goal= 50.9% vColl= 49.1% | 34.8min
+[value] update 11/15 value_loss=0.1685 ret mean=-18.0 std=94.8 | student(sampled) eps=63 goal= 58.7% vColl= 41.3% | 35.0min
+[value] update 12/15 value_loss=0.2563 ret mean=-18.6 std=96.4 | student(sampled) eps=47 goal= 74.5% vColl= 25.5% | 35.2min
+[value] update 13/15 value_loss=0.2112 ret mean=-19.8 std=98.7 | student(sampled) eps=58 goal= 48.3% vColl= 51.7% | 35.3min
+[value] update 14/15 value_loss=0.2396 ret mean=-20.6 std=100.8 | student(sampled) eps=60 goal= 53.3% vColl= 46.7% | 35.5min
+[value] update 15/15 value_loss=0.2333 ret mean=-21.5 std=103.3 | student(sampled) eps=43 goal= 60.5% vColl= 39.5% | 35.7min
+[dagger] saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/f2_dagger_d6_s43.pt (+ f2_dagger_d6_s43.imitation.json) 35.7min

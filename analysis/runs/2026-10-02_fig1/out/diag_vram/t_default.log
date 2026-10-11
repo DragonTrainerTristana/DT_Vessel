@@ -1,0 +1,22 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+C:\work\DT_Vessel_v3\Python\vessel_gym.py:842: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  z = lambda *s: torch.zeros(*s, device=self.device, dtype=self.dtype)
+[resume] f_dagger_d6_s47.pt 에서 이어감 | 0.00M 완료분 | ValueNorm {'m1': -6.198692321777344, 'm2': 3271.49169921875, 'debias': 0.26143088936805725, 'beta': 0.98, 'mean': -23.710634231567383, 'std': 109.3233642578125} | Adam 없음(재축적)
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[bc] 흉내 보조손실 선생님=vo56h150 coef=1.0 → 0 over 3000000 결정 (action_mode=course)
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[comm] ON at dec=0.000M (comm_on_at=0) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[vram] t=   15s alloc=3.08 reserved=6.40 peak_alloc=5.16 peak_reserved=6.40 GB
+[vram] t=   30s alloc=4.36 reserved=6.40 peak_alloc=5.16 peak_reserved=6.40 GB
+[vram] t=   45s alloc=3.65 reserved=8.78 peak_alloc=7.63 peak_reserved=8.78 GB
+[vram] t=   60s alloc=3.73 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=   75s alloc=4.93 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=   90s alloc=3.74 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=  105s alloc=3.30 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=  120s alloc=3.81 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=  135s alloc=3.06 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[vram] t=  150s alloc=3.67 reserved=8.79 peak_alloc=7.63 peak_reserved=8.79 GB
+[ON] dec=0.33M | ep=78 len~4201 | goal=0.0% vColl=0.0% oColl=0.0% TO=100.0% | R=0.585 | 2211 dec/s | epRet=-41.327
+saved -> C:/Users/OSH/AppData/Local/Temp/2/claude/C--Users-OSH-Dropbox-Private-Paper-Project-0702-NewVessel-Assets-Scripts/9e297c7a-7e0d-477f-98d7-1f664196ab38/scratchpad/vram/t_default_trunk.pt (0.33M decisions, 2.5min)
+[vram] END peak_alloc=7.63GB peak_reserved=8.79GB wall=152s

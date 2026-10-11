@@ -1,0 +1,18 @@
+[dagger] ckpt=f_init_d6_s47.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[dagger] envs=128 vessels=16 ring=1.0 crossing=0 comm_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=47 dyn=imo obst=none
+[dagger] ckpt=f_init_d6_s47.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[dagger] teacher=vo56h150 {'R': 56.0, 'H': 150.0, 'dt': 4.0, 'intent': False} action_mode=course dyn=imo obst=none envs=128 vessels=16 D=700 beta hold/end=500/2000 buffer=64 sgd=4x2048 lr=0.0003 w_thrust=0.1 value_updates=1 dev=cuda
+imitation/dagger_init.py:238: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:837.)
+  win['loss'] += float(loss)
+[vram] t=   15s alloc=2.73 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[vram] t=   30s alloc=0.66 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[vram] t=   45s alloc=2.60 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[dagger] dec=  100 beta=1.00 loss=-2.5425 agree=100.0% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=44 goal=  0.0% vColl=  0.0% | 0.9min
+[vram] t=   60s alloc=0.66 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[vram] t=   75s alloc=0.67 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[vram] t=   90s alloc=0.67 reserved=5.12 peak_alloc=3.23 peak_reserved=5.12 GB
+[vram] t=  105s alloc=2.89 reserved=6.33 peak_alloc=3.23 peak_reserved=6.33 GB
+[vram] t=  120s alloc=0.67 reserved=8.88 peak_alloc=3.23 peak_reserved=8.88 GB
+[dagger] dec=  200 beta=1.00 loss=-4.2638 agree= 99.2% | student eps=0 goal=  nan% vColl=  nan% oColl= nan% TO= nan% | teacher eps=58 goal=  0.0% vColl=  0.0% | 2.0min
+[vram] ABORT reserved=11.41 GB > 11 GB at t=135s

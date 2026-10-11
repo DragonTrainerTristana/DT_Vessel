@@ -1,0 +1,4 @@
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+smoke_n_off_s43.pt           OFF        43    6     131072      65536  smoke_n_trunk_d6_s43.pt (425f01b0f198)  imo/none  1:latent
+smoke_n_a6_s43.pt            ON         43    6     131072      65536  smoke_n_trunk_d6_s43.pt (425f01b0f198)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)

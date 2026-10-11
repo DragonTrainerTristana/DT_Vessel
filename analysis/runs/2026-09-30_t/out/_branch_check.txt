@@ -1,0 +1,14 @@
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+t_off_s43.pt                 OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+t_a8_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+t_a2_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+t_a4_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+t_off_s46.pt                 OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+t_a8_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+t_a2_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+t_a4_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+t_off_s47.pt                 OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+t_a8_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+t_a2_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+t_a4_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+BRANCH CHECK: ALL PASS (12개 체크포인트, trunk 3개)

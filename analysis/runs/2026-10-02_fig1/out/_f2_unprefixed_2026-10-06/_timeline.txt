@@ -1,0 +1,33 @@
+2026-10-03 14:27:06 배치 f2_ phase0 LICS-SERVER 9183a0f chore(runs_fig1): self-contained Fig1 f_ run bundle 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out action_mode=course OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_f2
+2026-10-03 14:27:06 시작 smoke
+2026-10-03 14:31:33 끝 smoke
+2026-10-03 14:31:34 시작 dagger
+2026-10-03 15:19:39 끝 dagger
+2026-10-03 15:19:40 시작 evalp0
+2026-10-03 15:53:52 끝 evalp0
+2026-10-03 15:53:52 시작 p0
+2026-10-03 15:53:54 끝 p0
+2026-10-03 15:53:55 P0 불통과 → 멈춤(스펙 §4: 재시도 없이 보고)
+2026-10-06 11:30:18 배치 f2_ phase1 LICS-SERVER 74b5988 chore(runs_fig1): logged P0 override for an author decision; allow runner-only commits mid-batch 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out action_mode=course OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_f2
+2026-10-06 11:30:18 ★P0 불통과 — 저자 결정으로 진행: 저자 결정 2026-10-06: P0 불통과(0/5, 평균 행동 76.0/23.7)지만 trunk 로 진행. trunk 관문 이후는 사전등록 그대로
+2026-10-06 11:30:18 시작 trunk
+2026-10-06 15:00:53 끝 trunk
+2026-10-06 15:00:56 시작 gate
+2026-10-06 15:01:01 끝 gate
+2026-10-06 15:01:02 갈래 시드: 43 44 45
+2026-10-06 15:01:03 시작 codec
+2026-10-06 15:14:42 끝 codec
+2026-10-06 15:14:43 시작 branches
+2026-10-06 17:04:15 배치 f2_ phase1 LICS-SERVER 74b5988 chore(runs_fig1): logged P0 override for an author decision; allow runner-only commits mid-batch 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out action_mode=course OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_f2
+2026-10-06 17:04:15 ★P0 불통과 — 저자 결정으로 진행: 저자 결정 2026-10-06: P0 불통과(0/5, 평균 행동 76.0/23.7)지만 trunk 로 진행. trunk 관문 이후는 사전등록 그대로
+2026-10-06 17:04:15 건너뜀 trunk (이미 끝남)
+2026-10-06 17:04:15 건너뜀 gate (이미 끝남)
+2026-10-06 17:04:15 갈래 시드: 43 44 45
+2026-10-06 17:04:15 건너뜀 codec (이미 끝남)
+2026-10-06 17:04:16 시작 branches
+2026-10-06 21:48:14 끝 branches
+2026-10-06 21:48:17 시작 eval
+2026-10-06 22:20:47 끝 eval
+2026-10-06 22:20:49 시작 fig1
+2026-10-06 22:20:52 끝 fig1
+2026-10-06 22:20:53 phase1 완료 — 결과 /c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/_fig1.md

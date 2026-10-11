@@ -1,0 +1,5 @@
+  PASS  default(EXT off)   base ae58b93 vs 현재 — others_msg·prelpos·행동·보상·done 30결정 torch.equal
+  PASS  EXT intent         base ae58b93 vs 현재 — others_msg·prelpos·행동·보상·done 30결정 torch.equal
+  PASS  a6 decode p6       base ae58b93 vs 현재 — others_msg·prelpos·행동·보상·done 30결정 torch.equal
+  PASS  c6 direct p6       base ae58b93 vs 현재 — others_msg·prelpos·행동·보상·done 30결정 torch.equal
+VERDICT: ALL PASS

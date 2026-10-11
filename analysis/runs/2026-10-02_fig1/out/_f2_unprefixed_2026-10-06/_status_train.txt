@@ -1,0 +1,3 @@
+smoke_f2_trunk_d6_s43 rc=0
+smoke_f2_off_s43 rc=0
+smoke_f2_a6_s43 rc=0

@@ -1,0 +1,41 @@
+[scripted] policy=vo300 VO R=300m H=150s dt=4s (true pos/vel of seen ships) | network weights NOT used; --ckpt only supplies the env snapshot
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\_utils.py:102: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  untyped_storage = torch.UntypedStorage(self.size(), device=device)
+[eval] ckpt=t_off_s43.pt ver=YUGIOH-2026-09-10 arm=OFF msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=latent groups=- latent=1.0 partner_range=None aux=1.0 comm_range=300.0 max_partners=4 snapshot=yes
+[eval] envs=8 vessels=16 ring=1.0 crossing=0 comm_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+  [t_off_s43.pt] burn-in 2/50 결정 (4%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] burn-in 4/50 결정 (8%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] burn-in 6/50 결정 (12%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] burn-in 8/50 결정 (16%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] burn-in 10/50 결정 (20%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    12/50 결정 (24%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    14/50 결정 (28%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    16/50 결정 (32%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    18/50 결정 (36%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    20/50 결정 (40%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    22/50 결정 (44%) 경과 0.0분 ETA ~0.1분
+  [t_off_s43.pt] 평가    24/50 결정 (48%) 경과 0.1분 ETA ~0.1분
+  [t_off_s43.pt] 평가    26/50 결정 (52%) 경과 0.1분 ETA ~0.1분
+  [t_off_s43.pt] 평가    28/50 결정 (56%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    30/50 결정 (60%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    32/50 결정 (64%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    34/50 결정 (68%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    36/50 결정 (72%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    38/50 결정 (76%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    40/50 결정 (80%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    42/50 결정 (84%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    44/50 결정 (88%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    46/50 결정 (92%) 경과 0.1분 ETA ~0.0분
+  [t_off_s43.pt] 평가    48/50 결정 (96%) 경과 0.1분 ETA ~0.0분
+   [censored] 창 끝 미완 에피소드 1개 (전체 미완 128개, 평균 진행 15결정), 집계 제외 (--drain N 으로 마감 가능)
+   [run] burnin=10 dec=40 drain=0 ring=1.0 crossing=0 seed=999 envs=8 vessels=16 maxp=4 dev=cuda
+   [조율/레이더 안 ≤56m] 양보-유지 쌍결정 n=0  보완(양보 우현+유지 유지)=  -    양보 우현=  -    유지 유지=  -    유지 좌현=  -    둘 다 유지=  -  
+   [조율/레이더 안 ≤56m] HeadOn 쌍결정 n=0  둘 다 우현=  -    | 역할 붙은 쌍 n=0  역할 맞물림=  -  
+   [조율/레이더 밖 56-300m] 양보-유지 쌍결정 n=1423  보완(양보 우현+유지 유지)= 15.2%  양보 우현= 40.3%  유지 유지= 41.2%  유지 좌현= 30.9%  둘 다 유지= 20.4%
+   [조율/레이더 밖 56-300m] HeadOn 쌍결정 n=0  둘 다 우현=  -    | 역할 붙은 쌍 n=1719  역할 맞물림= 87.6%
+   [조율/충돌 분해] 집계 창 안 선박 충돌 없음
+t_off_s43.pt               | no terminations
+   [fuel-diag] fuel_per_progress_m=  -    headTravel_per_len=  -  deg  fleet_fuel_per_arrival=  -    n_all=0  (fuel_sum=0.0 progress_m=0 n_goal=0)
+   [role-promise] judged n=0  roleKeptSafe=  -    both_comply=  -    safe=  -    pair_coll=0  discarded=0  started=16  pair_enc_per_ship_ep=  -    (rule: gw/ho stbd>=10deg port<=5deg, so |dpsi|<=10deg before 17b, safe>=24m)
+   [role-promise/v2] judged n=0  roleKeptSafe=  -    both_comply=  -    safe=  -    pair_coll=0  discarded=0  started=16  resolved=0  pair_enc_per_ship_ep=  -    (judge=v2)
+[scripted] policy=vo300 VO R=300m H=150s dt=4s (true pos/vel of seen ships) | scripted actor calls=50 (= every decision incl. burn-in; network never called)

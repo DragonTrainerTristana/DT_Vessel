@@ -1,0 +1,34 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+C:\work\DT_Vessel_v3\Python\vessel_gym.py:820: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  z = lambda *s: torch.zeros(*s, device=self.device, dtype=self.dtype)
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[OFF] dec=0.33M | ep=78 len~4201 | goal=0.0% vColl=0.0% oColl=0.0% TO=100.0% | R=0.486 | 5905 dec/s | epRet=-38.331
+[OFF] dec=0.66M | ep=97 len~3378 | goal=0.0% vColl=33.0% oColl=0.0% TO=67.0% | R=-0.603 | 4087 dec/s | epRet=-510.082
+[OFF] dec=0.98M | ep=231 len~1419 | goal=0.0% vColl=67.5% oColl=0.0% TO=32.5% | R=-0.548 | 3675 dec/s | epRet=-1193.284
+[OFF] dec=1.31M | ep=213 len~1538 | goal=0.0% vColl=69.5% oColl=0.0% TO=30.5% | R=-0.716 | 3456 dec/s | epRet=-1105.507
+[OFF] dec=1.64M | ep=213 len~1538 | goal=0.0% vColl=75.1% oColl=0.0% TO=24.9% | R=-0.809 | 3275 dec/s | epRet=-1079.746
+[OFF] dec=1.97M | ep=217 len~1510 | goal=0.0% vColl=71.9% oColl=1.8% TO=26.3% | R=-0.740 | 3159 dec/s | epRet=-1030.848
+[OFF] dec=2.29M | ep=214 len~1531 | goal=0.5% vColl=74.8% oColl=1.9% TO=22.9% | R=-0.644 | 3103 dec/s | epRet=-1006.090
+[OFF] dec=2.62M | ep=185 len~1771 | goal=6.5% vColl=60.5% oColl=8.1% TO=24.9% | R=-0.484 | 3040 dec/s | epRet=-796.127
+[OFF] dec=2.95M | ep=253 len~1295 | goal=5.5% vColl=35.6% oColl=43.1% TO=15.8% | R=-0.700 | 3001 dec/s | epRet=-601.930
+[OFF] dec=3.28M | ep=239 len~1371 | goal=2.1% vColl=35.1% oColl=51.0% TO=11.7% | R=-0.751 | 2976 dec/s | epRet=-803.367
+[OFF] dec=3.60M | ep=225 len~1456 | goal=2.7% vColl=38.2% oColl=54.2% TO=4.9% | R=-0.947 | 2952 dec/s | epRet=-921.577
+[OFF] dec=3.93M | ep=193 len~1698 | goal=5.7% vColl=39.4% oColl=44.6% TO=10.4% | R=-0.910 | 2931 dec/s | epRet=-970.597
+[OFF] dec=4.26M | ep=186 len~1762 | goal=4.8% vColl=45.2% oColl=38.7% TO=11.3% | R=-0.689 | 2916 dec/s | epRet=-1064.952
+[OFF] dec=4.59M | ep=148 len~2214 | goal=6.8% vColl=54.1% oColl=32.4% TO=6.8% | R=-0.448 | 2902 dec/s | epRet=-1231.924
+[OFF] dec=4.92M | ep=142 len~2308 | goal=14.1% vColl=62.0% oColl=19.0% TO=4.9% | R=-0.227 | 2893 dec/s | epRet=-1091.335
+[OFF] dec=5.24M | ep=152 len~2156 | goal=15.8% vColl=65.8% oColl=11.2% TO=7.2% | R=-0.505 | 2882 dec/s | epRet=-824.723
+[OFF] dec=5.57M | ep=175 len~1872 | goal=19.4% vColl=74.3% oColl=2.9% TO=3.4% | R=-0.472 | 2872 dec/s | epRet=-870.707
+[OFF] dec=5.90M | ep=186 len~1762 | goal=37.1% vColl=57.0% oColl=2.2% TO=3.8% | R=-0.652 | 2873 dec/s | epRet=-671.987
+[OFF] dec=6.23M | ep=235 len~1394 | goal=42.6% vColl=53.6% oColl=0.9% TO=3.0% | R=-0.742 | 2871 dec/s | epRet=-483.458
+[OFF] dec=6.55M | ep=228 len~1437 | goal=45.6% vColl=50.9% oColl=0.0% TO=3.5% | R=-0.622 | 2869 dec/s | epRet=-615.810
+[OFF] dec=6.88M | ep=257 len~1275 | goal=50.6% vColl=44.4% oColl=1.6% TO=3.5% | R=-0.813 | 2868 dec/s | epRet=-585.267
+[OFF] dec=7.21M | ep=220 len~1489 | goal=47.3% vColl=50.9% oColl=0.5% TO=1.4% | R=-0.466 | 2867 dec/s | epRet=-679.178
+[OFF] dec=7.54M | ep=208 len~1575 | goal=50.0% vColl=45.2% oColl=1.0% TO=3.8% | R=-0.596 | 2862 dec/s | epRet=-713.223
+[OFF] dec=7.86M | ep=227 len~1444 | goal=44.5% vColl=54.6% oColl=0.9% TO=0.0% | R=-0.552 | 2860 dec/s | epRet=-952.181
+[OFF] dec=8.19M | ep=204 len~1606 | goal=47.1% vColl=51.0% oColl=0.0% TO=2.0% | R=-0.646 | 2854 dec/s | epRet=-791.372
+[OFF] dec=8.52M | ep=243 len~1348 | goal=46.1% vColl=51.0% oColl=0.4% TO=2.5% | R=-0.488 | 2846 dec/s | epRet=-664.847
+[OFF] dec=8.85M | ep=260 len~1260 | goal=52.3% vColl=46.9% oColl=0.0% TO=0.8% | R=-0.467 | 2838 dec/s | epRet=-490.291
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/t_trunk_d6_s47.pt (9.04M decisions, 53.2min)

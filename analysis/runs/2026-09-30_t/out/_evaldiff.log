@@ -1,0 +1,7 @@
+  PASS  h_off_s43.pt (OFF): 기존 줄 11개 동일=True · 새 줄 2개([fuel-diag],[role-promise/v2]) 맨 끝 [fuel-diag]/[role-promise]/[role-promise/v2] 순서=True
+        [fuel-diag] fuel_per_progress_m=  -    headTravel_per_len=  -  deg  fleet_fuel_per_arrival=  -    n_all=0  (fuel_sum=0.0 progress_m=0 n_goal=0)
+        [role-promise/v2] n/a (judge=end)
+  PASS  h_a6_s43.pt (ON): 기존 줄 12개 동일=True · 새 줄 2개([fuel-diag],[role-promise/v2]) 맨 끝 [fuel-diag]/[role-promise]/[role-promise/v2] 순서=True
+        [fuel-diag] fuel_per_progress_m=  -    headTravel_per_len=  -  deg  fleet_fuel_per_arrival=  -    n_all=0  (fuel_sum=0.0 progress_m=0 n_goal=0)
+        [role-promise/v2] n/a (judge=end)
+VERDICT: ALL PASS

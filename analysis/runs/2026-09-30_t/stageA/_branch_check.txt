@@ -1,0 +1,17 @@
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+s_off_s43.pt                 OFF        43    6   16056320    9043968  s_trunk_d6_s43.pt (ca381c95024c)  imo/none  1:latent
+s_off_s44.pt                 OFF        44    6   16056320    9043968  s_trunk_d6_s44.pt (375777858fa7)  imo/none  1:latent
+s_off_s45.pt                 OFF        45    6   16056320    9043968  s_trunk_d6_s45.pt (6ac3d017d53a)  imo/none  1:latent
+  note: trunk s_trunk_d6_s43.pt (ca381c95024c): 통신 팔 없음(OFF 만) - 비교 대상 없음
+  note: trunk s_trunk_d6_s43.pt (ca381c95024c): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+  note: trunk s_trunk_d6_s44.pt (375777858fa7): 통신 팔 없음(OFF 만) - 비교 대상 없음
+  note: trunk s_trunk_d6_s44.pt (375777858fa7): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+  note: trunk s_trunk_d6_s45.pt (6ac3d017d53a): 통신 팔 없음(OFF 만) - 비교 대상 없음
+  note: trunk s_trunk_d6_s45.pt (6ac3d017d53a): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s43.pt: 파일 없음
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s43.pt: 파일 없음
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s44.pt: 파일 없음
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s44.pt: 파일 없음
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s45.pt: 파일 없음
+  FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s45.pt: 파일 없음
+BRANCH CHECK: FAIL

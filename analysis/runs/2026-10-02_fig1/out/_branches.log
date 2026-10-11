@@ -1,0 +1,20 @@
+  f2_off_s43.log → GPU 2
+  f2_off_s44.log → GPU 1
+  f2_off_s45.log → GPU 3
+  f2_comm_s43.log → GPU 0
+  f2_comm_s44.log → GPU 2
+  f2_comm_s45.log → GPU 1
+  f2_offb_s43.log → GPU 0
+  f2_offb_s44.log → GPU 3
+  f2_offb_s45.log → GPU 2
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+f2_off_s43.pt                ON         43    6   16056320    9043968  f2_trunk_d6_s43.pt (80f9af099b51)  imo/none  1:state,L0,R56,aux0
+f2_comm_s43.pt               ON         43    6   16056320    9043968  f2_trunk_d6_s43.pt (80f9af099b51)  imo/none  1:intent,L0,R300,aux0,cdc:decode:d66b7b09
+f2_offb_s43.pt               ON         43    6   16056320    9043968  f2_trunk_d6_s43.pt (80f9af099b51)  imo/none  1:state,L0,R56,aux0
+f2_off_s44.pt                ON         44    6   16056320    9043968  f2_trunk_d6_s44.pt (440c2aee24ca)  imo/none  1:state,L0,R56,aux0
+f2_comm_s44.pt               ON         44    6   16056320    9043968  f2_trunk_d6_s44.pt (440c2aee24ca)  imo/none  1:intent,L0,R300,aux0,cdc:decode:e7b740c6
+f2_offb_s44.pt               ON         44    6   16056320    9043968  f2_trunk_d6_s44.pt (440c2aee24ca)  imo/none  1:state,L0,R56,aux0
+f2_off_s45.pt                ON         45    6   16056320    9043968  f2_trunk_d6_s45.pt (0550f980a774)  imo/none  1:state,L0,R56,aux0
+f2_comm_s45.pt               ON         45    6   16056320    9043968  f2_trunk_d6_s45.pt (0550f980a774)  imo/none  1:intent,L0,R300,aux0,cdc:decode:666e8566
+f2_offb_s45.pt               ON         45    6   16056320    9043968  f2_trunk_d6_s45.pt (0550f980a774)  imo/none  1:state,L0,R56,aux0
+BRANCH CHECK: ALL PASS (9개 체크포인트, trunk 3개)

@@ -1,0 +1,54 @@
+재현 실행 [eval]
+  python      : /c/Users/OSH/anaconda3/envs/mltest/python.exe
+  체크포인트  : /c/Users/OSH/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel_v3/Python/_repro_out_t
+  시드        : 43 46 47
+  GPU 수      : 4   동시 실행: 12
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 2400)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='t_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 캐시 적중 — 같은 코드·env 로 이미 ALL PASS (2026-09-30 13:46:32). 건너뜀
+  (다시 돌리려면 VESSEL_FORCE_PREFLIGHT=1 · 지문 cd47ee9be2ee9b2afdb5)
+
+[eval] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  t_off_s43.pt                 OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+  t_offb_s43.pt                OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+  t_a6_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  t_off_s46.pt                 OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+  t_offb_s46.pt                OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+  t_a6_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  t_off_s47.pt                 OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+  t_offb_s47.pt                OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+  t_a6_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  BRANCH CHECK: ALL PASS (9개 체크포인트, trunk 3개)
+  분기 검사 ALL PASS
+  eval_t_off_s43 → GPU 1
+  eval_t_offb_s43 → GPU 1
+  eval_t_a6_s43 → GPU 1
+  eval_t_off_s46 → GPU 0
+  eval_t_offb_s46 → GPU 3
+  eval_t_a6_s46 → GPU 2
+  eval_t_off_s47 → GPU 0
+  eval_t_offb_s47 → GPU 3
+  eval_t_a6_s47 → GPU 2
+평가 완료 — 9건, 결과는 /c/work/DT_Vessel_v3/Python/_repro_out_t/eval_*.txt
+eval_t_off_s43 rc=0
+eval_t_offb_s43 rc=0
+eval_t_a6_s43 rc=0
+eval_t_a6_s46 rc=0
+eval_t_a6_s47 rc=0
+eval_t_offb_s46 rc=0
+eval_t_off_s46 rc=0
+eval_t_offb_s47 rc=0
+eval_t_off_s47 rc=0

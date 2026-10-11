@@ -1,0 +1,1 @@
+step,msg_sd,msg_eff_dim,msg_axes90,msg_sat,msg_corr,gate_ctr,gate_cri,alpha_unif,alpha_dmsg,alpha_dpos,alpha_near,act_zero,act_shuf,read_ratio,part_n,part_med,part_out,enc_alive,msg_dc,threat_r2,om_erank,label_erank,sit_rate,alpha_dext,act_zero_ext,act_zero_state,act_zero_role,act_zero_intent

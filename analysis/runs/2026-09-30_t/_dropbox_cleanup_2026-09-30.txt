@@ -1,0 +1,105 @@
+# Dropbox 정리 기록 2026-09-30 14:36 (그룹 A: 재생성되는 캐시·임시·빈 폴더·충돌/백업 사본). Dropbox 웹 '삭제된 파일'에서 30일 복구 가능
+# 루트 C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel
+Unity 캐시 Library      1216.9 MB   6951 files  Library
+Unity 임시 Temp           13.8 MB   1428 files  Temp
+Unity 로그 Logs            1.6 MB     28 files  Logs
+__pycache__              0.9 MB    162 files  Assets\Scripts\Python\__pycache__
+__pycache__              0.0 MB      1 files  Assets\Scripts\Python\astar_fig9\__pycache__
+__pycache__              0.0 MB      1 files  Assets\Scripts\Python\eval\__pycache__
+__pycache__              0.0 MB      1 files  Assets\Scripts\Python\plotting\__pycache__
+__pycache__              0.0 MB      1 files  Assets\Scripts\Python\verify\__pycache__
+__pycache__              0.2 MB     26 files  Figures\__pycache__
+__pycache__              0.0 MB      1 files  runs\m1_ablation\__pycache__
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\0_reward_curve (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.2 MB      1 files  runs\m2_ablation\Fig1_Communication\0_reward_curve (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\1_colregs_compliance (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\1_colregs_compliance (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\2_colregs_by_situation (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\2_colregs_by_situation (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\3_collision_rate (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\3_collision_rate (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\4_fuel_consumption (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\4_fuel_consumption (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\5_heading_travel (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\5_heading_travel (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\6_min_separation (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\6_min_separation (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+Dropbox 충돌 사본            0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\7_episode_length (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).pdf
+Dropbox 충돌 사본            0.1 MB      1 files  runs\m2_ablation\Fig1_Communication\7_episode_length (DESKTOP-JA8O9SS의 충돌된 사본 2026-09-11).png
+백업 .bak                  0.0 MB      1 files  runs\m2_ablation\Fig1_Communication\code\rebuild_colregs_figs.py.bak
+빈 npm 잠금파일               0.0 MB      1 files  package-lock.json
+빈 복사본 폴더                 0.0 MB      0 files  Assets\Scripts 복사본
+빈 복사본 폴더 .meta           0.0 MB      1 files  Assets\Scripts 복사본.meta
+.ua 휴지통                  2.6 MB     80 files  Assets\Scripts\.ua\.trash-1789637497
+빈 VesselNavigation_* 폴더 3826개 (파일 0개, config import 부작용) — models\COMM_YES_PHASE3_NEW
+합계 1236.9 MB, 파일 8699개 + 빈 폴더 3826개
+오류 19건(파일은 전부 지워짐 — Dropbox 동기화 중 빈 폴더 잠김, 재시도로 정리):
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\Artifacts: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\Artifacts'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.ai.navigation@78534c21b27d: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.ai.navigation@78534c21b27d'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.barracuda@82bcfb51cf28\Barracuda: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.barracuda@82bcfb51cf28\\Barracuda'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.barracuda@82bcfb51cf28: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.barracuda@82bcfb51cf28'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.mathematics@8017b507cc74\Tests\Tests: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.mathematics@8017b507cc74\\Tests\\Tests'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.mathematics@8017b507cc74\Tests: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.mathematics@8017b507cc74\\Tests'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.mathematics@8017b507cc74: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.mathematics@8017b507cc74'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.multiplayer.center@f3fb577b3546\Editor\MultiplayerCenterWindow: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.multiplayer.center@f3fb577b3546\\Editor\\MultiplayerCenterWindow'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.multiplayer.center@f3fb577b3546\Editor: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.multiplayer.center@f3fb577b3546\\Editor'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.multiplayer.center@f3fb577b3546\Tests: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.multiplayer.center@f3fb577b3546\\Tests'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache\com.unity.multiplayer.center@f3fb577b3546: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache\\com.unity.multiplayer.center@f3fb577b3546'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\PackageCache: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\PackageCache'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\ShaderCache\builtin\unity_builtin_extra0000: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\ShaderCache\\builtin\\unity_builtin_extra0000'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\ShaderCache\builtin: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\ShaderCache\\builtin'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\ShaderCache\compute\Generic62f5: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\ShaderCache\\compute\\Generic62f5'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\ShaderCache\compute: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\ShaderCache\\compute'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library\ShaderCache: [WinError 145] 디렉터리가 비어 있지 않습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library\\ShaderCache'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Library: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Library'
+  C:\Users\OSH\Dropbox\Private_Paper_Project\0702_NewVessel\Assets\Scripts\Python\__pycache__: [WinError 32] 다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다: 'C:\\Users\\OSH\\Dropbox\\Private_Paper_Project\\0702_NewVessel\\Assets\\Scripts\\Python\\__pycache__'
+
+# 그룹 B(저자 선택 4개 모두, 14:40)
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_arpa6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_arpa6_s43.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_arpa6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_arpa6_s44.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_arpa6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_arpa6_s45.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_off_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_off_s43.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_off_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_off_s44.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_off_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_off_s45.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_oni6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_oni6_s43.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_oni6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_oni6_s44.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_oni6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_oni6_s45.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_onl6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_onl6_s43.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_onl6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_onl6_s44.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_onl6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_onl6_s45.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_ons6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_ons6_s43.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_ons6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_ons6_s44.pt
+이동   21.5 MB  runs\2026-09-26_comm_ext_batch\traj_x_ons6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-26_comm_ext_batch\traj_x_ons6_s45.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s43.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s44.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_a6_s45.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s43.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s44.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_h\traj_h_off_s45.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s43.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s44.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_a6_s45.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s43.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s44.pt
+이동   21.5 MB  runs\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_far_penalty\_repro_out_v\traj_v_off_s45.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_a6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_a6_s43.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_a6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_a6_s44.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_a6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_a6_s45.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_c6_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_c6_s43.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_c6_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_c6_s44.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_c6_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_c6_s45.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_off_s43.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_off_s43.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_off_s44.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_off_s44.pt
+이동   21.5 MB  runs\2026-09-28_grounded_batch\traj_g_off_s45.pt → C:\Users\OSH\VESSEL_checkpoints\traj_archive\2026-09-28_grounded_batch\traj_g_off_s45.pt
+궤적 파일 36개 774.3 MB → C:\Users\OSH\VESSEL_checkpoints\traj_archive (runs 안 상대 경로 그대로)
+삭제 7월 옛 산출물             25.4 MB    12 files  checkpoints
+삭제 7월 옛 산출물             51.6 MB   148 files  models
+삭제 7월 옛 산출물             29.1 MB   126 files  results
+삭제 Unity 빌드             98.3 MB   159 files  Build
+삭제 백업 zip                7.8 MB     1 files  Figures.zip
+삭제 Unity 복구 씬            2.0 MB     8 files  Assets\_Recovery
+삭제 Unity 복구 씬 .meta      0.0 MB     1 files  Assets\_Recovery.meta
+삭제 테스트 체크포인트             9.4 MB     1 files  Assets\Scripts\Python\vessel_gym_OFF_s1.pt
+삭제 테스트 체크포인트            10.3 MB     1 files  Assets\Scripts\Python\vessel_gym_ON_s1.pt
+삭제 테스트 체크포인트             5.1 MB     1 files  Assets\Scripts\Python\vessel_gym_ON_s42.pt
+삭제 합계 239.0 MB, 파일 458개

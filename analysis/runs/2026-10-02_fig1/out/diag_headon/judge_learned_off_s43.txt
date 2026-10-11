@@ -1,0 +1,139 @@
+[scripted] policy=learned learned network from --ckpt (unchanged), extra metric lines only | network from --ckpt IS used
+
+[eval] ckpt=f2_off_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+
+[eval] [!] max_partners 요청 4 ≠ 학습 8 → 학습값으로 맞춤
+
+[eval] envs=256 vessels=16 ring=1.0 crossing=0 comm_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+
+
+  [f2_off_s43.pt] burn-in 270/5400 결정 (5%) 경과 0.5분 ETA ~9.3분
+
+  [f2_off_s43.pt] burn-in 540/5400 결정 (10%) 경과 1.0분 ETA ~9.4분
+
+  [f2_off_s43.pt] burn-in 810/5400 결정 (15%) 경과 1.6분 ETA ~9.0분
+
+  [f2_off_s43.pt] burn-in 1080/5400 결정 (20%) 경과 2.1분 ETA ~8.5분
+
+  [f2_off_s43.pt] burn-in 1350/5400 결정 (25%) 경과 2.7분 ETA ~8.0분
+
+  [f2_off_s43.pt] burn-in 1620/5400 결정 (30%) 경과 3.2분 ETA ~7.4분
+
+  [f2_off_s43.pt] burn-in 1890/5400 결정 (35%) 경과 3.7분 ETA ~6.9분
+
+  [f2_off_s43.pt] burn-in 2160/5400 결정 (40%) 경과 4.2분 ETA ~6.4분
+
+  [f2_off_s43.pt] 평가    2430/5400 결정 (45%) 경과 4.8분 ETA ~5.8분
+
+  [f2_off_s43.pt] 평가    2700/5400 결정 (50%) 경과 5.6분 ETA ~5.6분
+
+  [f2_off_s43.pt] 평가    2970/5400 결정 (55%) 경과 6.5분 ETA ~5.3분
+
+  [f2_off_s43.pt] 평가    3240/5400 결정 (60%) 경과 7.3분 ETA ~4.9분
+
+  [f2_off_s43.pt] 평가    3510/5400 결정 (65%) 경과 8.2분 ETA ~4.4분
+
+  [f2_off_s43.pt] 평가    3780/5400 결정 (70%) 경과 9.0분 ETA ~3.9분
+
+  [f2_off_s43.pt] 평가    4050/5400 결정 (75%) 경과 9.9분 ETA ~3.3분
+
+  [f2_off_s43.pt] 평가    4320/5400 결정 (80%) 경과 10.7분 ETA ~2.7분
+
+  [f2_off_s43.pt] 평가    4590/5400 결정 (85%) 경과 11.6분 ETA ~2.0분
+
+  [f2_off_s43.pt] 평가    4860/5400 결정 (90%) 경과 12.4분 ETA ~1.4분
+
+  [f2_off_s43.pt] 평가    5130/5400 결정 (95%) 경과 13.3분 ETA ~0.7분
+
+   [censored] 창 끝 미완 에피소드 3967개 (전체 미완 4091개, 평균 진행 649결정), 집계 제외 (--drain N 으로 마감 가능)
+
+   [run] burnin=2400 dec=3000 drain=0 ring=1.0 crossing=0 seed=999 envs=256 vessels=16 maxp=8 dev=cuda
+
+   [조율/레이더 안 ≤56m] 양보-유지 쌍결정 n=339913  보완(양보 우현+유지 유지)=  8.8%  양보 우현= 52.4%  유지 유지= 17.4%  유지 좌현= 43.0%  둘 다 유지=  2.8%
+
+   [조율/레이더 안 ≤56m] HeadOn 쌍결정 n=23401  둘 다 우현= 42.5%  | 역할 붙은 쌍 n=526141  역할 맞물림= 83.5%
+
+   [조율/레이더 밖 56-300m] 양보-유지 쌍결정 n=2557806  보완(양보 우현+유지 유지)= 15.9%  양보 우현= 39.7%  유지 유지= 40.3%  유지 좌현= 38.5%  둘 다 유지= 11.2%
+
+   [조율/레이더 밖 56-300m] HeadOn 쌍결정 n=466991  둘 다 우현= 16.9%  | 역할 붙은 쌍 n=3429314  역할 맞물림= 95.4%
+
+   [조율/충돌 분해] 선박충돌 배 n=1621 (직전 결정의 가장 가까운 상대 기준, 실제 타각)  다선(위험 상대≥2)=33.0%
+
+   [조율/충돌 분해] 내가 양보선: 미행동= 4.6% 행동+상대 유지= 0.7% 행동+상대도 회피= 6.3% | 내가 유지선: 회피=10.2% 고수+상대 미행동= 0.6% 고수+상대 행동= 0.4%
+
+   [조율/충돌 분해] HeadOn 둘 다 우현= 2.8% 아님= 2.8% | 추월= 5.1% 역할 없음=33.6%
+
+f2_off_s43.pt              | arm=ON     | goal= 76.8%  vColl= 23.2%  oColl=  0.0%  TO=  0.0%  | 6977 eps || [goal-ep] fuel=1260.2  headTravel=   259deg  minSep= 20.6m  len= 1046  | allMinSep= 18.1m || epReward=  386.06  colregs=0.3387  colregsOK= 27.3%  (n=1325274) || sit1= 73.1%(n=46669) sit2=  2.5%(n=566326) sit3= 49.8%(n=567280) sit4= 21.8%(n=144999)
+
+   [encounter-COLREGs/실제타각] C= 28.3%  (12447/44039 조우)  HeadOn(R14)= 58.7%(n=2192)  StandOn(R17)=  7.6%(n=18583)  GiveWay(R15/16)= 42.4%(n=18401)  Overtake(R13)= 39.9%(n=4863)
+
+   [encounter-COLREGs/명령타각] C= 18.6%  (8171/44039 조우)  HeadOn(R14)= 46.9%(n=2192)  StandOn(R17)=  0.0%(n=18583)  GiveWay(R15/16)= 35.0%(n=18401)  Overtake(R13)= 14.5%(n=4863)
+
+   [encounter-minPass]  전체= 37.3m   HeadOn(R14)= 32.2m  StandOn(R17)= 37.5m  GiveWay(R15/16)= 37.5m  Overtake(R13)= 38.5m
+
+   [pair-COLREGs/실제타각] C= 24.0%  (9065/37815 조우)  HeadOn(R14)= 59.6%(n=1716)  StandOn(R17)=  4.2%(n=17202)  GiveWay(R15/16)= 37.0%(n=16684)  Overtake(R13)= 51.7%(n=2213)
+
+   [pair-detail] 통과최소거리 중앙  28.6m | 첫 변침(|δ̄|>0.2)까지 중앙   0.4s | 무변침 조우  0.8%
+
+   [pair-heading/Δψ>=   5deg] C= 48.5%  HeadOn= 93.7%(n=1716)  StandOn=  9.3%(n=17202)  GiveWay= 81.6%(n=16684)  Overtake= 68.3%(n=2213)
+
+   [pair-heading/Δψ>=  10deg] C= 50.0%  HeadOn= 85.4%(n=1716)  StandOn= 31.6%(n=17202)  GiveWay= 65.0%(n=16684)  Overtake= 52.1%(n=2213)
+
+   [pair-heading/Δψ>=  15deg] C= 52.1%  HeadOn= 76.2%(n=1716)  StandOn= 50.5%(n=17202)  GiveWay= 52.9%(n=16684)  Overtake= 39.4%(n=2213)
+
+   [pair-heading/Δψ>=  20deg] C= 53.8%  HeadOn= 67.8%(n=1716)  StandOn= 63.1%(n=17202)  GiveWay= 45.6%(n=16684)  Overtake= 32.4%(n=2213)
+
+   [pair-heading/Δψ>=  30deg] C= 54.0%  HeadOn= 40.2%(n=1716)  StandOn= 78.8%(n=17202)  GiveWay= 33.7%(n=16684)  Overtake= 24.9%(n=2213)
+
+   [null-baseline] 조우 없는 배의 |목표대비 오프셋| 중앙   7.7deg  (<=5° 27.6%  <=10° 66.8%  <=20° 87.1%)
+
+   [pair-heading/raw] 양보역할 Δψ 중앙  +17.2deg (우현+) | 유지역할 |Δψ| 중앙  14.8deg
+
+   [Rule8/침로or속력>=  5deg] C= 81.2%  HeadOn= 93.7%(n=1716, 속력만= 0.0%)  GiveWay= 81.6%(n=16684, 속력만= 0.0%)  Overtake= 68.3%(n=2213, 속력만= 0.0%)
+
+   [Rule8/침로or속력>= 10deg] C= 65.3%  HeadOn= 85.4%(n=1716, 속력만= 0.0%)  GiveWay= 65.0%(n=16684, 속력만= 0.0%)  Overtake= 52.1%(n=2213, 속력만= 0.0%)
+
+   [Rule8/침로or속력>= 20deg] C= 46.1%  HeadOn= 67.8%(n=1716, 속력만= 0.0%)  GiveWay= 45.6%(n=16684, 속력만= 0.0%)  Overtake= 32.4%(n=2213, 속력만= 0.0%)
+
+   [GiveWay/진입DCPA층화 Rule8@10deg] 0-10m= 70.7%(n=4046)  10-20m= 64.5%(n=4474)  20-35m= 64.8%(n=4666)  35-m= 59.3%(n=3498)
+
+   [StandOn/null대조] n=17202  null중앙(P50)= 19.9%  P75= 45.7%  P90= 91.5%  P95= 97.3%
+
+   [StandOn/null대조] 유지역할 |Δψ| 중앙  17.2deg  vs  무조우 같은길이 창 중앙   6.8deg  (비 2.55x)
+
+   [StandOn/null대조] null 창 표본(길이버킷별) {0: 13976, 1: 22223, 2: 39687, 3: 50483}
+
+   [fuel-diag] fuel_per_progress_m=2.7291  headTravel_per_len=0.247deg  fleet_fuel_per_arrival=1517.1  n_all=6977  (fuel_sum=8125558.5 progress_m=2977386 n_goal=5356)
+
+   [role-promise] judged n=45256  roleKeptSafe= 13.3%  both_comply= 14.9%  safe= 83.6%  pair_coll=1071  discarded=8946  started=57802  pair_enc_per_ship_ep=16.569  (rule: gw/ho stbd>=10deg port<=5deg, so |dpsi|<=10deg before 17b, safe>=24m)
+
+   [role-promise/v2] judged n=73693  roleKeptSafe= 73.3%  both_comply= 73.3%  safe= 89.5%  pair_coll=1092  discarded=2360  started=77906  resolved=52795  pair_enc_per_ship_ep=22.332  (judge=v2)
+
+   [scripted-rudder] goal-ep n=5364 rudderTravel=1220.8deg/ep meanAbsRudder=7.85deg | all-ep n=6987 rudderTravel=1112.7deg/ep meanAbsRudder=8.31deg (actual rudder, episodes started after burn-in 2400)
+
+   [woerner-COLREGs] score= 61.0% (n=108629 조우, 시작 = 300 m 안 dcpa<24 m 접근, 두 팔 같은 기준; Woerner 2019)
+
+   [woerner-COLREGs/역할] giveway= 47.8%(n=37236 S=91.5 D=96.9 A=91.3 R8=84.3 T=71.9 선수횡단=55.4% 충돌=2.1%) headon= 12.8%(n=11008 S=80.3 D=96.1 A=89.8 R8=77.2 T=73.6 P=34.0 선수횡단=58.2% 충돌=2.6%) overtaking= 84.6%(n=9893 S=97.2 D=99.1 A=96.7 R8=90.2 T=64.4 선수횡단=4.8% 충돌=1.1%) standon= 76.6%(n=50492 S=92.5 C=95.6 C_raw=68.1 V=100.0 R8=87.1 T=99.3 다른의무=79.1% 변침=96.8%)
+
+[scripted] policy=learned learned network from --ckpt (unchanged), extra metric lines only | scripted actor calls=0
+
+[judge-diag] 정면 조우 쌍: 판정 n=6671 | 성공(벌점 없음) 60.1% · 실패(벌점 −20) 39.9% | 길이 중앙 26s · 최소거리 중앙 173m
+
+[judge-diag]   끝난 방식: 해소(dcpa≥30 m 가 5결정 연속 → 성공 종료, 우현 변침 여부 안 봄) 60.0% · 늦은 시작(침로 기준 면제) 0.2%
+
+[judge-diag]   실패 유형(전체 쌍 대비): 좌현 변침 F1 38.2% · 유지선 변침 F2 0.0% · 24 m 안 F4 1.6% · 충돌 F5 0.0% · 우현 변침 없음 F6 0.1%
+
+[judge-diag]   주 상대였던 결정 기준 우현 최대 변침: 둘 다 ≥10° 6.0% · 한 척만 19.5% · 둘 다 <10° 74.5%
+
+[judge-diag]   성공 처리된 쌍(n=4009) 안에서: 둘 다 우현 ≥10° 0.3% · 둘 다 <10° 92.5% · 해소로 끝남 99.8%
+
+[judge-diag]   해소로 끝난 쌍(n=4001) 안에서: 둘 다 <10° 92.6% · 둘 다 <2° 77.5% · 길이 중앙 14s
+
+[judge-diag] 교차 쌍(양보–유지): 판정 n=49280 | 성공(벌점 없음) 68.2% · 실패(벌점 −20) 31.8% | 길이 중앙 20s · 최소거리 중앙 160m
+
+[judge-diag]   끝난 방식: 해소(dcpa≥30 m 가 5결정 연속 → 성공 종료, 우현 변침 여부 안 봄) 66.3% · 늦은 시작(침로 기준 면제) 1.4%
+
+[judge-diag]   실패 유형(전체 쌍 대비): 좌현 변침 F1 20.9% · 유지선 변침 F2 7.6% · 24 m 안 F4 2.8% · 충돌 F5 0.0% · 우현 변침 없음 F6 0.5%
+
+[judge-diag] 정면 조우 쌍 시작 12785(burn-in 포함) · 버려짐(판정 안 함) 184
+

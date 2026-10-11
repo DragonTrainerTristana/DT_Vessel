@@ -1,0 +1,34 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py:1369: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  return t.to(
+[codec] comm_codecs/p6_k6_s0.pt sha=fbe4c71a6bf4 mode=decode k=6 bits=8
+[resume] t_trunk_d6_s43.pt 에서 이어감 | 9.04M 완료분 | ValueNorm {'m1': -46.57273864746094, 'm2': 27274.00390625, 'debias': 0.9384541511535645, 'beta': 0.98, 'mean': -49.627079010009766, 'std': 163.09458923339844} | Adam 복원
+[branch] trunk=t_trunk_d6_s43.pt sha256=a2cb77563fd6 branch_at=9043968 arm=ON
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[warmup] 재개 워밍업 2400 결정/에이전트 완료 (169s) - 학습·기록 없음
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[telemetry] 통신 텔레메트리 켬 → t_a6_s43_comm.csv (5 update 마다, 28개 열)
+[comm] ON at dec=9.044M (comm_on_at=9043968) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[ON] dec=9.37M | ep=218 len~1503 | goal=51.8% vColl=43.1% oColl=1.4% TO=3.7% | R=-0.496 | 1349 dec/s | epRet=-288.059
+[ON] dec=9.70M | ep=256 len~1280 | goal=48.0% vColl=46.9% oColl=1.2% TO=3.9% | R=-0.324 | 1298 dec/s | epRet=-414.533
+[ON] dec=10.03M | ep=193 len~1698 | goal=49.7% vColl=45.6% oColl=0.0% TO=4.7% | R=-0.818 | 1349 dec/s | epRet=-531.979
+[ON] dec=10.35M | ep=180 len~1820 | goal=47.8% vColl=46.7% oColl=1.7% TO=3.9% | R=-0.499 | 1370 dec/s | epRet=-651.617
+[ON] dec=10.68M | ep=253 len~1295 | goal=53.4% vColl=41.9% oColl=1.2% TO=3.6% | R=-0.386 | 1389 dec/s | epRet=-429.051
+[ON] dec=11.01M | ep=236 len~1388 | goal=58.5% vColl=38.1% oColl=1.7% TO=1.7% | R=-0.380 | 1400 dec/s | epRet=-540.645
+[ON] dec=11.34M | ep=244 len~1343 | goal=62.7% vColl=31.1% oColl=2.9% TO=3.3% | R=-0.435 | 1411 dec/s | epRet=-459.158
+[ON] dec=11.67M | ep=237 len~1383 | goal=65.4% vColl=31.2% oColl=0.0% TO=3.4% | R=-0.320 | 1419 dec/s | epRet=-361.563
+[ON] dec=11.99M | ep=230 len~1425 | goal=58.3% vColl=37.4% oColl=2.2% TO=2.2% | R=-0.268 | 1431 dec/s | epRet=-543.745
+[ON] dec=12.32M | ep=215 len~1524 | goal=68.8% vColl=27.9% oColl=0.9% TO=2.3% | R=-0.250 | 1438 dec/s | epRet=-334.761
+[ON] dec=12.65M | ep=186 len~1762 | goal=75.3% vColl=20.4% oColl=2.2% TO=2.2% | R=-0.059 | 1441 dec/s | epRet=-352.305
+[ON] dec=12.98M | ep=193 len~1698 | goal=64.8% vColl=29.0% oColl=4.1% TO=2.1% | R=-0.072 | 1448 dec/s | epRet=-322.789
+[ON] dec=13.30M | ep=207 len~1583 | goal=70.5% vColl=21.3% oColl=3.9% TO=4.3% | R=-0.079 | 1450 dec/s | epRet=-346.509
+[ON] dec=13.63M | ep=198 len~1655 | goal=72.7% vColl=24.2% oColl=2.5% TO=0.5% | R=0.031 | 1455 dec/s | epRet=127.861
+[ON] dec=13.96M | ep=203 len~1614 | goal=66.5% vColl=29.6% oColl=2.5% TO=1.5% | R=-0.077 | 1252 dec/s | epRet=-196.056
+[ON] dec=14.29M | ep=174 len~1883 | goal=71.8% vColl=21.8% oColl=5.7% TO=0.6% | R=-0.201 | 1261 dec/s | epRet=-120.839
+[ON] dec=14.61M | ep=204 len~1606 | goal=66.2% vColl=27.5% oColl=3.9% TO=2.5% | R=-0.190 | 1239 dec/s | epRet=-162.421
+[ON] dec=14.94M | ep=172 len~1905 | goal=64.5% vColl=27.9% oColl=2.9% TO=4.7% | R=-0.104 | 1105 dec/s | epRet=-654.976
+[ON] dec=15.27M | ep=202 len~1622 | goal=63.4% vColl=26.7% oColl=4.0% TO=5.9% | R=-0.214 | 972 dec/s | epRet=-434.179
+[ON] dec=15.60M | ep=186 len~1762 | goal=63.4% vColl=26.9% oColl=1.6% TO=8.1% | R=-0.180 | 997 dec/s | epRet=-532.515
+[ON] dec=15.93M | ep=158 len~2074 | goal=60.8% vColl=27.8% oColl=1.9% TO=9.5% | R=-0.150 | 1021 dec/s | epRet=-466.316
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/t_a6_s43.pt (16.06M decisions, 113.5min)

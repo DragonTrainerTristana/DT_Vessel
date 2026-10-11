@@ -1,0 +1,10 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+C:\work\DT_Vessel_v3\Python\vessel_gym.py:820: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  z = lambda *s: torch.zeros(*s, device=self.device, dtype=self.dtype)
+[resume] smoke_t_trunk_d6_s43.pt 에서 이어감 | 0.07M 완료분 | ValueNorm {'m1': 0.07119306921958923, 'm2': 0.9564457535743713, 'debias': 0.019999999552965164, 'beta': 0.98, 'mean': 3.5596535205841064, 'std': 5.928840637207031} | Adam 복원
+[branch] trunk=smoke_t_trunk_d6_s43.pt sha256=8a8d786fb512 branch_at=65536 arm=OFF
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[warmup] 재개 워밍업 8 결정/에이전트 완료 (1s) - 학습·기록 없음
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/smoke_t_off_s43.pt (0.13M decisions, 0.2min)

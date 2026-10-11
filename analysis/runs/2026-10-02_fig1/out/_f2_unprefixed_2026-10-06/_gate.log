@@ -1,0 +1,6 @@
+s43 goal=76.8 oColl=0.0 창=4 통과 | G1(마지막 창 goal 74.0 · vColl 26.0 · oColl 0.0) 미충족
+s44 goal=72.8 oColl=0.0 창=4 통과 | G1(마지막 창 goal 77.8 · vColl 21.8 · oColl 0.0) 미충족
+s45 goal=70.2 oColl=0.0 창=4 통과 | G1(마지막 창 goal 68.2 · vColl 31.8 · oColl 0.0) 미충족
+s46 goal=68.0 oColl=0.0 창=4 통과 | G1(마지막 창 goal 67.5 · vColl 32.5 · oColl 0.0) 미충족
+s47 goal=75.3 oColl=0.0 창=4 통과 | G1(마지막 창 goal 72.6 · vColl 27.0 · oColl 0.0) 미충족
+trunk 관문 통과 시드: 43 44 45

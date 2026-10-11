@@ -1,0 +1,72 @@
+재현 실행 [train]
+  python      : /c/Users/OSH/anaconda3/envs/mltest/python.exe
+  체크포인트  : /c/Users/OSH/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel_v3/Python/_repro_out_t
+  시드        : 43 46 47
+  GPU 수      : 4   동시 실행: 8
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 2400)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='t_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 검사 동시 실행 (지문 3c4e688204df4e7eac33)
+  PASS  PPO 미러
+  PASS  통신 미러
+  PASS  골든 비트동일
+  PASS  vessel_gym 충실도
+  PASS  동역학 프로필
+  PASS  sim 스냅샷
+  PASS  COMM_EXT
+  PASS  grounded latent
+  PASS  역할 약속
+  PASS  p12 코덱
+  PASS  p6 차분
+  PASS  p50 코덱
+  PASS  보상 v3
+  PASS  역할 약속 v2
+  검사 14종 동시 실행 244s
+
+[branch] 분기점 9043968 · 총 16056320 결정 · 워밍업 2400 · dim: 6 · 팔: off a6 offb
+  trunk 재사용: t_trunk_d6_s43.pt
+  trunk 재사용: t_trunk_d6_s46.pt
+  trunk 재사용: t_trunk_d6_s47.pt
+  t_off_s43 → GPU 2
+  t_a6_s43 → GPU 1
+  t_offb_s43 → GPU 0
+  t_off_s46 → GPU 3
+  t_a6_s46 → GPU 2
+  t_offb_s46 → GPU 3
+  t_off_s47 → GPU 0
+  t_a6_s47 → GPU 2
+  t_offb_s47 → GPU 0
+[branch] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  t_off_s43.pt                 OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+  t_a6_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  t_offb_s43.pt                OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+  t_off_s46.pt                 OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+  t_a6_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  t_offb_s46.pt                OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+  t_off_s47.pt                 OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+  t_a6_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  t_offb_s47.pt                OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+  BRANCH CHECK: ALL PASS (9개 체크포인트, trunk 3개)
+  분기 검사 ALL PASS
+학습 완료
+t_off_s43 rc=0
+t_offb_s43 rc=0
+t_off_s46 rc=0
+t_offb_s46 rc=0
+t_off_s47 rc=0
+t_a6_s46 rc=0
+t_offb_s47 rc=0
+t_a6_s43 rc=0
+t_a6_s47 rc=0

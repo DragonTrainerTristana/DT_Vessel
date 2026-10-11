@@ -1,0 +1,14 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py:1369: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  return t.to(
+[codec] comm_codecs/p6_k6_s0.pt sha=fbe4c71a6bf4 mode=decode k=6 bits=8
+[resume] s_trunk_d6_s45.pt 에서 이어감 | 9.04M 완료분 | ValueNorm {'m1': -88.62103271484375, 'm2': 34207.3046875, 'debias': 0.9384541511535645, 'beta': 0.98, 'mean': -94.43299102783203, 'std': 165.9310302734375} | Adam 복원
+[branch] trunk=s_trunk_d6_s45.pt sha256=6ac3d017d53a branch_at=9043968 arm=ON
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[warmup] 재개 워밍업 1200 결정/에이전트 완료 (112s) - 학습·기록 없음
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[telemetry] 통신 텔레메트리 켬 → s_a6_s45_comm.csv (5 update 마다, 28개 열)
+[comm] ON at dec=9.044M (comm_on_at=9043968) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[ON] dec=9.37M | ep=319 len~1027 | goal=35.7% vColl=50.2% oColl=2.8% TO=11.3% | R=-0.992 | 1248 dec/s
+[ON] dec=9.70M | ep=218 len~1503 | goal=32.6% vColl=55.0% oColl=1.8% TO=10.6% | R=-0.845 | 1444 dec/s

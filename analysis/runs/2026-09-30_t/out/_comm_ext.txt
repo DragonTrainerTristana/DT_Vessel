@@ -1,0 +1,22 @@
+  PASS test_defaults_are_off_and_bit_identical_structure
+  PASS test_ext_structure_and_small_init
+  PASS test_ext_requires_attention
+  PASS test_role_cascade_matches_pairwise_dense
+  PASS test_headon_fields
+  PASS test_crossing_roles_giveway_standon
+  PASS test_role_gate_removes_safe_passing
+  PASS test_starboard_beam_relpos_and_receding
+  PASS test_intent_timing_is_last_command
+  PASS test_padding_finite_and_group_masks
+  PASS test_field_shuffle_keeps_valid_pool_and_derangement
+  PASS test_mirror_all_arms
+  PASS test_latent_zero_removes_message_influence
+  PASS test_unity_path_raises_for_ext
+[t] ckpt=ext.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=intent groups=state+role+intent latent=1.0 partner_range=None aux=1.0 comm_range=300.0 max_partners=4 snapshot=yes
+[t] ckpt=ext.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=intent groups=state+role latent=1.0 partner_range=None aux=1.0 comm_range=300.0 max_partners=4 snapshot=yes
+[t] [!] comm_groups override: 학습 ('state', 'role', 'intent') → 평가 ('state', 'role') (절제 평가 — 학습과 다른 입력)
+[t] ckpt=arpa.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=1.0 comm_range=300.0 max_partners=4 snapshot=yes
+[t] ckpt=plain.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_range=300.0 max_partners=4 snapshot=yes
+  PASS test_ckpt_roundtrip_and_guards
+  PASS test_env_lines_export_comm_keys
+VERDICT: ALL PASS

@@ -1,0 +1,50 @@
+재현 실행 [smoke]
+  python      : /c/Users/OSH/anaconda3/envs/mltest/python.exe
+  체크포인트  : /c/Users/OSH/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel_v3/Python/_repro_out_i
+  시드        : 43
+  GPU 수      : 4   동시 실행: 8
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 2400)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='i_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 검사 동시 실행 (지문 5fa2e20853ea76bf153f)
+  PASS  PPO 미러
+  PASS  통신 미러
+  PASS  골든 비트동일
+  PASS  vessel_gym 충실도
+  PASS  동역학 프로필
+  PASS  sim 스냅샷
+  PASS  COMM_EXT
+  PASS  grounded latent
+  PASS  역할 약속
+  PASS  p12 코덱
+  PASS  p6 차분
+  PASS  p50 코덱
+  PASS  보상 v3
+  PASS  역할 약속 v2
+  검사 14종 동시 실행 227s
+
+[branch] 분기점 65536 · 총 131072 결정 · 워밍업 8 · dim: 6 · 팔: off a6
+  smoke_i_trunk_d6_s43 → GPU 2
+  smoke_i_off_s43 → GPU 2
+  smoke_i_a6_s43 → GPU 2
+[branch] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  smoke_i_off_s43.pt           OFF        43    6     131072      65536  smoke_i_trunk_d6_s43.pt (22bb56a2bf14)  imo/none  1:latent
+  smoke_i_a6_s43.pt            ON         43    6     131072      65536  smoke_i_trunk_d6_s43.pt (22bb56a2bf14)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)
+  분기 검사 ALL PASS
+스모크 완료 — /c/work/DT_Vessel_v3/Python/_repro_out_i/_status_train.txt 의 rc 가 전부 0 이어야 함
+smoke_i_trunk_d6_s43 rc=0
+smoke_i_off_s43 rc=0
+smoke_i_a6_s43 rc=0

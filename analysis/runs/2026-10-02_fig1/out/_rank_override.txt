@@ -1,0 +1,5 @@
+> ★ 순위 관문 v4(스펙 2026-10-07 §5-2) 불통과 — 저자 결정으로 phase1 진행 (2026-10-09 15:13:04)
+> 저자 결정: 규칙 (v) 2/3 는 R2 의도된 변화, 보상 순위 (i)-(iv) 3/3 성립 — 저자 결정으로 진행
+> RANK GATE v2 [v4]: ★FAIL (0/3 seeds, judge=v2)
+> RANK GATE v2: ★FAIL  (v4 FAIL)
+> DECISION: stop, report

@@ -1,0 +1,58 @@
+[memfrac] per_process_memory_fraction=0.80
+C:\Users\sengh\AppData\Local\Programs\Python\Python310\lib\site-packages\torch\_utils.py:99: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:28.)
+  untyped_storage = torch.UntypedStorage(self.size(), device=device)
+[eval] ckpt=f_dagger_d6_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=31keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[eval] [!] max_partners 요청 4 ≠ 학습 8 → 학습값으로 맞춤
+[eval] envs=256 vessels=16 ring=1.0 crossing=0 comm_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+  [f_dagger_d6_s43.pt] 64349 dec/s, ETA ~789s
+  [f_dagger_d6_s43.pt] burn-in 620/12400 결정 (5%) 경과 0.6분 ETA ~12.3분
+  [f_dagger_d6_s43.pt] burn-in 1240/12400 결정 (10%) 경과 1.3분 ETA ~11.7분
+  [f_dagger_d6_s43.pt] burn-in 1860/12400 결정 (15%) 경과 2.0분 ETA ~11.1분
+  [f_dagger_d6_s43.pt] 평가    2480/12400 결정 (20%) 경과 2.6분 ETA ~10.4분
+  [f_dagger_d6_s43.pt] 평가    3100/12400 결정 (25%) 경과 3.4분 ETA ~10.1분
+  [f_dagger_d6_s43.pt] 평가    3720/12400 결정 (30%) 경과 4.1분 ETA ~9.6분
+  [f_dagger_d6_s43.pt] 평가    4340/12400 결정 (35%) 경과 4.9분 ETA ~9.1분
+  [f_dagger_d6_s43.pt] 평가    4960/12400 결정 (40%) 경과 5.6분 ETA ~8.5분
+  [f_dagger_d6_s43.pt] 평가    5580/12400 결정 (45%) 경과 6.4분 ETA ~7.8분
+  [f_dagger_d6_s43.pt] 평가    6200/12400 결정 (50%) 경과 7.2분 ETA ~7.2분
+  [f_dagger_d6_s43.pt] 평가    6820/12400 결정 (55%) 경과 8.0분 ETA ~6.5분
+  [f_dagger_d6_s43.pt] 평가    7440/12400 결정 (60%) 경과 8.7분 ETA ~5.8분
+  [f_dagger_d6_s43.pt] 평가    8060/12400 결정 (65%) 경과 9.5분 ETA ~5.1분
+  [f_dagger_d6_s43.pt] 평가    8680/12400 결정 (70%) 경과 10.2분 ETA ~4.4분
+  [f_dagger_d6_s43.pt] 평가    9300/12400 결정 (75%) 경과 11.0분 ETA ~3.7분
+  [f_dagger_d6_s43.pt] 평가    9920/12400 결정 (80%) 경과 11.8분 ETA ~2.9분
+  [f_dagger_d6_s43.pt] 평가    10540/12400 결정 (85%) 경과 12.5분 ETA ~2.2분
+  [f_dagger_d6_s43.pt] 평가    11160/12400 결정 (90%) 경과 13.3분 ETA ~1.5분
+  [f_dagger_d6_s43.pt] 평가    11780/12400 결정 (95%) 경과 14.1분 ETA ~0.7분
+   [censored] 창 끝 미완 에피소드 4094개 (전체 미완 4094개, 평균 진행 1076결정), 집계 제외 (--drain N 으로 마감 가능)
+   [run] burnin=2400 dec=10000 drain=0 ring=1.0 crossing=0 seed=999 envs=256 vessels=16 maxp=8 dev=cuda
+   [조율/레이더 안 ≤56m] 양보-유지 쌍결정 n=1276971  보완(양보 우현+유지 유지)=  8.3%  양보 우현= 42.7%  유지 유지= 21.0%  유지 좌현= 37.3%  둘 다 유지=  2.9%
+   [조율/레이더 안 ≤56m] HeadOn 쌍결정 n=62116  둘 다 우현= 26.8%  | 역할 붙은 쌍 n=1955048  역할 맞물림= 83.3%
+   [조율/레이더 밖 56-300m] 양보-유지 쌍결정 n=7607614  보완(양보 우현+유지 유지)= 11.9%  양보 우현= 45.8%  유지 유지= 26.3%  유지 좌현= 42.3%  둘 다 유지=  4.8%
+   [조율/레이더 밖 56-300m] HeadOn 쌍결정 n=1322139  둘 다 우현= 19.9%  | 역할 붙은 쌍 n=10124295  역할 맞물림= 95.2%
+   [조율/충돌 분해] 선박충돌 배 n=14848 (직전 결정의 가장 가까운 상대 기준, 실제 타각)  다선(위험 상대≥2)=29.9%
+   [조율/충돌 분해] 내가 양보선: 미행동= 8.3% 행동+상대 유지= 0.8% 행동+상대도 회피= 4.6% | 내가 유지선: 회피=11.8% 고수+상대 미행동= 1.1% 고수+상대 행동= 0.6%
+   [조율/충돌 분해] HeadOn 둘 다 우현= 0.7% 아님= 1.8% | 추월= 5.4% 역할 없음=34.9%
+f_dagger_d6_s43.pt         | arm=ON     | goal= 43.2%  vColl= 53.5%  oColl=  0.0%  TO=  3.4%  | 27772 eps || [goal-ep] fuel=1462.7  headTravel=   316deg  minSep= 19.2m  len= 1101  | allMinSep= 13.7m || epReward= -634.97  colregs=0.3281  colregsOK= 28.9%  (n=4423516) || sit1= 57.2%(n=123472) sit2=  1.4%(n=1883980) sit3= 48.8%(n=1939218) sit4= 49.4%(n=476846)
+   [encounter-COLREGs/실제타각] C= 32.9%  (42017/127826 조우)  HeadOn(R14)= 50.7%(n=6440)  StandOn(R17)= 14.7%(n=53161)  GiveWay(R15/16)= 44.0%(n=53288)  Overtake(R13)= 50.1%(n=14937)
+   [encounter-COLREGs/명령타각] C= 16.9%  (21543/127826 조우)  HeadOn(R14)= 27.6%(n=6440)  StandOn(R17)=  0.0%(n=53161)  GiveWay(R15/16)= 17.5%(n=53288)  Overtake(R13)= 70.0%(n=14937)
+   [encounter-minPass]  전체= 32.6m   HeadOn(R14)= 34.0m  StandOn(R17)= 32.3m  GiveWay(R15/16)= 32.3m  Overtake(R13)= 34.3m
+   [pair-COLREGs/실제타각] C= 29.8%  (32646/109477 조우)  HeadOn(R14)= 50.3%(n=5182)  StandOn(R17)= 10.0%(n=48653)  GiveWay(R15/16)= 43.8%(n=48309)  Overtake(R13)= 55.1%(n=7333)
+   [pair-detail] 통과최소거리 중앙  23.0m | 첫 변침(|δ̄|>0.2)까지 중앙   0.4s | 무변침 조우  2.3%
+   [pair-heading/Δψ>=   5deg] C= 36.5%  HeadOn= 62.8%(n=5182)  StandOn= 12.8%(n=48653)  GiveWay= 54.1%(n=48309)  Overtake= 59.0%(n=7333)
+   [pair-heading/Δψ>=  10deg] C= 40.2%  HeadOn= 52.2%(n=5182)  StandOn= 33.9%(n=48653)  GiveWay= 43.2%(n=48309)  Overtake= 53.2%(n=7333)
+   [pair-heading/Δψ>=  15deg] C= 42.3%  HeadOn= 42.6%(n=5182)  StandOn= 49.8%(n=48653)  GiveWay= 34.0%(n=48309)  Overtake= 47.2%(n=7333)
+   [pair-heading/Δψ>=  20deg] C= 42.6%  HeadOn= 33.8%(n=5182)  StandOn= 59.6%(n=48653)  GiveWay= 26.6%(n=48309)  Overtake= 41.8%(n=7333)
+   [pair-heading/Δψ>=  30deg] C= 41.4%  HeadOn= 21.9%(n=5182)  StandOn= 68.6%(n=48653)  GiveWay= 17.2%(n=48309)  Overtake= 34.3%(n=7333)
+   [null-baseline] 조우 없는 배의 |목표대비 오프셋| 중앙  12.7deg  (<=5° 23.8%  <=10° 42.9%  <=20° 62.9%)
+   [pair-heading/raw] 양보역할 Δψ 중앙   +7.6deg (우현+) | 유지역할 |Δψ| 중앙  15.1deg
+   [Rule8/침로or속력>=  5deg] C= 55.4%  HeadOn= 62.8%(n=5182, 속력만= 0.0%)  GiveWay= 54.1%(n=48309, 속력만= 0.0%)  Overtake= 59.0%(n=7333, 속력만= 0.0%)
+   [Rule8/침로or속력>= 10deg] C= 45.2%  HeadOn= 52.2%(n=5182, 속력만= 0.0%)  GiveWay= 43.2%(n=48309, 속력만= 0.0%)  Overtake= 53.2%(n=7333, 속력만= 0.0%)
+   [Rule8/침로or속력>= 20deg] C= 29.0%  HeadOn= 33.8%(n=5182, 속력만= 0.0%)  GiveWay= 26.6%(n=48309, 속력만= 0.0%)  Overtake= 41.8%(n=7333, 속력만= 0.0%)
+   [GiveWay/진입DCPA층화 Rule8@10deg] 0-10m= 44.6%(n=11862)  10-20m= 42.5%(n=13714)  20-35m= 42.9%(n=14767)  35-m= 42.9%(n=7966)
+   [StandOn/null대조] n=48653  null중앙(P50)= 46.9%  P75= 77.9%  P90= 93.3%  P95= 97.1%
+   [StandOn/null대조] 유지역할 |Δψ| 중앙  19.8deg  vs  무조우 같은길이 창 중앙  18.0deg  (비 1.10x)
+   [StandOn/null대조] null 창 표본(길이버킷별) {0: 46335, 1: 60000, 2: 60015, 3: 60000}
+   [fuel-diag] fuel_per_progress_m=4.1273  headTravel_per_len=0.287deg  fleet_fuel_per_arrival=3618.4  n_all=27772  (fuel_sum=43366115.7 progress_m=10507030 n_goal=11985)
+   [role-promise] judged n=254026  roleKeptSafe= 15.5%  both_comply= 16.9%  safe= 88.3%  pair_coll=7727  discarded=44747  started=302729  pair_enc_per_ship_ep=21.801  (rule: gw/ho stbd>=10deg port<=5deg, so |dpsi|<=10deg before 17b, safe>=24m)
+   [role-promise/v2] judged n=339437  roleKeptSafe= 75.3%  both_comply= 75.3%  safe= 91.0%  pair_coll=7755  discarded=11492  started=352874  resolved=249945  pair_enc_per_ship_ep=25.412  (judge=v2)

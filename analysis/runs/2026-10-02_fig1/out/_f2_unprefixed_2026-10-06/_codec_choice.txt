@@ -1,0 +1,19 @@
+s43: k4=불통과 k6=통과 k8=통과 k12=통과
+   k4 {'heading_deg_p90': 10.197378158569336, 'speed_ms_p90': 0.11223018914461136, 'intent_deg_p90': 1.6913151741027832, 'role_acc': 0.9996970891952515, 'role_n': 23107, 'n': 76800}
+   k6 {'heading_deg_p90': 3.2568604946136475, 'speed_ms_p90': 0.07146156579256058, 'intent_deg_p90': 1.2593004703521729, 'role_acc': 0.999350905418396, 'role_n': 23109, 'n': 76800}
+   k8 {'heading_deg_p90': 1.8329193592071533, 'speed_ms_p90': 0.019262751564383507, 'intent_deg_p90': 0.5247122049331665, 'role_acc': 1.0, 'role_n': 23107, 'n': 76800}
+   k12 {'heading_deg_p90': 1.4972091913223267, 'speed_ms_p90': 0.013605006970465183, 'intent_deg_p90': 0.477355420589447, 'role_acc': 1.0, 'role_n': 23107, 'n': 76800}
+s44: k4=불통과 k6=통과 k8=통과 k12=통과
+   k4 {'heading_deg_p90': 12.375123023986816, 'speed_ms_p90': 0.1183842271566391, 'intent_deg_p90': 1.7450581789016724, 'role_acc': 0.9528748989105225, 'role_n': 24488, 'n': 76800}
+   k6 {'heading_deg_p90': 3.20945405960083, 'speed_ms_p90': 0.09121096134185791, 'intent_deg_p90': 1.2869763374328613, 'role_acc': 0.9995900392532349, 'role_n': 24393, 'n': 76800}
+   k8 {'heading_deg_p90': 2.1377644538879395, 'speed_ms_p90': 0.0194692425429821, 'intent_deg_p90': 0.5901040434837341, 'role_acc': 1.0, 'role_n': 24389, 'n': 76800}
+   k12 {'heading_deg_p90': 1.277414083480835, 'speed_ms_p90': 0.01139981672167778, 'intent_deg_p90': 0.5179974436759949, 'role_acc': 0.9999589920043945, 'role_n': 24389, 'n': 76800}
+s45: k4=불통과 k6=통과 k8=통과 k12=통과
+   k4 {'heading_deg_p90': 12.052916526794434, 'speed_ms_p90': 0.10657438635826111, 'intent_deg_p90': 1.4673364162445068, 'role_acc': 0.9642163515090942, 'role_n': 22664, 'n': 76800}
+   k6 {'heading_deg_p90': 3.599635124206543, 'speed_ms_p90': 0.09119449555873871, 'intent_deg_p90': 1.0907138586044312, 'role_acc': 0.9993360638618469, 'role_n': 22592, 'n': 76800}
+   k8 {'heading_deg_p90': 2.0566530227661133, 'speed_ms_p90': 0.022189432755112648, 'intent_deg_p90': 0.4740982949733734, 'role_acc': 1.0, 'role_n': 22592, 'n': 76800}
+   k12 {'heading_deg_p90': 1.4896506071090698, 'speed_ms_p90': 0.01409824937582016, 'intent_deg_p90': 0.43082717061042786, 'role_acc': 0.9998229742050171, 'role_n': 22592, 'n': 76800}
+CHOSEN_K=6
+CODEC_s43=C:/work/DT_Vessel_v3/Python/_repro_out_f2/codec/s43/p46_k6_s0.pt SHA=d66b7b09af409bd4
+CODEC_s44=C:/work/DT_Vessel_v3/Python/_repro_out_f2/codec/s44/p46_k6_s0.pt SHA=e7b740c605a0fe36
+CODEC_s45=C:/work/DT_Vessel_v3/Python/_repro_out_f2/codec/s45/p46_k6_s0.pt SHA=666e85667df1ff82

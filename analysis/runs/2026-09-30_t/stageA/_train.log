@@ -1,0 +1,54 @@
+재현 실행 [train]
+  python      : /c/Users/OSH/anaconda3/envs/mltest/python.exe
+  체크포인트  : /c/Users/OSH/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel/Python/_repro_out_s_stageA
+  시드        : 43 44 45
+  GPU 수      : 3   동시 실행: 6
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 1200)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='s_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 캐시 적중 — 같은 코드·env 로 이미 ALL PASS (2026-09-29 14:07:50). 건너뜀
+  (다시 돌리려면 VESSEL_FORCE_PREFLIGHT=1 · 지문 f732747b63b85b66e508)
+
+[branch] 분기점 9043968 · 총 16056320 결정 · 워밍업 1200 · dim: 6 · 팔: off a6 c6
+  trunk 재사용: s_trunk_d6_s43.pt
+  trunk 재사용: s_trunk_d6_s44.pt
+  trunk 재사용: s_trunk_d6_s45.pt
+  갈래 재사용: s_off_s43.pt
+  s_a6_s43 → GPU 1
+  s_c6_s43 → GPU 2
+  갈래 재사용: s_off_s44.pt
+  s_a6_s44 → GPU 0
+  s_c6_s44 → GPU 1
+  갈래 재사용: s_off_s45.pt
+  s_a6_s45 → GPU 2
+  s_c6_s45 → GPU 0
+[branch] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  s_off_s43.pt                 OFF        43    6   16056320    9043968  s_trunk_d6_s43.pt (ca381c95024c)  imo/none  1:latent
+  s_off_s44.pt                 OFF        44    6   16056320    9043968  s_trunk_d6_s44.pt (375777858fa7)  imo/none  1:latent
+  s_off_s45.pt                 OFF        45    6   16056320    9043968  s_trunk_d6_s45.pt (6ac3d017d53a)  imo/none  1:latent
+    note: trunk s_trunk_d6_s43.pt (ca381c95024c): 통신 팔 없음(OFF 만) - 비교 대상 없음
+    note: trunk s_trunk_d6_s43.pt (ca381c95024c): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+    note: trunk s_trunk_d6_s44.pt (375777858fa7): 통신 팔 없음(OFF 만) - 비교 대상 없음
+    note: trunk s_trunk_d6_s44.pt (375777858fa7): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+    note: trunk s_trunk_d6_s45.pt (6ac3d017d53a): 통신 팔 없음(OFF 만) - 비교 대상 없음
+    note: trunk s_trunk_d6_s45.pt (6ac3d017d53a): trunk 곡선 CSV 없음 - 0~9043968 곡선 대조 생략
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s43.pt: 파일 없음
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s43.pt: 파일 없음
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s44.pt: 파일 없음
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s44.pt: 파일 없음
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_a6_s45.pt: 파일 없음
+    FAIL: C:/Users/OSH/VESSEL_checkpoints/comm_intent/s_c6_s45.pt: 파일 없음
+  BRANCH CHECK: FAIL
+분기 검사 FAIL — /c/work/DT_Vessel/Python/_repro_out_s_stageA/_branch_check.txt 확인

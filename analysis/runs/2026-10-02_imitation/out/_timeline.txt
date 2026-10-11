@@ -1,0 +1,10 @@
+2026-10-02 02:30:51 배치 i_ phase0 0a3e70e feat: imitation start for the OFF trunk (DAgger from vo56 teacher) OUT=/c/work/DT_Vessel_v3/Python/_repro_out_i
+2026-10-02 02:30:51 시작 smoke
+2026-10-02 02:40:30 끝 smoke
+2026-10-02 02:40:31 시작 dagger
+2026-10-02 03:11:24 끝 dagger
+2026-10-02 03:11:24 시작 evalp0
+2026-10-02 03:54:44 끝 evalp0
+2026-10-02 03:54:45 시작 p0
+2026-10-02 03:54:46 끝 p0
+2026-10-02 03:54:47 P0 불통과 → 멈춤(스펙 §5: 재시도 없이 보고)

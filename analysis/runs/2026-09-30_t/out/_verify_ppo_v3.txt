@@ -1,0 +1,57 @@
+========================================================================
+PPO MIRROR VERIFICATION (post 2026-06-12 channel-thaw init)
+========================================================================
+
+[1] others_msg mirror (rollout vs update)
+   sum       : max|diff| = 4.470e-08   PASS
+   attention : max|diff| = 3.725e-09   PASS
+   attn+moe  : max|diff| = 5.588e-09   PASS
+
+[2] logprob/value mirror (rollout forward -> evaluate_actions)
+[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 → critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.
+   sum       : max|logprob diff| = 0.000e+00  max|value diff| = 0.000e+00   PASS
+[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 → critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.
+   attention : max|logprob diff| = 0.000e+00  max|value diff| = 0.000e+00   PASS
+[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 → critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.
+   sum+moe   : max|logprob diff| = 0.000e+00  max|value diff| = 0.000e+00   PASS
+
+[3] comm-OFF invariance (others_msg should be exactly 0)
+   sum       : max|others_msg| = 0.000e+00   PASS
+   attention : max|others_msg| = 0.000e+00   PASS
+
+[4] msg_gate shared backbone (rollout==update with gate=3.0)
+[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 → critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.
+   logprob diff (gate=3.0) = 0.000e+00
+   forward&get_logprob both call self._backbone: True
+   gate sigmoid applied inside _backbone: True   PASS
+
+[5] full-MoE Critic: per-core fc2 (no one-hot), msg-slice = last msg_dim cols
+C:\work\DT_Vessel_v3\Python\verify\_verify_ppo_mirror.py:304: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:837.)
+  msg_cols_mean = float(np.mean([float(c.fc2.weight.abs().mean(dim=0)[-md:].mean()) for c in cores]))
+   cores = 5, fc2.in_features = 106 (expected 106): True
+   msg cols |w| mean = 0.0048  vs  rest cols |w| mean = 0.0484
+   (msg cols smaller => x0.1 hit the correct last-M columns)   PASS
+
+[6] saturated-action PPO ratio (atanh-clamp bug fix, 2026-08-03)
+[networks] WARNING: CENTRAL_CRITIC=1 인데 CNNPolicy.forward가 global_feat 없이 호출됨 → critic 전역입력이 zeros(중앙 critic 무력화). 호출부에서 global_feat 전달 필요.
+   saturated frac(|raw|>3.8) = 50%
+   NEW (raw stored):  max|dlogprob| = 0.000e+00  ratio<=1.0000   (mirror holds)
+   OLD (atanh clamp): max|dlogprob| = 8.965e+00  ratio in [0.000, 1.000]   (corrupted)
+   PASS (new~0, old diverges)
+
+========================================================================
+   PASS  others_msg[sum]         (4.470e-08)
+   PASS  others_msg[attention]   (3.725e-09)
+   PASS  others_msg[attn+moe]    (5.588e-09)
+   PASS  logprob[sum]            (0.000e+00)
+   PASS  logprob[attention]      (0.000e+00)
+   PASS  logprob[moe]            (0.000e+00)
+   PASS  commOFF[sum]            (0.000e+00)
+   PASS  commOFF[attention]      (0.000e+00)
+   PASS  msg_gate_shared         (0.000e+00)
+   PASS  moe_critic_slice        (0.000e+00)
+   PASS  saturated_ratio_fix     (0.000e+00)
+========================================================================
+VERDICT: ALL PASS
+ppo rc=0

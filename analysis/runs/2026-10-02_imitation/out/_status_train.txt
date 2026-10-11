@@ -1,0 +1,3 @@
+smoke_i_trunk_d6_s43 rc=0
+smoke_i_off_s43 rc=0
+smoke_i_a6_s43 rc=0

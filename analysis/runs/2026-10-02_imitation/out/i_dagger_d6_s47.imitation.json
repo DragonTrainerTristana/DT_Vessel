@@ -1,0 +1,53 @@
+{
+ "spec": "docs/superpowers/specs/2026-10-02-imitation-init-design.md",
+ "code": "0a3e70e",
+ "teacher": {
+  "name": "vo56",
+  "R": 56.0,
+  "H": 60.0,
+  "dt": 2.0,
+  "stbd_only": false,
+  "source": "verify/check_reward_rank.vo_action (true pos/vel of ships <= R)"
+ },
+ "init": "i_init_d6_s47.pt",
+ "init_sha256": "035f8eb86e0b3da6a284c4ab3cc8e7efc50db0eceb24687bcf0f88e993e8b329",
+ "seed": 47,
+ "envs": 128,
+ "vessels": 16,
+ "decisions": 3000,
+ "beta_hold": 500,
+ "beta_end": 2000,
+ "buffer": 64,
+ "sgd_per_dec": 4,
+ "mb": 2048,
+ "lr": 0.0003,
+ "w_thrust": 0.1,
+ "target_clip": 0.995,
+ "value_updates": 15,
+ "rollout": 32,
+ "smoke": false,
+ "dagger_last": {
+  "dec": 3000,
+  "beta": 0.0,
+  "loss": 0.04065392739139497,
+  "agree": 90.5859375,
+  "student_eps": 173.0,
+  "student_goal": 79.76878612716763,
+  "student_vColl": 20.23121387283237,
+  "student_oColl": 0.0,
+  "student_TO": 0.0,
+  "teacher_eps": 17.0,
+  "teacher_goal": 82.3529411764706,
+  "teacher_vColl": 5.882352941176471
+ },
+ "value_last": {
+  "update": 15,
+  "value_loss": 0.2010584276576992,
+  "ret_mean": 12.9586820602417,
+  "ret_std": 96.57621765136719,
+  "student_eps": 76.0,
+  "student_goal": 76.3157894736842,
+  "student_vColl": 23.68421052631579
+ },
+ "minutes": 29.169116481145224
+}

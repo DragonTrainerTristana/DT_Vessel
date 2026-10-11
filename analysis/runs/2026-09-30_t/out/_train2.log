@@ -1,0 +1,67 @@
+재현 실행 [train]
+  python      : /c/Users/OSH/anaconda3/envs/mltest/python.exe
+  체크포인트  : /c/Users/OSH/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel_v3/Python/_repro_out_t
+  시드        : 43 46 47
+  GPU 수      : 4   동시 실행: 8
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 2400)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='t_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 캐시 적중 — 같은 코드·env 로 이미 ALL PASS (2026-09-30 15:58:19). 건너뜀
+  (다시 돌리려면 VESSEL_FORCE_PREFLIGHT=1 · 지문 3c4e688204df4e7eac33)
+
+[branch] 분기점 9043968 · 총 16056320 결정 · 워밍업 2400 · dim: 6 · 팔: off a8 a2 a4
+  trunk 재사용: t_trunk_d6_s43.pt
+  trunk 재사용: t_trunk_d6_s46.pt
+  trunk 재사용: t_trunk_d6_s47.pt
+  갈래 재사용: t_off_s43.pt
+  갈래 재사용: t_a8_s43.pt
+  갈래 재사용: t_a2_s43.pt
+  갈래 재사용: t_a4_s43.pt
+  갈래 재사용: t_off_s46.pt
+  갈래 재사용: t_a8_s46.pt
+  갈래 재사용: t_a2_s46.pt
+  갈래 재사용: t_a4_s46.pt
+  갈래 재사용: t_off_s47.pt
+  갈래 재사용: t_a8_s47.pt
+  갈래 재사용: t_a2_s47.pt
+  갈래 재사용: t_a4_s47.pt
+[branch] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  t_off_s43.pt                 OFF        43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:latent
+  t_a8_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+  t_a2_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+  t_a4_s43.pt                  ON         43    6   16056320    9043968  t_trunk_d6_s43.pt (a2cb77563fd6)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+  t_off_s46.pt                 OFF        46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:latent
+  t_a8_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+  t_a2_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+  t_a4_s46.pt                  ON         46    6   16056320    9043968  t_trunk_d6_s46.pt (34bed79d62b1)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+  t_off_s47.pt                 OFF        47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:latent
+  t_a8_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:ed43ecc4
+  t_a2_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:11a9e56b
+  t_a4_s47.pt                  ON         47    6   16056320    9043968  t_trunk_d6_s47.pt (a61948be1dfa)  imo/none  1:intent,L0,aux0,cdc:decode:a806563c
+  BRANCH CHECK: ALL PASS (12개 체크포인트, trunk 3개)
+  분기 검사 ALL PASS
+학습 완료
+t_off_s43 rc=0(reuse)
+t_a8_s43 rc=0(reuse)
+t_a2_s43 rc=0(reuse)
+t_a4_s43 rc=0(reuse)
+t_off_s46 rc=0(reuse)
+t_a8_s46 rc=0(reuse)
+t_a2_s46 rc=0(reuse)
+t_a4_s46 rc=0(reuse)
+t_off_s47 rc=0(reuse)
+t_a8_s47 rc=0(reuse)
+t_a2_s47 rc=0(reuse)
+t_a4_s47 rc=0(reuse)

@@ -1,0 +1,16 @@
+  평가 t_a6_s47 (ON) → GPU 1
+  평가 t_offb_s47 (OFF) → GPU 0
+  평가 t_a6_s43.step12M (ON) → GPU 1
+  평가 t_offb_s43.step12M (OFF) → GPU 0
+  평가 t_off_s46.step12M (OFF) → GPU 1
+  평가 t_a6_s46.step12M (ON) → GPU 1
+  평가 t_offb_s46.step12M (OFF) → GPU 2
+  평가 t_off_s47.step12M (OFF) → GPU 0
+  평가 t_a6_s47.step12M (ON) → GPU 1
+  평가 t_offb_s47.step12M (OFF) → GPU 2
+  평가 t_a6_s43.step16M (ON) → GPU 0
+  평가 t_offb_s43.step16M (OFF) → GPU 1
+  평가 t_off_s46.step16M (OFF) → GPU 2
+  평가 t_a6_s46.step16M (ON) → GPU 1
+  평가 t_offb_s46.step16M (OFF) → GPU 3
+  평가 t_off_s47.step16M (OFF) → GPU 2

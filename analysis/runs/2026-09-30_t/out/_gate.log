@@ -1,0 +1,6 @@
+s43 goal=51.1 oColl=2.0 창=4 통과
+s44 goal=1.6 oColl=51.5 창=4 불통과
+s45 goal=0.6 oColl=60.6 창=4 불통과
+s46 goal=44.0 oColl=2.2 창=4 통과
+s47 goal=47.5 oColl=0.3 창=4 통과
+trunk 관문 통과 시드: 43 46 47

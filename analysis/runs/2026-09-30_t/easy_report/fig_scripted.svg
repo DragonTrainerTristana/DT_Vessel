@@ -1,0 +1,378 @@
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="381.913281pt" height="178.936469pt" viewBox="0 0 381.913281 178.936469" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-01T15:27:21.194891</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.4, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 178.936469 
+L 381.913281 178.936469 
+L 381.913281 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 28.753281 150.449672 
+L 186.007827 150.449672 
+L 186.007827 28.481672 
+L 28.753281 28.481672 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="m64d41f95e2" d="M 0 0 
+L 0 3.5 
+" style="stroke: #52514e; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m64d41f95e2" x="61.264851" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(44.059969 163.210609)">레이더 규칙</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(43.467 170.828266)">(56 m만 봄)</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#m64d41f95e2" x="153.496256" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(139.535124 163.225844)">통신 규칙</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(128.682975 170.941937)">(300 m 역할 앎)</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_3">
+      <path d="M 28.753281 150.449672 
+L 186.007827 150.449672 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_4">
+      <defs>
+       <path id="m5914c1df18" d="M 0 0 
+L -3.5 0 
+" style="stroke: #52514e; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="153.860531" transform="rotate(-0 21.753281 153.860531)">0</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_5">
+      <path d="M 28.753281 126.056072 
+L 186.007827 126.056072 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_6">
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="126.056072" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="129.466931" transform="rotate(-0 21.753281 129.466931)">20</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_7">
+      <path d="M 28.753281 101.662472 
+L 186.007827 101.662472 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_8">
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="101.662472" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_5">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="105.073331" transform="rotate(-0 21.753281 105.073331)">40</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_9">
+      <path d="M 28.753281 77.268872 
+L 186.007827 77.268872 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_10">
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="77.268872" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_6">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="80.679731" transform="rotate(-0 21.753281 80.679731)">60</text>
+     </g>
+    </g>
+    <g id="ytick_5">
+     <g id="line2d_11">
+      <path d="M 28.753281 52.875272 
+L 186.007827 52.875272 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_12">
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="52.875272" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_7">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="56.286131" transform="rotate(-0 21.753281 56.286131)">80</text>
+     </g>
+    </g>
+    <g id="ytick_6">
+     <g id="line2d_13">
+      <path d="M 28.753281 28.481672 
+L 186.007827 28.481672 
+" clip-path="url(#pb9910b7b98)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_14">
+      <g>
+       <use xlink:href="#m5914c1df18" x="28.753281" y="28.481672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_8">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="21.753281" y="31.892531" transform="rotate(-0 21.753281 31.892531)">100</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_3">
+    <path d="M 35.901215 150.449672 
+L 86.628488 150.449672 
+L 86.628488 53.30216 
+L 35.901215 53.30216 
+z
+" clip-path="url(#pb9910b7b98)" style="fill: #eb6834; opacity: 0.85"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 128.13262 150.449672 
+L 178.859893 150.449672 
+L 178.859893 58.729736 
+L 128.13262 58.729736 
+z
+" clip-path="url(#pb9910b7b98)" style="fill: #2a78d6; opacity: 0.85"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 28.753281 150.449672 
+L 28.753281 28.481672 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 28.753281 150.449672 
+L 186.007827 150.449672 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="PathCollection_1">
+    <defs>
+     <path id="m57b6f78eb1" d="M 0 1.870829 
+C 0.49615 1.870829 0.972045 1.673706 1.322876 1.322876 
+C 1.673706 0.972045 1.870829 0.49615 1.870829 0 
+C 1.870829 -0.49615 1.673706 -0.972045 1.322876 -1.322876 
+C 0.972045 -1.673706 0.49615 -1.870829 0 -1.870829 
+C -0.49615 -1.870829 -0.972045 -1.673706 -1.322876 -1.322876 
+C -1.673706 -0.972045 -1.870829 -0.49615 -1.870829 0 
+C -1.870829 0.49615 -1.673706 0.972045 -1.322876 1.322876 
+C -0.972045 1.673706 -0.49615 1.870829 0 1.870829 
+z
+" style="stroke: #0b0b0b"/>
+    </defs>
+    <g clip-path="url(#pb9910b7b98)">
+     <use xlink:href="#m57b6f78eb1" x="61.264851" y="53.363144" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m57b6f78eb1" x="61.264851" y="53.241176" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_9">
+    <text style="fill: #0b0b0b; font: 8px 'Apple SD Gothic Neo'; text-anchor: middle" x="61.264851" y="48.986932" transform="rotate(-0 61.264851 48.986932)">79.7</text>
+   </g>
+   <g id="PathCollection_2">
+    <g clip-path="url(#pb9910b7b98)">
+     <use xlink:href="#m57b6f78eb1" x="153.496256" y="58.241864" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m57b6f78eb1" x="153.496256" y="59.217608" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_10">
+    <text style="fill: #0b0b0b; font: 8px 'Apple SD Gothic Neo'; text-anchor: middle" x="153.496256" y="54.187648" transform="rotate(-0 153.496256 54.187648)">75.2</text>
+   </g>
+   <g id="text_11">
+    <text style="fill: #0b0b0b; font: 8.5px 'Apple SD Gothic Neo'" transform="translate(62.636687 13.746328)">56 m 안 COLREGs 점수 %</text>
+    <text style="fill: #0b0b0b; font: 8.5px 'Apple SD Gothic Neo'" transform="translate(84.069304 22.481672)">(한 척씩 채점)</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_7">
+    <path d="M 217.458736 150.449672 
+L 374.713281 150.449672 
+L 374.713281 28.481672 
+L 217.458736 28.481672 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="matplotlib.axis_3">
+    <g id="xtick_3">
+     <g id="line2d_15">
+      <g>
+       <use xlink:href="#m64d41f95e2" x="249.970306" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_12">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(232.765423 163.210609)">레이더 규칙</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(232.172454 170.828266)">(56 m만 봄)</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_16">
+      <g>
+       <use xlink:href="#m64d41f95e2" x="342.201711" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_13">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(328.240578 163.225844)">통신 규칙</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(317.38843 170.941937)">(300 m 역할 앎)</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_4">
+    <g id="ytick_7">
+     <g id="line2d_17">
+      <path d="M 217.458736 150.449672 
+L 374.713281 150.449672 
+" clip-path="url(#p317bd2d6cd)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_18">
+      <g>
+       <use xlink:href="#m5914c1df18" x="217.458736" y="150.449672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_14">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="210.458736" y="153.860531" transform="rotate(-0 210.458736 153.860531)">0</text>
+     </g>
+    </g>
+    <g id="ytick_8">
+     <g id="line2d_19">
+      <path d="M 217.458736 116.569672 
+L 374.713281 116.569672 
+" clip-path="url(#p317bd2d6cd)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_20">
+      <g>
+       <use xlink:href="#m5914c1df18" x="217.458736" y="116.569672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_15">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="210.458736" y="119.980531" transform="rotate(-0 210.458736 119.980531)">5</text>
+     </g>
+    </g>
+    <g id="ytick_9">
+     <g id="line2d_21">
+      <path d="M 217.458736 82.689672 
+L 374.713281 82.689672 
+" clip-path="url(#p317bd2d6cd)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_22">
+      <g>
+       <use xlink:href="#m5914c1df18" x="217.458736" y="82.689672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_16">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="210.458736" y="86.100531" transform="rotate(-0 210.458736 86.100531)">10</text>
+     </g>
+    </g>
+    <g id="ytick_10">
+     <g id="line2d_23">
+      <path d="M 217.458736 48.809672 
+L 374.713281 48.809672 
+" clip-path="url(#p317bd2d6cd)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_24">
+      <g>
+       <use xlink:href="#m5914c1df18" x="217.458736" y="48.809672" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_17">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="210.458736" y="52.220531" transform="rotate(-0 210.458736 52.220531)">15</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_8">
+    <path d="M 224.60667 150.449672 
+L 275.333942 150.449672 
+L 275.333942 118.602472 
+L 224.60667 118.602472 
+z
+" clip-path="url(#p317bd2d6cd)" style="fill: #eb6834; opacity: 0.85"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 316.838075 150.449672 
+L 367.565347 150.449672 
+L 367.565347 58.634872 
+L 316.838075 58.634872 
+z
+" clip-path="url(#p317bd2d6cd)" style="fill: #2a78d6; opacity: 0.85"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 217.458736 150.449672 
+L 217.458736 28.481672 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 217.458736 150.449672 
+L 374.713281 150.449672 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="PathCollection_3">
+    <g clip-path="url(#p317bd2d6cd)">
+     <use xlink:href="#m57b6f78eb1" x="249.970306" y="117.924872" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m57b6f78eb1" x="249.970306" y="119.280072" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_18">
+    <text style="fill: #0b0b0b; font: 8px 'Apple SD Gothic Neo'; text-anchor: middle" x="249.970306" y="114.59108" transform="rotate(-0 249.970306 114.59108)">4.7</text>
+   </g>
+   <g id="PathCollection_4">
+    <g clip-path="url(#p317bd2d6cd)">
+     <use xlink:href="#m57b6f78eb1" x="342.201711" y="61.684072" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m57b6f78eb1" x="342.201711" y="55.585672" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_19">
+    <text style="fill: #0b0b0b; font: 8px 'Apple SD Gothic Neo'; text-anchor: middle" x="342.201711" y="49.758312" transform="rotate(-0 342.201711 49.758312)">13.6</text>
+   </g>
+   <g id="text_20">
+    <text style="fill: #0b0b0b; font: 8.5px 'Apple SD Gothic Neo'" transform="translate(245.677688 13.746328)">둘 다 역할 지킴 + 안전 통과 %</text>
+    <text style="fill: #0b0b0b; font: 8.5px 'Apple SD Gothic Neo'" transform="translate(273.892376 22.481672)">(짝으로 채점)</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pb9910b7b98">
+   <rect x="28.753281" y="28.481672" width="157.254545" height="121.968"/>
+  </clipPath>
+  <clipPath id="p317bd2d6cd">
+   <rect x="217.458736" y="28.481672" width="157.254545" height="121.968"/>
+  </clipPath>
+ </defs>
+</svg>

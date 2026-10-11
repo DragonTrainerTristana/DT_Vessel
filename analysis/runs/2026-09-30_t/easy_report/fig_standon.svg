@@ -1,0 +1,354 @@
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="389.9pt" height="172.148266pt" viewBox="0 0 389.9 172.148266" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-01T15:27:21.148811</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.4, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 172.148266 
+L 389.9 172.148266 
+L 389.9 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 36.74 143.666859 
+L 382.7 143.666859 
+L 382.7 10.610859 
+L 36.74 10.610859 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="me265d44f71" d="M 0 0 
+L 0 3.5 
+" style="stroke: #52514e; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#me265d44f71" x="71.474246" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(60.756863 156.443031)">옛 보상</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(58.62698 164.059281)">OFF (x_)</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#me265d44f71" x="140.597123" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(126.63599 156.427797)">지금 보상</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(134.162357 164.044047)">OFF</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3">
+      <g>
+       <use xlink:href="#me265d44f71" x="209.72" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(195.758867 156.427797)">지금 보상</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(192.567852 164.135453)">OFF 재분기</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4">
+      <g>
+       <use xlink:href="#me265d44f71" x="278.842877" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(264.881744 156.427797)">지금 보상</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(267.521393 164.153734)">통신 a6</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_5">
+      <g>
+       <use xlink:href="#me265d44f71" x="347.965754" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_5">
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(334.004621 156.427797)">지금 보상</text>
+      <text style="fill: #52514e; font: 7.5px 'Apple SD Gothic Neo'" transform="translate(320.226887 164.153734)">통신 a8(역할 선언)</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_6">
+      <path d="M 36.74 143.666859 
+L 382.7 143.666859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_7">
+      <defs>
+       <path id="m7ee27db594" d="M 0 0 
+L -3.5 0 
+" style="stroke: #52514e; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="143.666859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_6">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="147.077719" transform="rotate(-0 29.74 147.077719)">0</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_8">
+      <path d="M 36.74 124.658859 
+L 382.7 124.658859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_9">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="124.658859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_7">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="128.069719" transform="rotate(-0 29.74 128.069719)">10</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_10">
+      <path d="M 36.74 105.650859 
+L 382.7 105.650859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_11">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="105.650859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_8">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="109.061719" transform="rotate(-0 29.74 109.061719)">20</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_12">
+      <path d="M 36.74 86.642859 
+L 382.7 86.642859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_13">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="86.642859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_9">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="90.053719" transform="rotate(-0 29.74 90.053719)">30</text>
+     </g>
+    </g>
+    <g id="ytick_5">
+     <g id="line2d_14">
+      <path d="M 36.74 67.634859 
+L 382.7 67.634859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_15">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="67.634859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_10">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="71.045719" transform="rotate(-0 29.74 71.045719)">40</text>
+     </g>
+    </g>
+    <g id="ytick_6">
+     <g id="line2d_16">
+      <path d="M 36.74 48.626859 
+L 382.7 48.626859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_17">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="48.626859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_11">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="52.037719" transform="rotate(-0 29.74 52.037719)">50</text>
+     </g>
+    </g>
+    <g id="ytick_7">
+     <g id="line2d_18">
+      <path d="M 36.74 29.618859 
+L 382.7 29.618859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_19">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="29.618859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_12">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="33.029719" transform="rotate(-0 29.74 33.029719)">60</text>
+     </g>
+    </g>
+    <g id="ytick_8">
+     <g id="line2d_20">
+      <path d="M 36.74 10.610859 
+L 382.7 10.610859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke: #e4e3df; stroke-width: 0.6; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_21">
+      <g>
+       <use xlink:href="#m7ee27db594" x="36.74" y="10.610859" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_13">
+      <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: end" x="29.74" y="14.021719" transform="rotate(-0 29.74 14.021719)">70</text>
+     </g>
+    </g>
+    <g id="text_14">
+     <text style="fill: #52514e; font: 9px 'Apple SD Gothic Neo'; text-anchor: middle" x="14.121562" y="77.138859" transform="rotate(-90 14.121562 77.138859)">유지선 준수 %</text>
+    </g>
+   </g>
+   <g id="patch_3">
+    <path d="M 52.465455 143.666859 
+L 90.483037 143.666859 
+L 90.483037 70.169259 
+L 52.465455 70.169259 
+z
+" clip-path="url(#p6979dc359c)" style="fill: #eb6834; opacity: 0.85"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 121.588332 143.666859 
+L 159.605914 143.666859 
+L 159.605914 131.058219 
+L 121.588332 131.058219 
+z
+" clip-path="url(#p6979dc359c)" style="fill: #eb6834; opacity: 0.85"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 190.711209 143.666859 
+L 228.728791 143.666859 
+L 228.728791 131.311659 
+L 190.711209 131.311659 
+z
+" clip-path="url(#p6979dc359c)" style="fill: #eb6834; opacity: 0.85"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 259.834086 143.666859 
+L 297.851668 143.666859 
+L 297.851668 130.678059 
+L 259.834086 130.678059 
+z
+" clip-path="url(#p6979dc359c)" style="fill: #2a78d6; opacity: 0.85"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 328.956963 143.666859 
+L 366.974545 143.666859 
+L 366.974545 130.931499 
+L 328.956963 130.931499 
+z
+" clip-path="url(#p6979dc359c)" style="fill: #2a78d6; opacity: 0.85"/>
+   </g>
+   <g id="line2d_22">
+    <path d="M 106.035684 143.666859 
+L 106.035684 10.610859 
+" clip-path="url(#p6979dc359c)" style="fill: none; stroke-dasharray: 2.4,2.4; stroke-dashoffset: 0; stroke: #52514e; stroke-width: 0.8"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 36.74 143.666859 
+L 36.74 10.610859 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 36.74 143.666859 
+L 382.7 143.666859 
+" style="fill: none; stroke: #e4e3df; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="PathCollection_1">
+    <defs>
+     <path id="m2eaaa595aa" d="M 0 2 
+C 0.530406 2 1.03916 1.789267 1.414214 1.414214 
+C 1.789267 1.03916 2 0.530406 2 0 
+C 2 -0.530406 1.789267 -1.03916 1.414214 -1.414214 
+C 1.03916 -1.789267 0.530406 -2 0 -2 
+C -0.530406 -2 -1.03916 -1.789267 -1.414214 -1.414214 
+C -1.789267 -1.03916 -2 -0.530406 -2 0 
+C -2 0.530406 -1.789267 1.03916 -1.414214 1.414214 
+C -1.03916 1.789267 -0.530406 2 0 2 
+z
+" style="stroke: #0b0b0b"/>
+    </defs>
+    <g clip-path="url(#p6979dc359c)">
+     <use xlink:href="#m2eaaa595aa" x="71.474246" y="133.022379" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="71.474246" y="37.792299" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="71.474246" y="39.693099" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_15">
+    <text style="fill: #0b0b0b; font: 7.5px 'Apple SD Gothic Neo'; text-anchor: middle" x="71.474246" y="32.089899" transform="rotate(-0 71.474246 32.089899)">평균 38.7</text>
+   </g>
+   <g id="PathCollection_2">
+    <g clip-path="url(#p6979dc359c)">
+     <use xlink:href="#m2eaaa595aa" x="140.597123" y="129.030699" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="140.597123" y="129.791019" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="140.597123" y="134.352939" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_16">
+    <text style="fill: #0b0b0b; font: 7.5px 'Apple SD Gothic Neo'; text-anchor: middle" x="140.597123" y="123.328299" transform="rotate(-0 140.597123 123.328299)">평균 6.6</text>
+   </g>
+   <g id="PathCollection_3">
+    <g clip-path="url(#p6979dc359c)">
+     <use xlink:href="#m2eaaa595aa" x="209.72" y="129.410859" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="209.72" y="133.212459" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="209.72" y="131.311659" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_17">
+    <text style="fill: #0b0b0b; font: 7.5px 'Apple SD Gothic Neo'; text-anchor: middle" x="209.72" y="123.708459" transform="rotate(-0 209.72 123.708459)">평균 6.5</text>
+   </g>
+   <g id="PathCollection_4">
+    <g clip-path="url(#p6979dc359c)">
+     <use xlink:href="#m2eaaa595aa" x="278.842877" y="122.567979" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="278.842877" y="134.923179" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="278.842877" y="134.543019" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_18">
+    <text style="fill: #0b0b0b; font: 7.5px 'Apple SD Gothic Neo'; text-anchor: middle" x="278.842877" y="116.865579" transform="rotate(-0 278.842877 116.865579)">평균 6.8</text>
+   </g>
+   <g id="PathCollection_5">
+    <g clip-path="url(#p6979dc359c)">
+     <use xlink:href="#m2eaaa595aa" x="347.965754" y="130.741419" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="347.965754" y="133.592619" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+     <use xlink:href="#m2eaaa595aa" x="347.965754" y="128.460459" style="fill: #0b0b0b; stroke: #0b0b0b"/>
+    </g>
+   </g>
+   <g id="text_19">
+    <text style="fill: #0b0b0b; font: 7.5px 'Apple SD Gothic Neo'; text-anchor: middle" x="347.965754" y="122.758059" transform="rotate(-0 347.965754 122.758059)">평균 6.7</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p6979dc359c">
+   <rect x="36.74" y="10.610859" width="345.96" height="133.056"/>
+  </clipPath>
+ </defs>
+</svg>
