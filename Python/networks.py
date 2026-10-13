@@ -702,8 +702,9 @@ class _ControlActorCore(nn.Module):
         self.action_mean.weight.data.mul_(0.1)
         self.action_mean.bias.data.zero_()
         # Learnable log std — per-dim: rudder(dim0) -1.0(std≈0.37), thrust(dim1) -0.5(std≈0.61).
+        #   ★2026-10-13 dim0 는 config.LOGSTD_INIT0(기본 −1.0 = 비트동일). 침로 모드 σ = e^logstd × 120°
         if action_size == 2:
-            self.action_logstd = nn.Parameter(torch.tensor([[-1.0, -0.5]]))
+            self.action_logstd = nn.Parameter(torch.tensor([[float(_cfg.LOGSTD_INIT0), -0.5]]))
         else:
             self.action_logstd = nn.Parameter(torch.full((1, action_size), -0.5))
 

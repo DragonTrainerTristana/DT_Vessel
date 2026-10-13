@@ -5,6 +5,7 @@
 - 실행(Git Bash, 클론 루트, 브랜치 `feat/fig1-latent`, 얕은 클론 금지):
   - `VESSEL_F_AUTO1=1 bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase0`
   - ★2026-10-07 배치 n_(흉내 없음, 스펙 `docs/superpowers/specs/2026-10-07-pure-rl-fig1-design.md`): `VESSEL_F_IMIT=0 VESSEL_F_PREFIX=n_ bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1` = 시드 1개(43). 성공 뒤 시드 3개 = `VESSEL_F_PREFIX=n3_ VESSEL_F_SEEDS="43 44 45 46 47" VESSEL_F_NGATE=3` 추가
+  - ★2026-10-13 갈림길 q_(스펙 `docs/superpowers/specs/2026-10-13-trunk-fork-design.md`, trunk 모드 = smoke→trunk→관문에서 멈춤): `VESSEL_F_IMIT=0 VESSEL_F_ALLOW_BUSY=1 VESSEL_F_GPU=0 VESSEL_F_PREFIX=qa_ VESSEL_F_ARPA_RANGE=300 bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh trunk` · `… VESSEL_F_GPU=1 VESSEL_F_PREFIX=qb_ VESSEL_F_EXTRA_ENV="VESSEL_LOGSTD_INIT0=-2.0 VESSEL_LR_FINAL=3e-5 VESSEL_LR_DECAY_DEC=16056320" … trunk` · 진단 `CUDA_VISIBLE_DEVICES=3 bash Python/runs_fig1/2026-10-02_fig1/diag_trunk.sh n_`
   - python 경로가 `$HOME/anaconda3/envs/mltest/python.exe` 가 아니면 `VESSEL_PY=<경로>` 를 앞에 붙임
 - 결과: `Python/_repro_out_f/` (git 밖). `$HOME/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/` 가 있으면 표·로그 사본을 그 `out/` 에도 씀
 - 폴더 구성 = Dropbox `runs/` 와 같은 상대 경로(스크립트끼리 `../` 로 서로 import)

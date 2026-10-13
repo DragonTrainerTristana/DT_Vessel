@@ -100,7 +100,9 @@ BASE = dict(VESSEL_USE_COMM='1', VESSEL_MOE_SHARED='1', VESSEL_THREAT_COEF='0.5'
             VESSEL_ROLE_PROMISE_PEN=None,
             # ★2026-10-07 판정기 v2 토글도 기본(risk·0)으로 고정 — 배치 env(n_: VESSEL_ROLE_V2_PRIMARY=cum)가 새면
             #   판정기 없는 p12 케이스(역할 약속 벌점 0)가 role_declaration 에서 RuntimeError 로 죽음
-            VESSEL_ROLE_V2_PRIMARY=None, VESSEL_ROLE_V2_RES_F6=None)
+            VESSEL_ROLE_V2_PRIMARY=None, VESSEL_ROLE_V2_RES_F6=None,
+            # ★2026-10-13 q_ 최적화·보상 반경 토글도 기본으로 고정(배치 env 가 새면 케이스 정책 초기값·env 가 달라짐)
+            VESSEL_LOGSTD_INIT0=None, VESSEL_LR_FINAL=None, VESSEL_LR_DECAY_DEC=None, VESSEL_REWARD_RANGE=None)
 _EXT = {'VESSEL_USE_MOE': '1', 'VESSEL_USE_ATTENTION': '1', 'VESSEL_COMM_EXT': '1'}
 _CDC = {'VESSEL_COMM_FIELDS': 'intent', 'VESSEL_COMM_LATENT': '0.0', 'VESSEL_AUX_LOSS_SCALE': '0.0',
         'VESSEL_DYN_PROFILE': 'imo', 'VESSEL_OBSTACLES': 'none',

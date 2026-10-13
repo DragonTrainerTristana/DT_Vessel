@@ -70,13 +70,16 @@ SETTINGS = {
     'v3nogate': dict(_V3, VESSEL_RISK_DCPA_GATE_M='0'),
     # ★2026-10-07 n_ 배치(스펙 2026-10-07-pure-rl-fig1-design.md 관문 2): v3 + 누적 주 상대 + 해소 종료 F6
     'v4': dict(_V3, VESSEL_ROLE_V2_PRIMARY='cum', VESSEL_ROLE_V2_RES_F6='1'),
+    # ★2026-10-13 q_ 단계 2(스펙 2026-10-13-trunk-fork-design.md): v4 + 충돌코스·per-pair 비용 반경 56 m(판정기는 300 그대로)
+    'v5': dict(_V3, VESSEL_ROLE_V2_PRIMARY='cum', VESSEL_ROLE_V2_RES_F6='1', VESSEL_REWARD_RANGE='56'),
 }
-SETTING_ORDER = ('old', 's', 'v3', 'v3nogate', 'v4')
-JUDGED = ('v3', 'v3nogate', 'v4')                              # 판정 대상. old·s 는 기록만
+SETTING_ORDER = ('old', 's', 'v3', 'v3nogate', 'v4', 'v5')
+JUDGED = ('v3', 'v3nogate', 'v4', 'v5')                        # 판정 대상. old·s 는 기록만
 ENV2CFG = {'VESSEL_ROLE_PROMISE_PEN': 'ROLE_PROMISE_PEN', 'VESSEL_ROLE_JUDGE': 'ROLE_JUDGE',
            'VESSEL_FORWARD_COEF': 'FORWARD_COEF', 'VESSEL_TIME_PENALTY': 'TIME_PENALTY',
            'VESSEL_RISK_DCPA_GATE_M': 'RISK_DCPA_GATE_M',
-           'VESSEL_ROLE_V2_PRIMARY': 'ROLE_V2_PRIMARY', 'VESSEL_ROLE_V2_RES_F6': 'ROLE_V2_RES_F6'}
+           'VESSEL_ROLE_V2_PRIMARY': 'ROLE_V2_PRIMARY', 'VESSEL_ROLE_V2_RES_F6': 'ROLE_V2_RES_F6',
+           'VESSEL_REWARD_RANGE': 'REWARD_RANGE'}
 REL_MARGIN = 0.05        # (i)(iii): min(회피) − max(나머지) > 0.05·|max|  (부호 무관 여유)
 RDEC_MARGIN = 0.05       # (ii): vo56 − max(goal, stbd, radar) ≥ 0.05
 LAZY_MARGIN = 0.2        # (ii): drift·idle < goal − 0.2
@@ -110,6 +113,8 @@ def _child(a):
     import vessel_gym as vg
     want = SETTINGS[a.child]
     _check_setting(a.child, want, cfg, vg)
+    assert ('VESSEL_REWARD_RANGE' in want) == (cfg.REWARD_RANGE is not None), \
+        f"[{a.child}] REWARD_RANGE={cfg.REWARD_RANGE} — 이 설정의 보상 반경이 아님(부모 env 누출)"
     assert cfg.DYN_PROFILE == 'imo' and cfg.OBSTACLES_MODE == 'none', (cfg.DYN_PROFILE, cfg.OBSTACLES_MODE)
     torch.set_num_threads(1)
     dev = torch.device(a.device if a.device != 'auto' else ('cuda' if torch.cuda.is_available() else 'cpu'))
@@ -205,8 +210,11 @@ def _child(a):
     for seed in a.seeds:
         for pol in POLICIES:
             env = vg.VesselBatchEnv(num_envs=a.E, n_vessels=16, device=dev, seed=seed, ring_scale=1.0, crossing=0,
-                                    risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
+                                    # ★2026-10-13 v5: 학습기(vessel_gym_train)와 같은 규칙 — VESSEL_REWARD_RANGE 가 있으면 그 반경
+                                    risk_range=cfg.COMM_RANGE,
+                                    reward_range=(cfg.REWARD_RANGE if cfg.REWARD_RANGE is not None else cfg.COMM_RANGE),
                                     farfield_coef=cfg.FARFIELD_COEF, perpair_coef=cfg.PERPAIR_COEF, perpair_exp=3.0)
+            used['reward_range'] = float(env.reward_range)   # ★2026-10-13 v5: env 가 실제로 쓴 반경(설정값이 조용히 무시되지 않게)
             # 판정기: 설정의 ROLE_JUDGE(end/v2)가 고른 것. reset() 앞에 켜서 reset 이 판정기도 초기화. PEN 0 에서도 지표로 돈다
             tr = env.enable_role_tracker()
             judge_used = getattr(env, '_rp_judge', None) or ('v2' if 'v2' in type(tr).__name__.lower() else 'end')
@@ -364,6 +372,7 @@ def main():
 
     def run(setting):
         env = dict(os.environ)
+        env.pop('VESSEL_REWARD_RANGE', None)   # ★2026-10-13 v5 만 설정 dict 로 넣음 — 부모 셸 값이 다른 설정으로 새지 않게
         env.update(SETTINGS[setting])
         env.setdefault('PYTHONIOENCODING', 'utf-8')
         cmd = [sys.executable, os.path.abspath(__file__), '--child', setting, '--seeds', ','.join(map(str, a.seeds)),
@@ -399,11 +408,12 @@ def main():
         else:
             print(f"RANK GATE v2 [{s}] (기록만): {n_ok}/{len(verdict[s])} seeds 가 규칙 (i)–(v) 전부 성립, judge={res[s]['judge']}")
     v3_ok, ng_ok = passed.get('v3', False), passed.get('v3nogate', False)
-    if 'v4' in res:
-        # ★2026-10-07 v4 를 돌렸으면 v4 하나로 판정(n_ 배치 보상). 대체 경로 없음 — 불통과면 멈추고 보고
-        gate = passed['v4']
-        decision = 'DECISION: run v4' if gate else 'DECISION: stop, report'
-        print(f"RANK GATE v2: {'PASS' if gate else '★FAIL'}  (v4 {'PASS' if gate else 'FAIL'})")
+    _top = next((k for k in ('v5', 'v4') if k in res), None)
+    if _top:
+        # ★2026-10-07 v4(또는 10-13 v5)를 돌렸으면 그 설정 하나로 판정. 대체 경로 없음 — 불통과면 멈추고 보고
+        gate = passed[_top]
+        decision = f'DECISION: run {_top}' if gate else 'DECISION: stop, report'
+        print(f"RANK GATE v2: {'PASS' if gate else '★FAIL'}  ({_top} {'PASS' if gate else 'FAIL'})")
     elif not any(s in res for s in JUDGED):
         gate, decision = False, 'DECISION: 없음 — v3·v3nogate 를 안 돌렸음(기록만)'
         print('RANK GATE v2: SKIP (v3·v3nogate 미실행)')
@@ -415,7 +425,7 @@ def main():
               f"v3nogate {'PASS' if ng_ok else 'FAIL' if 'v3nogate' in res else '미실행'})")
     print(decision)
     res['verdict'] = verdict
-    res['gate'] = {'v3': v3_ok, 'v3nogate': ng_ok, 'v4': passed.get('v4'), 'pass': gate, 'decision': decision}
+    res['gate'] = {'v3': v3_ok, 'v3nogate': ng_ok, 'v4': passed.get('v4'), 'v5': passed.get('v5'), 'pass': gate, 'decision': decision}
     res['args'] = {'seeds': a.seeds, 'E': a.E, 'burn': a.burn, 'T': a.T, 'device': a.device, 'settings': settings,
                    'policies': POLICIES, 'avoiders': AVOIDERS, 'rules': {'rel_margin': REL_MARGIN, 'rdec_margin': RDEC_MARGIN,
                                                                          'lazy_margin': LAZY_MARGIN, 'G_tail_cut': G_TAIL_CUT}}

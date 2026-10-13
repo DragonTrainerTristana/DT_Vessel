@@ -52,6 +52,9 @@ def load_meta(path):
         'trunk': snap.get('branch_from'), 'sha': snap.get('branch_from_sha256'), 'at': snap.get('branch_at'),
         'dyn': str(snap.get('dyn_profile') or 'agile'), 'obst': str(snap.get('obstacles') or 'grid3x3'),
         'crossing': snap.get('crossing'),   # 2026-09-23: 같은 trunk 묶음 안 목표 배정 방식 일치
+        # ★2026-10-13 최적화 토글(logstd 초기·lr 감쇠) — 같은 묶음 안 ON=OFF 동일 강제(옛 스냅샷은 전부 None 으로 일치)
+        'opt': json.dumps({k: (snap.get(k) if snap.get(k) is not None else d)        # 옛 스냅샷(키 없음) = 옛 기본값으로 정규화
+                           for k, d in (('logstd_init0', -1.0), ('lr_final', 3e-4), ('lr_decay_dec', 0.0))}, sort_keys=True),
         # 2026-09-23: 보상 계수·게이트 상수 24개. 비교는 문자열로(정렬 JSON), 보고는 다른 키만 뽑아서.
         'sim': json.dumps(snap.get('sim'), sort_keys=True),
         # 2026-09-25 의도·역할 통신: comm_ext 는 구조(같은 trunk 묶음 안 일치 필수). 필드·latent·반경·aux 는 팔마다 다를 수 있어
@@ -131,7 +134,7 @@ def main():
 
     for sha, ms in groups.items():
         tag = f"trunk {ms[0]['trunk']} ({sha[:12]})"
-        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing', 'sim', 'comm_ext'):
+        for key in ('seed', 'msg_dim', 'at', 'dyn', 'obst', 'crossing', 'sim', 'comm_ext', 'opt'):
             vals = sorted({str(m[key]) for m in ms})
             if len(vals) > 1:
                 fails.append(f'{tag}: sim 불일치 {sim_diff_keys(ms)}' if key == 'sim'

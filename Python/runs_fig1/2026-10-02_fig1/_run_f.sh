@@ -27,10 +27,14 @@
 #   ★2026-10-09 순위 관문 v4 불통과(10-07, 기록 _rank_v4.json)를 저자 결정으로 넘김: VESSEL_F_RANK_OVERRIDE="<저자 결정 문구>" 를 앞에 붙임
 #     → 관문이 한 번 돌아 기록이 있을 때만 통함. _rank_override.txt 에 문구·시각·판정 줄을 남기고 _fig1.md 맨 위에 적음. 관문 재실행 없음
 #     관문 자체는 타각 모드(VESSEL_ACTION_MODE=rudder)로 잼 — 규칙 배 14종이 타각 단위 행동이라 침로 모드 env 에서는 엉뚱하게 움직였음(10-07 결함)
+# ★2026-10-13 q_ 갈림길(스펙 docs/superpowers/specs/2026-10-13-trunk-fork-design.md): MODE trunk = smoke→trunk→관문에서 멈춤(갈래는 같은 접두어로 phase1 이어서)
+#   VESSEL_F_ARPA_RANGE=300 (trunk 모드 전용 진단: OFF 가 300 m 참값을 봄) · VESSEL_F_EXTRA_ENV="K=V K=V"(trunk·off·comm 전부에 같은 export = ON=OFF)
+#   VESSEL_F_REWARD_RANGE=56 (충돌코스·per-pair 비용 반경, 두 팔 동일 → 순위 관문 v5 새로) · VESSEL_F_RANK_PARALLEL=1 (관문을 trunk 와 동시에 다른 GPU)
+#   VESSEL_F_ALLOW_BUSY=1 (다른 학습이 돌아도 시작 — GPU 3장에 동시 실행용)
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
-case "$MODE" in phase0|phase1) ;; *) echo "사용: $0 phase0|phase1"; exit 1 ;; esac
+case "$MODE" in phase0|phase1|trunk) ;; *) echo "사용: $0 phase0|phase1|trunk"; exit 1 ;; esac
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)           # .../Python/runs_fig1/2026-10-02_fig1
 BUNDLE=$(dirname "$HERE")                                     # .../Python/runs_fig1
 R=${VESSEL_F_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)} || { echo "★멈춤: git 저장소 안에서 실행할 것"; exit 1; }
@@ -41,8 +45,10 @@ IMIT=${VESSEL_F_IMIT:-1}                # ★2026-10-07 0 = 흉내 없음(n_ 배
 case "$IMIT" in 0|1) ;; *) echo "★멈춤: VESSEL_F_IMIT=$IMIT — 0 | 1"; exit 1 ;; esac
 if [ "$IMIT" = 0 ]; then
   case "$PRE" in f_|f2_) echo "★멈춤: VESSEL_F_IMIT=0 은 새 접두어로(VESSEL_F_PREFIX=n_) — f_·f2_ 결과와 섞지 않음"; exit 1 ;; esac
-  [ "$MODE" = phase1 ] || { echo "★멈춤: VESSEL_F_IMIT=0 은 phase1 만(phase0 = DAgger·P0)"; exit 1; }
+  [ "$MODE" != phase0 ] || { echo "★멈춤: VESSEL_F_IMIT=0 은 phase1·trunk 만(phase0 = DAgger·P0)"; exit 1; }
 fi
+[ "$MODE" != trunk ] || [ "$IMIT" = 0 ] || { echo "★멈춤: trunk 모드는 VESSEL_F_IMIT=0 전용"; exit 1; }
+[ -z "${VESSEL_F_REWARD_RANGE:-}${VESSEL_F_EXTRA_ENV:-}${VESSEL_F_ARPA_RANGE:-}" ] || [ "$IMIT" = 0 ] || { echo "★멈춤: 10-13 토글(REWARD_RANGE·EXTRA_ENV·ARPA_RANGE)은 VESSEL_F_IMIT=0 전용"; exit 1; }
 OFF_T=vo56h150                          # 위 주석(스펙 §5 규칙 적용 결과)
 COMM_T=vo300i
 SEEDS_ALL="43 44 45 46 47"
@@ -51,6 +57,8 @@ NGATE=3                                 # trunk 관문 통과 시드 수(갈래 
 if [ "$IMIT" = 0 ]; then SEEDS_ALL="43"; NGATE=1; fi
 ARMS="off comm offb"
 [ "$IMIT" = 0 ] && ARMS="off comm"      # ★2026-10-07 저자 결정: n_ 은 잡음 자 offb 없음 — 갈래 off · comm 둘만
+ARPA_R=${VESSEL_F_ARPA_RANGE:-56}       # ★2026-10-13 OFF 가 보는 참값 반경. 56 = 레이더(Fig1 정의). 300 = T-A 진단(trunk 모드만, Fig1 뿌리 불가)
+[ "$ARPA_R" = 56 ] || [ "$MODE" = trunk ] || { echo "★멈춤: VESSEL_F_ARPA_RANGE=$ARPA_R 은 trunk 모드(진단)에서만 — Fig1 OFF 는 ARPA@56"; exit 1; }
 SEEDS_ALL=${VESSEL_F_SEEDS:-$SEEDS_ALL}; NGATE=${VESSEL_F_NGATE:-$NGATE}
 [ "$NGATE" -ge 1 ] && [ "$NGATE" -le $(echo $SEEDS_ALL | wc -w) ] || { echo "★멈춤: VESSEL_F_NGATE=$NGATE · 시드 [$SEEDS_ALL]"; exit 1; }
 K=8                                     # 스펙 §4-1 파트너 수
@@ -60,11 +68,11 @@ BC_DECAY=3000000                        # 스펙 §4-1 흉내 보조손실 1.0 �
 JOBS=${VESSEL_F_JOBS:-8}
 GPU_CAP=${VESSEL_F_GPU_CAP:-2}          # GPU 한 장에 이 배치 런 2개까지(09-29 '한 장에 ON 3개 = 정지' 기록)
 _busy=$(powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Select-Object -ExpandProperty CommandLine" 2>/dev/null | grep -c "vessel_gym_train\|dagger_init\|eval_ckpt\|comm_codec")   # 규칙 배 평가(eval_scripted)는 같이 돌아도 됨
-[ "${_busy:-0}" -eq 0 ] || { echo "★멈춤: 학습·평가 python 프로세스 ${_busy}개가 돌고 있음 — 끝난 뒤 실행"; exit 1; }
+[ "${_busy:-0}" -eq 0 ] || [ "${VESSEL_F_ALLOW_BUSY:-0}" = 1 ] || { echo "★멈춤: 학습·평가 python 프로세스 ${_busy}개가 돌고 있음 — 끝난 뒤 실행(동시 실행이면 VESSEL_F_ALLOW_BUSY=1)"; exit 1; }
 cd "$R" || exit 1
 [ -z "$(git status --short --untracked-files=no)" ] || { echo "★멈춤: 추적 파일 변경 있음 — git status 확인"; exit 1; }
 [ "$(git rev-parse --is-shallow-repository)" = false ] || { echo "★멈춤: 얕은 클론 — git fetch --unshallow (preflight p6 차분에 ae58b93 필요)"; exit 1; }
-git fetch -q origin feat/fig1-latent || { echo "★멈춤: git fetch 실패"; exit 1; }
+git fetch -q origin feat/fig1-latent || { sleep 7; git fetch -q origin feat/fig1-latent; } || { echo "★멈춤: git fetch 실패"; exit 1; }   # 동시 시작 시 ref lock 재시도
 git merge-base --is-ancestor HEAD FETCH_HEAD || { echo "★멈춤: HEAD $(git rev-parse --short HEAD) 가 origin/feat/fig1-latent 에 없음 — push 안 된 코드로 안 돌림"; exit 1; }
 [ -z "${VESSEL_F_HEAD:-}" ] || [ "$(git rev-parse --short HEAD)" = "$(git rev-parse --short "$VESSEL_F_HEAD" 2>/dev/null)" ] || {
   echo "★멈춤: HEAD $(git rev-parse --short HEAD) ≠ VESSEL_F_HEAD=$VESSEL_F_HEAD"; exit 1; }
@@ -82,15 +90,34 @@ unset VESSEL_REQUIRE_TRUNK VESSEL_REUSE_ARMS VESSEL_SKIP_GOLDEN VESSEL_SEEDS VES
 unset VESSEL_USE_COMM VESSEL_COMM_FIELDS VESSEL_COMM_LATENT VESSEL_PARTNER_RANGE VESSEL_AUX_LOSS_SCALE
 unset VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC
 unset VESSEL_ROLE_V2_PRIMARY VESSEL_ROLE_V2_RES_F6
+unset VESSEL_REWARD_RANGE VESSEL_LOGSTD_INIT0 VESSEL_LR_FINAL VESSEL_LR_DECAY_DEC   # ★2026-10-13 셸에 남은 값이 새지 않게
 export VESSEL_RUN_PREFIX=$PRE VESSEL_ROLE_PROMISE_PEN=20 VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full
 export VESSEL_ROLE_JUDGE=v2 VESSEL_FORWARD_COEF=0 VESSEL_TIME_PENALTY=0.035 VESSEL_RISK_DCPA_GATE_M=48
 export VESSEL_ACTION_MODE=course
 [ "$IMIT" = 0 ] && export VESSEL_ROLE_V2_PRIMARY=cum VESSEL_ROLE_V2_RES_F6=1   # ★2026-10-07 n_ 보상 = v3 + 판정기 토글 2
+# ★2026-10-13 q_: 보상 반경(두 팔 동일) → 순위 관문 설정. 최적화 토글은 전역 export 라 trunk·off·comm 전부 같은 값(ON=OFF)
+RANK_SET=v4
+if [ -n "${VESSEL_F_REWARD_RANGE:-}" ]; then
+  [ "$VESSEL_F_REWARD_RANGE" = 56 ] || { echo "★멈춤: VESSEL_F_REWARD_RANGE=$VESSEL_F_REWARD_RANGE — 스펙 §4·관문 v5 는 56 만"; exit 1; }
+  export VESSEL_REWARD_RANGE=56; RANK_SET=v5
+fi
+for _kv in ${VESSEL_F_EXTRA_ENV:-}; do   # 화이트리스트: 최적화 토글 3개만(보상·구조 키는 못 넣음 → 관문 건너뛰기 경로 없음)
+  echo "$_kv" | grep -Eq '^VESSEL_(LOGSTD_INIT0|LR_FINAL|LR_DECAY_DEC)=-?[0-9.]+([eE][-+]?[0-9]+)?$' || { echo "★멈춤: VESSEL_F_EXTRA_ENV 항목 '$_kv' 허용 안 됨(LOGSTD_INIT0·LR_FINAL·LR_DECAY_DEC 만)"; exit 1; }
+  export "$_kv" || exit 1
+done
 export VESSEL_OUT_DIR=$PWD/_repro_out_${PRE%_}
 CK=$VESSEL_CKPT_DIR
 O=$VESSEL_OUT_DIR; TL=$O/_timeline.txt; mkdir -p "$O" "$O/codec" "$CK"
+# ★2026-10-13 접두어별 실험 env 를 첫 실행에 기록하고 이후 실행마다 대조(같은 접두어로 trunk→phase1 이어갈 때 토글 누락·ARPA 300 뿌리 사용을 막음)
+_benv="ARPA=$ARPA_R RANK=$RANK_SET REWARD_RANGE=${VESSEL_REWARD_RANGE:-} EXTRA=[${VESSEL_F_EXTRA_ENV:-}]"
+if [ -f "$O/_batch_env.txt" ]; then
+  [ "$(cat "$O/_batch_env.txt")" = "$_benv" ] || { echo "★멈춤: 이 접두어($PRE)의 실험 env 가 다름 — 기록: $(cat "$O/_batch_env.txt") / 지금: $_benv (같은 env 로 다시, 또는 새 접두어)"; exit 1; }
+else
+  echo "$_benv" > "$O/_batch_env.txt"
+fi
 DROPF=$HOME/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1
 if [ -d "$DROPF" ]; then RES=$DROPF/out; else RES=$O/results; fi   # 결과 사본(Dropbox 있으면 Mac 에서 바로 봄)
+[ "$IMIT" = 1 ] || [ "$PRE" = n_ ] || RES=$RES/${PRE%_}   # ★2026-10-13 새 배치는 접두어별 하위 폴더(접두어 없는 _timeline·_gate 가 서로 덮지 않게)
 mkdir -p "$RES"
 HEAD_NOW=$(git -C "$R" rev-parse HEAD)
 if [ -f "$O/_commit.txt" ]; then
@@ -110,7 +137,7 @@ rm -f "$O"/.gpu*_*
 source "$R/Python/common_env.sh"
 TRAIN_GPU="VESSEL_JOBS=8 VESSEL_GPU_CAP=2 VESSEL_LAUNCH_GAP=20 VESSEL_VRAM_MARGIN=1500"
 # 런 종류별 통신 구조 env (스펙 §2·§4-1). ARPA = 56 m 안 참값 상대 필드, 메시지 없음(latent 0·코덱 없음)
-ENV_ARPA="export VESSEL_USE_COMM=1 VESSEL_MSG_DIM=6 VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 VESSEL_COMM_FIELDS=state VESSEL_PARTNER_RANGE=56"
+ENV_ARPA="export VESSEL_USE_COMM=1 VESSEL_MSG_DIM=6 VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0 VESSEL_COMM_FIELDS=state VESSEL_PARTNER_RANGE=$ARPA_R"
 env_comm() {   # env_comm <seed> : 300 m 안 메시지(p46 코덱 복원값, 56 m 안은 센서 참값) + 의도 필드
   local cf sh; cf=$(sed -n "s/^CODEC_s$1=\([^ ]*\) .*/\1/p" "$O/_codec_choice.txt"); sh=$(sed -n "s/^CODEC_s$1=.* SHA=\([0-9a-f]*\)$/\1/p" "$O/_codec_choice.txt")
   [ -n "$cf" ] && [ -n "$sh" ] || { echo "★FAIL 코덱 경로·SHA 없음 s$1" >&2; return 1; }
@@ -122,7 +149,7 @@ log() { echo "$(date '+%F %T') $*" | tee -a "$TL"; }
 sync_out() { cp "$O"/*.txt "$O"/*.log "$O"/*.csv "$O"/*.json "$O"/*.md "$RES/" 2>/dev/null; cp "$O"/codec/*.json "$RES/" 2>/dev/null; true; }
 bad() {
   grep -q "★FAIL\|FAIL \|실패" "$1" 2>/dev/null && return 0
-  for f in "$O"/_status_*.txt; do [ -f "$f" ] && grep -qv 'rc=0' "$f" && return 0; done
+  for f in "$O"/_status_*.txt; do [ -f "$f" ] && grep -v '_rank\.log' "$f" | grep -qv 'rc=0' && return 0; done   # 관문(병렬)은 rank_check 가 따로 봄
   return 1
 }
 step() {
@@ -138,6 +165,7 @@ PIDS=()
 running() { local n=0 p; for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done; echo $n; }
 pick_gpu() {   # 남은 메모리 need + 1.5 GB 이상이고 표식 < GPU_CAP 인 GPU 중 여유 가장 큰 것
   local g
+  [ -z "${VESSEL_F_GPU:-}" ] || { echo "$VESSEL_F_GPU"; return; }   # ★2026-10-13 동시 배치는 GPU 를 명시(다른 배치의 표식은 못 봄)
   for g in $(nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits | tr -d ' \r' | sort -t, -k2 -nr \
              | awk -F, -v need="$1" '$2>=need+1500{print $1}'); do
     [ "$(ls "$O"/.gpu${g}_* 2>/dev/null | wc -l)" -lt "$GPU_CAP" ] && { echo "$g"; return; }
@@ -234,8 +262,8 @@ gate9() {   # t_ 와 같은 관문(결과 전 고정): 마지막 4창 평균 goa
   local s L st pass="" g1
   for s in $SEEDS_ALL; do
     L="$O/${PRE}trunk_d6_s$s.log"
-    st=$(grep '^\[ON\] dec=' "$L" 2>/dev/null | tail -4 | sed -E 's/.*goal=([0-9.]+)%.*oColl=([0-9.]+)%.*/\1 \2/' \
-         | awk '{g+=$1; o+=$2; n++} END {if (n==4 && g/n>=30 && o/n<=5) v="통과"; else v="불통과"; printf "goal=%.1f oColl=%.1f 창=%d %s", (n?g/n:0), (n?o/n:0), n, v}')
+    st=$(grep '^\[ON\] dec=' "$L" 2>/dev/null | tail -4 | sed -E 's/.*goal=([0-9.]+)%.*vColl=([0-9.]+)%.*oColl=([0-9.]+)%.*/\1 \2 \3/' \
+         | awk '{g+=$1; c+=$2; o+=$3; n++} END {if (n==4 && g/n>=30 && o/n<=5) v="통과"; else v="불통과"; printf "goal=%.1f vColl=%.1f oColl=%.1f 창=%d %s", (n?g/n:0), (n?c/n:0), (n?o/n:0), n, v}')   # vColl 4창 평균은 기록(스펙 10-13 B 확정 기준), 통과 규칙은 goal·oColl 만
     g1=$(grep '^\[ON\] dec=' "$L" 2>/dev/null | tail -1 | sed -E 's/.*goal=([0-9.]+)%.*vColl=([0-9.]+)%.*oColl=([0-9.]+)%.*/\1 \2 \3/' \
          | awk '{printf "G1(마지막 창 goal %.1f · vColl %.1f · oColl %.1f) %s", $1, $2, $3, ($1>=90 && $2<=5 && $3<=2) ? "충족" : "미충족"}')
     echo "s$s $st | $g1"
@@ -317,11 +345,31 @@ eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scri
   done; done
   wait_all
 }
-rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순위 관문, 설정 v4 하나로 판정. 불통과 = 멈추고 보고
+rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순위 관문, 설정 하나(v4 · 10-13 v5)로 판정. 불통과 = 멈추고 보고
   # ★2026-10-09 타각 모드로 고정: 규칙 배(steer_to·goal_a0)가 타각 단위라 침로 모드 env 에서는 다른 배가 됨(10-07 불통과의 결함 부분)
-  env VESSEL_ACTION_MODE=rudder "$PY" -u verify/check_reward_rank.py --settings v4 --jobs 1 --out "$O/_rank_v4.json"; local rc=$?
-  [ $rc -eq 0 ] || echo "★FAIL 순위 관문 v4 rc=$rc"
+  env VESSEL_ACTION_MODE=rudder "$PY" -u verify/check_reward_rank.py --settings $RANK_SET --jobs 1 --out "$O/_rank_$RANK_SET.json"; local rc=$?
+  [ $rc -eq 0 ] || echo "★FAIL 순위 관문 $RANK_SET rc=$rc"
   return $rc
+}
+RANK_PID=""
+rank_start() {   # ★2026-10-13 관문을 trunk 와 동시에(다른 GPU). PID·rc 는 따로 둠(trunk_all 의 wait_all·_status_f.txt 와 안 얽힘). 끝은 rank_check 가 봄
+  rm -f "$O/_rank_rc.txt"
+  local g; g=${VESSEL_F_RANK_GPU:-$(pick_gpu 3000)}; while [ -z "$g" ]; do sleep 30; g=$(pick_gpu 3000); done
+  ( common_env; export CUDA_VISIBLE_DEVICES=$g OMP_NUM_THREADS=2 VESSEL_ACTION_MODE=rudder
+    "$PY" -u verify/check_reward_rank.py --settings $RANK_SET --jobs 1 --out "$O/_rank_$RANK_SET.json" > "$O/_rank.log" 2>&1
+    echo "rc=$?" > "$O/_rank_rc.txt" ) &
+  RANK_PID=$!
+  echo "  _rank.log → GPU $g (PID $RANK_PID)"
+}
+rank_check() {
+  [ -z "$RANK_PID" ] || wait "$RANK_PID" 2>/dev/null
+  [ -f "$O/_rank_rc.txt" ] || { echo "★FAIL 순위 관문 기록 없음(_rank_rc.txt) — 관문이 중단됨. _timeline.txt 의 ' 끝 rank_par' 줄을 지우고 다시"; return 1; }
+  grep -q "^rc=0$" "$O/_rank_rc.txt" && grep -q "RANK GATE v2: PASS" "$O/_rank.log" 2>/dev/null && return 0
+  echo "★FAIL 순위 관문 $RANK_SET — $(cat "$O/_rank_rc.txt") $(grep -h 'RANK GATE v2\|^DECISION' "$O/_rank.log" 2>/dev/null | tr '\n' ' ')"; return 1
+}
+rank_note() {   # ★2026-10-13 보상이 n_(v4)과 같을 때: 관문 재실행 없음, n_ 기록과 10-09 저자 override 를 그대로 적용한다고 남김
+  [ -f "$O/_rank_note.txt" ] || { echo "> 순위 관문: 보상 = n_ 과 동일(v4, 반경 300). n_ 기록 = _rank_v4.json 0/3(도구 결함) · 타각 모드 진단 2/3 · 저자 override 10-09 — 이 배치는 재실행 없이 그 결정을 따름 ($(date '+%F %T'))"; } > "$O/_rank_note.txt"
+  cat "$O/_rank_note.txt"
 }
 curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
   : > "$O/_status_f.txt"; local s a f x run envset
@@ -345,14 +393,19 @@ fig1_table() {
   sync_out
   { [ -f "$O/_p0_override.txt" ] && { cat "$O/_p0_override.txt"; echo; }
     [ -f "$O/_rank_override.txt" ] && { cat "$O/_rank_override.txt"; echo; }
+    [ -f "$O/_rank_note.txt" ] && { cat "$O/_rank_note.txt"; echo; }
     "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE"; } > "$O/_fig1.md" 2>&1; local rc=$?
   cat "$O/_fig1.md"; cp "$O/_fig1.md" "$RES/"
   return $rc
 }
 phase1() {
   if [ "$IMIT" = 0 ]; then   # ★2026-10-07 흉내 없음: P0 대신 preflight + 순위 관문 v4
-    step smoke env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
-    if grep -q " 끝 rank\$" "$TL" 2>/dev/null || [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ]; then
+    step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+    if [ -f "$O/_rank_note.txt" ]; then   # ★2026-10-13 trunk 모드에서 '보상 = n_ 동일' 로 적어 둔 배치 → 관문 재실행 없음
+      log "순위 관문: $(cat "$O/_rank_note.txt")"
+    elif [ "$RANK_SET" = v5 ] && { [ "${VESSEL_F_RANK_PARALLEL:-0}" = 1 ] || grep -q " 끝 rank_par\$" "$TL" 2>/dev/null; }; then
+      step rank_par rank_start   # 관문은 trunk 와 동시에, 판정은 gate 뒤 rank_check
+    elif grep -q " 끝 rank\$" "$TL" 2>/dev/null || [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ] || [ "$RANK_SET" != v4 ]; then
       step rank  rank_v4
     else   # ★2026-10-09 저자 결정으로 불통과 관문을 넘김 — 관문이 돌아 기록(_rank_v4.json)이 있을 때만
       [ -f "$O/_rank_v4.json" ] || { log "★멈춤: VESSEL_F_RANK_OVERRIDE 는 순위 관문이 한 번 돌아 _rank_v4.json 이 있을 때만"; exit 1; }
@@ -374,6 +427,7 @@ phase1() {
   fi
   step trunk    trunk_all
   step gate     gate9
+  grep -q " 끝 rank_par\$" "$TL" 2>/dev/null && step rankchk rank_check   # ★2026-10-13 병렬 관문 판정(불통과 = 멈춤, 갈래 안 감)
   SEEDS=$(cat "$O/_seeds.txt") || exit 1
   log "갈래 시드: $SEEDS"
   step codec    codec_all
@@ -384,7 +438,18 @@ phase1() {
   log "phase1 완료 — 결과 $RES/_fig1.md"
 }
 
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 면 병렬) → trunk → gate 에서 끝. 갈래는 같은 접두어로 phase1
+  step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+  if [ "$RANK_SET" = v4 ]; then step ranknote rank_note; else step rank_par rank_start; fi
+  step trunk    trunk_all
+  step gate     gate9
+  [ "$RANK_SET" = v5 ] && step rankchk rank_check
+  if [ "$ARPA_R" = 56 ]; then log "trunk 모드 완료 — 관문 통과. 갈래는 phase1 로(같은 접두어·같은 env)"
+  else echo "ARPA@$ARPA_R 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)" > "$O/_diag_only.txt"; log "trunk 모드 완료(ARPA@$ARPA_R 진단 전용, 갈래 없음)"; fi
+}
+# ★2026-10-13 smoke(preflight 15종 + 작은 학습)는 기본값 env 로 — 토글은 본 런에서만. 새 코드 경로는 Mac 미니 런으로 검사함
+SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC"
+log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all
@@ -396,6 +461,8 @@ if [ "$MODE" = phase0 ]; then
   else
     log "P0 불통과 → 멈춤(스펙 §4: 재시도 없이 보고)"
   fi
+elif [ "$MODE" = trunk ]; then
+  trunk_mode
 else
   phase1
 fi

@@ -487,6 +487,16 @@ NOCOMM_MODE = _env_str('VESSEL_NOCOMM_MODE', 'mix').lower()
 BLIND_WARN_AFTER = _env_int('VESSEL_BLIND_WARN_AFTER', 200)        # ControlActor 레이더 인코더 grad 0 연속 경고 임계
 COMM_TELEMETRY = _env_str('VESSEL_COMM_TELEMETRY', '0') == '1'     # 학습 중 *_comm.csv 기록 (ON 팔만)
 COMM_TELEMETRY_EVERY = _env_int('VESSEL_COMM_TELEMETRY_EVERY', 5)  # update 단위
+# ★2026-10-13 q_ 배치(스펙 docs/superpowers/specs/2026-10-13-trunk-fork-design.md). 기본값 = 비트동일
+#   LOGSTD_INIT0  : ControlActor logstd 초기값 dim0(타각/침로). 옛 리터럴 −1.0(타각 기준). 침로 모드는 ×120° 라 σ 40° → T-B 는 −2.0(σ 16°)
+#   LR_FINAL·LR_DECAY_DEC: LR_DECAY_DEC>0 이면 lr 을 결정 수 기준으로 LEARNING_RATE → LR_FINAL 선형 감쇠(update 마다 갱신, 재개 뒤에도 같은 식)
+LOGSTD_INIT0 = _env_float('VESSEL_LOGSTD_INIT0', -1.0)
+LR_FINAL = _env_float('VESSEL_LR_FINAL', LEARNING_RATE)
+LR_DECAY_DEC = _env_float('VESSEL_LR_DECAY_DEC', 0.0)
+assert -2.3 <= LOGSTD_INIT0 <= 0.0, f"VESSEL_LOGSTD_INIT0={LOGSTD_INIT0} - clamp 범위 [-2.3, 0]"
+assert LR_DECAY_DEC >= 0.0 and LR_FINAL > 0.0, f"VESSEL_LR_FINAL={LR_FINAL} VESSEL_LR_DECAY_DEC={LR_DECAY_DEC}"
+assert LR_DECAY_DEC > 0.0 or abs(LR_FINAL - LEARNING_RATE) < 1e-15, \
+    f"VESSEL_LR_FINAL={LR_FINAL} 는 VESSEL_LR_DECAY_DEC>0 와 같이 줄 것(감쇠 없이 기록만 남는 걸 막음)"
 
 # ── GPU 배치 시뮬(vessel_gym) 상수 — 2026-09-10 Tier 4.1c. 기본값·의미 불변. vessel_gym 은 여기서 import 만 한다. ──
 #   ⚠️보상 계수는 Unity C#(VesselAgent.cs) 과 일부 다름(저자 명시: smoothness ×SUBSTEPS 등). 정본 결정은 저자 몫.

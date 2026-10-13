@@ -719,7 +719,9 @@ def main():
     #   farfield PBRS 는 같은 구간을 telescoping 으로 또 건드리므로 기본 OFF(중복). VESSEL_FARFIELD_COEF 로 부활 가능.
     env = vg.VesselBatchEnv(num_envs=E, n_vessels=N, device=device, seed=args.seed,
                             ring_scale=args.ring, crossing=args.crossing,
-                            risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
+                            risk_range=cfg.COMM_RANGE,
+                            # ★2026-10-13 q_: VESSEL_REWARD_RANGE 가 있으면 그 반경(충돌코스 #6·per-pair #7). 없으면 옛대로 COMM_RANGE
+                            reward_range=(cfg.REWARD_RANGE if cfg.REWARD_RANGE is not None else cfg.COMM_RANGE),
                             # ★reward#1 fix 2026-08: per-pair 벌점을 risk³로 집중(exp 1.6→3.0)+계수↓(-0.3→-0.15)
                             #   → 중간위험 다중선박 통과 허용, 고위험만 강함. (colcourse/proximity 집중과 짝)
                             farfield_coef=cfg.FARFIELD_COEF,
@@ -795,6 +797,13 @@ def main():
             raise SystemExit("[resume] 거부: 통신 설정 불일치 " + ', '.join(
                 f"{k} ckpt={_prev_comm[k]!r} 현재={_cur_comm[k]!r}" for k in _bad_comm)
                 + " - VESSEL_COMM_EXT/COMM_FIELDS/COMM_LATENT/PARTNER_RANGE/AUX_LOSS_SCALE 를 체크포인트와 맞출 것")
+        # ★2026-10-13 최적화 토글(logstd 초기·lr 감쇠)은 가중치에 흔적이 없음 → 스냅샷에 있으면 현재 값과 같아야 함(갈래·크래시 재개 공통, 우회 없음)
+        _cur_opt = {'logstd_init0': float(cfg.LOGSTD_INIT0), 'lr_final': float(cfg.LR_FINAL), 'lr_decay_dec': float(cfg.LR_DECAY_DEC)}
+        _bad_opt = [k for k, v in _cur_opt.items() if _prev_snap.get(k) is not None and abs(float(_prev_snap[k]) - v) > 1e-12]
+        if _bad_opt:
+            raise SystemExit("[resume] 거부: 최적화 토글 불일치 " + ', '.join(
+                f"{k} ckpt={_prev_snap[k]!r} 현재={_cur_opt[k]!r}" for k in _bad_opt)
+                + " - VESSEL_LOGSTD_INIT0/LR_FINAL/LR_DECAY_DEC 를 체크포인트와 맞출 것")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 # ★2026-10-02 공통 뿌리 정의(스펙 2026-10-02-fig1-latent-design.md §2): 'ARPA 있음·메시지 없음' trunk 도 인정 —
@@ -1112,6 +1121,10 @@ def main():
     #   특히 aux_f 는 정상 종료 경로에도 close 가 아예 없었다. try/finally 로 두 핸들을 확실히 닫는다.
     try:
         while total_decisions < args.steps:
+            if cfg.LR_DECAY_DEC > 0.0:   # ★2026-10-13 lr 선형 감쇠(결정 수 기준). 재개 뒤 Adam 이 복원한 lr 도 이 줄이 덮음. 기본 0 = 불변
+                _lr_now = cfg.LEARNING_RATE + (cfg.LR_FINAL - cfg.LEARNING_RATE) * min(1.0, total_decisions / cfg.LR_DECAY_DEC)
+                for _g in opt.param_groups:
+                    _g['lr'] = _lr_now
             # ─── rollout ───
             # ★comm curriculum: ON arm이고 comm_on_at 넘으면 학습형 comm 활성(이 rollout 내내 일관 → PPO 정합)
             comm_active = (args.arm == 'ON' and total_decisions >= args.comm_on_at)
@@ -1222,6 +1235,12 @@ def main():
             del buf     # ★2026-09-26 stack 뒤엔 안 씀 — update 내내 잡고 있던 rollout 리스트(~1.5 GB, E=128 ON)를 놓는다. 메모리만.
             returns, adv = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v,
                                        cfg.DISCOUNT_FACTOR, cfg.GAE_LAMBDA)
+            if _grad_tele:   # ★2026-10-13 critic 설명분산(진단 전용, VESSEL_GRAD_TELEMETRY=1 일 때만 → 기본 stdout 불변)
+                _r1, _ = batched_gae(S['rew'], S['val'], S['done'], S['trunc'], last_v, cfg.DISCOUNT_FACTOR, 1.0)
+                _ev = lambda _R: float(1.0 - (_R - S['val']).var() / (_R.var() + 1e-8))
+                # EVb = 길이 T 의 rollout 목표(끝은 critic last_v 로 bootstrap)에 대한 설명분산 = 자기일관성. MC 수익 적합이 아님
+                print(f"[ppo] EVb(lam={cfg.GAE_LAMBDA})={_ev(returns):.3f} EVb(lam=1)={_ev(_r1):.3f} "
+                      f"ret_std={float(returns.std()):.1f} T={S['rew'].shape[0]} dec={total_decisions/1e6:.2f}M", flush=True)
             adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             # ★리턴 정규화: 통계 갱신 후 value target 을 정규화 공간으로 (critic 출력과 같은 공간)
             vnorm.update(returns)
@@ -1474,6 +1493,8 @@ def main():
                 _tsfx = f" | roll={_t_roll/5:.1f}s upd={_t_upd/5:.1f}s" if _timing else ""
                 # ★2026-09-30 창(5 update) 안 종료 에피소드 return 평균을 줄 *끝*에만 붙임 — 앞 문구는 불변
                 _epsfx = f" | epRet={_win_ep_sum / _win_ep_cnt:.3f}" if _win_ep_cnt > 0 else " | epRet=nan"
+                if cfg.LR_DECAY_DEC > 0.0:   # ★2026-10-13 감쇠 켠 런만 lr 을 줄 끝에(기본 stdout 불변)
+                    _epsfx += f" | lr={opt.param_groups[0]['lr']:.2e}"
                 print(f"[{args.arm}] dec={total_decisions/1e6:.2f}M | ep={eps} len~{mean_len:.0f} | "
                       f"goal={pct[0]:.1f}% vColl={pct[1]:.1f}% oColl={pct[2]:.1f}% TO={pct[3]:.1f}% | "
                       f"R={S['rew'].mean().item():.3f} | {sps:.0f} dec/s" + _tsfx + _epsfx)

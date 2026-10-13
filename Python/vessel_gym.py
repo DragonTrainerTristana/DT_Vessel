@@ -1349,9 +1349,12 @@ class VesselBatchEnv:
         #   near_risk : dist<=DETECTION_RANGE(56). situation 판정·COLREGs 게이트·저속 게이트 전용. *이전과 비트동일*.
         #   risk      : dist<=reward_range(기본 COMM_RANGE=200). 충돌코스 비용(colcourse/perpair) 전용.
         #   → 레이더 밴드와 통신 밴드가 같은 함수형으로 연속 비용을 받는다(56m 절벽 제거).
+        # ★2026-10-13 반경 둘로 분리: RJ(risk_range = 학습기·평가·관문 모두 COMM_RANGE) = 'risk' 키 — 판정기 v2 주 상대·역할 선언·
+        #   eval COLREGs 게이트·far 가 읽음. RR(reward_range) = 보상 #6·#7 용 'risk_rw' 만. 둘이 같으면(옛 경로 전부) 아래가 비트동일.
+        RJ = max(self.risk_range, 1e-6)
         RR = max(self.reward_range, 1e-6)
         distance_risk_near = 1.0 - dist / DETECTION_RANGE          # 옛 정의(불변)
-        distance_risk = 1.0 - torch.clamp(dist / RR, 0, 1)          # 보상용(0~RR 연속)
+        distance_risk = 1.0 - torch.clamp(dist / RJ, 0, 1)          # 판정·선언용(0~RJ 연속)
         tcpa_risk = 1.0 / (1.0 + tcpa / TCPA_RISK_DENOM)
         dcpa_risk = 1.0 - torch.clamp(dcpa / DCPA_RISK, 0, 1)
         base_risk_near = distance_risk_near * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3
@@ -1418,16 +1421,22 @@ class VesselBatchEnv:
         sit = torch.where(invalid_near, torch.full_like(sit, SIT_NONE), sit)
         # risk: 보상용. reward_range 까지 연속. 56m 밖은 sit_mult=1(상황 미판정)이라 COLREGs 가중 없음.
         risk = torch.clamp(base_risk * sit_mult, 0, 1)
-        invalid = eye | (dist > RR) | (raw_tcpa < 0) | occluded
+        invalid = eye | (dist > RJ) | (raw_tcpa < 0) | occluded
         risk = torch.where(invalid, torch.zeros_like(risk), risk)
+        if RR != RJ:   # ★2026-10-13 보상 반경(VESSEL_REWARD_RANGE)이 다르면 보상용만 따로 — 같으면 옛 경로(같은 객체, 비트동일)
+            _rb = torch.clamp((1.0 - torch.clamp(dist / RR, 0, 1)) * 0.3 + tcpa_risk * 0.4 + dcpa_risk * 0.3, 0, 1)
+            _rb = torch.clamp(_rb * sit_mult, 0, 1)
+            _rb = torch.where(eye | (dist > RR) | (raw_tcpa < 0) | occluded, torch.zeros_like(_rb), _rb)
+        else:
+            _rb = risk
         # ★2026-09-30 v3 예상 CPA 게이트(RISK_DCPA_GATE_M>0): 보상용 위험(#6 충돌코스·#7 per-pair)만 g(dcpa) 로 줄임.
         #   g = 1 (dcpa ≤ DCPA_RISK 24) … 0 (dcpa ≥ G). 안전 통과(dcpa 30 m)에도 dist·tcpa 항으로 −1.2/결정이 붙어 '빙 돌기'를 만든 원인.
         #   near_risk·situation·danger_idx·far_risk·eval 지표는 그대로(risk 키 불변). 끄면 risk_rw 는 risk 와 같은 객체(비트동일).
         if RISK_DCPA_GATE_M > 0.0:
             _g = torch.clamp((RISK_DCPA_GATE_M - dcpa) / (RISK_DCPA_GATE_M - DCPA_RISK), 0.0, 1.0)
-            risk_rw = risk * _g
+            risk_rw = _rb * _g
         else:
-            risk_rw = risk
+            risk_rw = _rb
 
         # far-field risk (56m~riskRange 띠, 상황곱 없음) — commgate far-field 보상용
         # ★2026-09-26 perf(비트동일): 읽는 곳이 _reward #7-b(farpair_coef≠0)·#8(farfield_coef>0) 뿐 — 둘 다 0 이면

@@ -70,6 +70,10 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'farfield_coef': float(cfg.FARFIELD_COEF),
         'perpair_coef': float(cfg.PERPAIR_COEF),
         'perpair_exp': 3.0,
+        # ★2026-10-13 q_: 최적화 토글(가중치에 흔적 없음 — 스냅샷이 근거). REWARD_RANGE 는 sim 키에 이미 있음
+        'logstd_init0': float(cfg.LOGSTD_INIT0),
+        'lr_final': float(cfg.LR_FINAL),
+        'lr_decay_dec': float(cfg.LR_DECAY_DEC),
         'radar_range': float(vg.RADAR_RANGE),
         # ★2026-09-10 추가: 인코더 공유 + 스냅샷에 빠져 있던 구조·보조손실 토글 (재현용. 키 추가만)
         'shared_encoder': net.SHARED_ENCODER,
@@ -616,11 +620,15 @@ def make_env_from_snapshot(snap, *, device, num_envs, seed, n_vessels=None, ring
     pp = float(pick('perpair_coef', perpair_coef, 'perpair_coef', float(cfg.PERPAIR_COEF)))
     pe = float(pick('perpair_exp', perpair_exp, 'perpair_exp', 3.0))
 
+    # ★2026-10-13 q_: 스냅샷 sim.REWARD_RANGE(위 _apply_sim_dict 가 cfg 에 넣음)가 있으면 그 반경으로 — 학습기와 같은 규칙.
+    #   없으면(옛 체크포인트·n_ 까지) COMM_RANGE = 옛 동작 그대로
+    _ss = snap.get('sim') if isinstance(snap.get('sim'), dict) else {}
+    _rr = float(_ss['REWARD_RANGE']) if _ss.get('REWARD_RANGE') is not None else cfg.COMM_RANGE   # 스냅샷만 근거(셸 env·전역 아님)
     env = vg.VesselBatchEnv(num_envs=num_envs, n_vessels=n_vessels, device=device, seed=seed,
                             ring_scale=ring, crossing=crossing,
-                            risk_range=cfg.COMM_RANGE, reward_range=cfg.COMM_RANGE,
+                            risk_range=cfg.COMM_RANGE, reward_range=_rr,
                             farfield_coef=ff, perpair_coef=pp, perpair_exp=pe)
-    used = (f"envs={num_envs} vessels={n_vessels} ring={ring} crossing={crossing} comm_range={cfg.COMM_RANGE} "
+    used = (f"envs={num_envs} vessels={n_vessels} ring={ring} crossing={crossing} comm_range={cfg.COMM_RANGE} reward_range={_rr} "
             f"farfield={ff} perpair={pp}^{pe} seed={seed}"
             f" dyn={vg.DYN_PROFILE} obst={vg.OBSTACLES_MODE}")
     ov = [k for k, v in src.items() if v == 'override']
