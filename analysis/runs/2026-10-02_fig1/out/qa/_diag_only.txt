@@ -1,0 +1,1 @@
+ARPA@300 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)

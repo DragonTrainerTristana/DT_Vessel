@@ -1,0 +1,27 @@
+2026-10-13 18:06:03 배치 qb_ trunk LICS-SERVER b6a4341 feat: q_ trunk fork — ARPA@300 diagnostic trunk, logstd/LR toggles, reward-range 56 path, parallel rank gate v5, trunk diagnostics 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qb action_mode=course 흉내=0 시드=[43]·관문1 갈래=[off comm] ARPA=56 보상반경=300(COMM_RANGE) 관문설정=v4 extra=[VESSEL_LOGSTD_INIT0=-2.0 VESSEL_LR_FINAL=3e-5 VESSEL_LR_DECAY_DEC=16056320] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qb
+2026-10-13 18:06:03 시작 smoke
+2026-10-13 18:14:35 끝 smoke
+2026-10-13 18:14:36 시작 ranknote
+2026-10-13 18:14:37 끝 ranknote
+2026-10-13 18:14:37 시작 trunk
+2026-10-13 19:41:29 끝 trunk
+2026-10-13 19:41:30 시작 gate
+2026-10-13 19:41:31 끝 gate
+2026-10-13 19:41:32 trunk 모드 완료 — 관문 통과. 갈래는 phase1 로(같은 접두어·같은 env)
+2026-10-13 19:48:04 배치 qb_ phase1 LICS-SERVER b6a4341 feat: q_ trunk fork — ARPA@300 diagnostic trunk, logstd/LR toggles, reward-range 56 path, parallel rank gate v5, trunk diagnostics 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qb action_mode=course 흉내=0 시드=[43]·관문1 갈래=[off comm] ARPA=56 보상반경=300(COMM_RANGE) 관문설정=v4 extra=[VESSEL_LOGSTD_INIT0=-2.0 VESSEL_LR_FINAL=3e-5 VESSEL_LR_DECAY_DEC=16056320] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qb
+2026-10-13 19:48:05 건너뜀 smoke (이미 끝남)
+2026-10-13 19:48:05 순위 관문: > 순위 관문: 보상 = n_ 과 동일(v4, 반경 300). n_ 기록 = _rank_v4.json 0/3(도구 결함) · 타각 모드 진단 2/3 · 저자 override 10-09 — 이 배치는 재실행 없이 그 결정을 따름 (2026-10-13 18:14:36)
+2026-10-13 19:48:05 건너뜀 trunk (이미 끝남)
+2026-10-13 19:48:05 건너뜀 gate (이미 끝남)
+2026-10-13 19:48:05 갈래 시드: 43
+2026-10-13 19:48:06 시작 codec
+2026-10-13 19:54:27 끝 codec
+2026-10-13 19:54:28 시작 branches
+2026-10-13 21:07:37 끝 branches
+2026-10-13 21:07:39 시작 eval
+2026-10-13 21:48:28 끝 eval
+2026-10-13 21:48:29 시작 curve
+2026-10-13 23:11:10 끝 curve
+2026-10-13 23:11:11 시작 fig1
+2026-10-13 23:11:13 끝 fig1
+2026-10-13 23:11:14 phase1 완료 — 결과 /c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qb/_fig1.md

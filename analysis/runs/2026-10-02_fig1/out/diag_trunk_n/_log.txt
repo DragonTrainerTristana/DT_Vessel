@@ -1,0 +1,2 @@
+2026-10-13 18:05:20 diag_trunk n_ b6a4341 feat: q_ trunk fork — ARPA@300 diagnostic trunk, logstd/LR toggles, reward-range 56 path, parallel rank gate v5, trunk diagnostics → /c/work/DT_Vessel_v3/Python/_repro_out_n/diag_trunk
+2026-10-13 19:20:28 끝 → /c/work/DT_Vessel_v3/Python/_repro_out_n/diag_trunk/_diag_trunk.md

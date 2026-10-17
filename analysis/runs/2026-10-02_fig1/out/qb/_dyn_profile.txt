@@ -1,0 +1,18 @@
+  PASS test_agile_dict_equals_legacy_literals
+  PASS test_imo_dict_numbers
+  PASS test_unknown_profile_raises
+  PASS test_defaults_are_agile_grid
+  PASS test_imo_turn_radius_fixed_across_fleet
+  PASS test_agile_turn_radius_unchanged
+  PASS test_stop_distance
+  PASS test_yaw_helper_matches_legacy_formula
+  PASS test_obs_yaw_norm_bounded
+  PASS test_obstacles_none
+  SKIP test_obstacles_grid_default: VESSEL_OBSTACLES != grid3x3
+  PASS test_snapshot_records_profile
+  SKIP test_apply_sim_snapshot_legacy_and_mismatch: (a) legacy 케이스는 agile/grid3x3 env 에서만 — (b)(c)(d) 는 통과함
+  PASS test_apply_sim_snapshot_small_radar_guard
+  PASS test_dyn_constants_mismatch
+  PASS test_check_branch_rejects_profile_mismatch
+  PASS test_check_branch_rejects_obstacles_mismatch
+VERDICT: ALL PASS (SKIP 2)

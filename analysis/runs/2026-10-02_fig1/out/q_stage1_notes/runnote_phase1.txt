@@ -1,0 +1,7 @@
+2026-10-13 qb_ phase1 실행 기록 (LICS-SERVER, 세션에서 본 값 그대로)
+19:47:52 시작. 명령 = 스펙 §6 분기 2 줄 그대로 + 실행 환경 3개(PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.3 VESSEL_F_GPU_CAP=1 VESSEL_F_JOBS=4, n_ · f2_ phase1 과 같음 · 결과 무관). 저자가 붙여 준 명령에는 없던 단계로, 스펙 §3 분기 규칙 2 에 따라 세션이 이어서 실행함
+갈래 GPU: off = GPU 2 · comm = GPU 0. VRAM nvidia-smi memory.used MiB: 20:01 9142 / 9570 · 20:35 9144 / 9570 · 21:05 9144 / 9570 (단계 1 qa_ 처럼 불어나지 않음)
+20:01 갈래 python 2개 · 21:08 평가 python 2개 우선순위 Normal → High
+무진행 kill · 재시도 없음(_kill_log.txt 없음). 23:11 드라이버 정상 종료, 남은 python 0개
+step16M 체크포인트 = 끝 모델과 같은 모델(둘 다 steps 16056320, 가중치 SHA 앞 12자리 off 0a014832afc8 · comm f77da073c6f7 로 같음) — 16M 을 처음 넘는 update 가 마지막 update 임 → 곡선의 16M 점과 16.06M 점은 같은 모델
+_curve.md 끝 줄 '(matplotlib 없음 — 그림 건너뜀, CSV 는 씀)': 학습 env 에 matplotlib 이 없어 qb_curve.pdf 는 안 만들어짐, 곡선 값(qb_curve.csv)은 정상

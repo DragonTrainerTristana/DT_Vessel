@@ -1,0 +1,13 @@
+==============================================================================
+역할 선언 latent (p12) 단위 테스트 + 기능 게이트
+==============================================================================
+  PASS  cp1 p12 SHA 고정값 · p6 로드·SHA·meta 이전 그대로  p12 ed43ecc4d2a3 p6 fbe4c71a6bf4
+  PASS  cp2 송신 선언(대상·역할·위치) == 무차별 대입 참값  선언 458
+  PASS  cp3 선언 역할 복원 ≥ 99.5 % (실제 상태·합성 holdout) [기능 게이트 ①]  실제 1.0000 (n=458) holdout 1.0000
+  PASS  cp4 선언이 대상에만 도착: 미탐 ≤ 1 % · 오탐 ≤ 2 % [기능 게이트 ②]  미탐 0.0000 (대상 386) 오탐 0.0000 (선언 458)
+  PASS  cp5 [13:18] 밖 필드 = decode 경로 · 받는 배 역할 추정 일치 ≥ 0.97 [기능 게이트 ③]  일치 0.9919 (n=4082)
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py:1369: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  return t.to(
+  PASS  cp6 가드: p12+direct(C8) 설치 · layout/d_in · 틀린 SHA · 스냅샷 layout 불일치 거부, 맞으면 설치  [True, True, True, True, True]
+==============================================================================
+VERDICT: ALL PASS

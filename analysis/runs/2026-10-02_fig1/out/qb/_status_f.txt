@@ -1,0 +1,15 @@
+curve_qb_trunk_d6_s43_2M.txt rc=0
+curve_qb_trunk_d6_s43_6M.txt rc=0
+curve_qb_trunk_d6_s43_4M.txt rc=0
+curve_qb_trunk_d6_s43_8M.txt rc=0
+curve_qb_trunk_d6_s43_9.04397M.txt rc=0
+curve_qb_off_s43_10M.txt rc=0
+curve_qb_off_s43_14M.txt rc=0
+curve_qb_off_s43_12M.txt rc=0
+curve_qb_off_s43_16M.txt rc=0
+curve_qb_off_s43_16.0563M.txt rc=0
+curve_qb_comm_s43_10M.txt rc=0
+curve_qb_comm_s43_12M.txt rc=0
+curve_qb_comm_s43_14M.txt rc=0
+curve_qb_comm_s43_16M.txt rc=0
+curve_qb_comm_s43_16.0563M.txt rc=0

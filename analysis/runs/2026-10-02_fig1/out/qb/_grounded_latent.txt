@@ -1,0 +1,29 @@
+==============================================================================
+grounded latent 코덱 + 원거리 COLREGs 단위 테스트
+==============================================================================
+  PASS  1 sender=참값 == sender=None (비트동일)  max|d|=0.0e+00
+  PASS  2a 코덱 로드·SHA 일치  fbe4c71a6bf4
+  PASS  2b 틀린 SHA 거부  
+  PASS  2c 파라미터 requires_grad 전부 False  
+  PASS  2d 양자화 결정론·격자 위  shape=(8, 16, 6)
+  PASS  2e 실제 env 상태 복원 충실도 (heading p99 < 3°, SOG p99 < 0.08 m/s)  heading p50/p99 0.20/1.03° sog p99 0.026
+  PASS  2f decode 필드: 역할 일치율 ≥ 0.97, 운동 성분 p99 오차 < 0.05  role agree=0.992 kin p99=0.0148 max=0.023 | risk p99=0.314 max=1.000
+  PASS  2g 다른 동역학 프로필에서 로드 거부  
+  [report] p6 코덱 k 별 실제 env 상태 복원 충실도(합격선 없음 — 2e/2f 와 같은 지표): heading° p50/p99 · SOG m/s p99 · ROT p99 · cmd_rudder° p99 · cmd_speed m/s p99 | decode 필드 역할 일치율 · 운동 p99
+    k=2 p6_k2_s0.pt sha=11a9e56bced1: heading 0.45/3.73° sog 0.558 rot 0.206 rudder 9.70° cmd_speed 0.745 | role agree 0.814 kin p99 0.3026 max 0.322
+    k=4 p6_k4_s0.pt sha=a806563cee7c: heading 0.58/2.21° sog 0.360 rot 0.177 rudder 1.11° cmd_speed 0.626 | role agree 0.908 kin p99 0.1699 max 0.224
+    k=6 p6_k6_s0.pt sha=fbe4c71a6bf4: heading 0.20/1.03° sog 0.026 rot 0.015 rudder 0.44° cmd_speed 0.030 | role agree 0.992 kin p99 0.0148 max 0.023
+  PASS  3a 끄면 far_sit=None  
+  PASS  3b 켜도 상태 궤적 불변(보상만 다름)  
+  PASS  3c 원거리 채점 대상 아닌 배는 보상 동일  max|d|=0.0e+00
+  PASS  3d 원거리 채점이 실제로 발화  대상 6208 배·결정, 보상 달라진 2833
+  PASS  3e 원거리 full 은 가산 있음(g_ 배치 동작 재현)  max(rB-rA)=7.57
+  PASS  3b [penalty] 켜도 상태 궤적 불변(보상만 다름)  
+  PASS  3c [penalty] 원거리 채점 대상 아닌 배는 보상 동일  max|d|=0.0e+00
+  PASS  3d [penalty] 원거리 채점이 실제로 발화  대상 6208 배·결정, 보상 달라진 2966
+  PASS  3e [penalty] 원거리 채점은 가산 없음(대상 배 보상 ≤ 끈 보상)  max(rB-rA)=0.0e+00
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py:1369: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  return t.to(
+  PASS  4 restore: 코덱 스냅샷 → 설치 / 코덱 없음 → None 리셋  
+==============================================================================
+VERDICT: ALL PASS

@@ -1,0 +1,9 @@
+[collect46] ckpt=qb_trunk_d6_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=33keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[collect46] envs=64 vessels=16 ring=1.0 crossing=0 comm_range=300.0 reward_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=43 dyn=imo obst=none
+[collect46] 768000 payloads -> C:/work/DT_Vessel_v3/Python/_repro_out_qb/codec/data_s43.pt
+[p46] k=4 sha=7f08830198c6c0e3 {'heading_deg_p90': 15.756134033203125, 'speed_ms_p90': 0.11239305883646011, 'intent_deg_p90': 1.7945741415023804, 'role_acc': 0.9108908176422119, 'role_n': 40658, 'n': 76800} gate=불통과
+[p46] k=6 sha=c45c9ff4ed1cc4bf {'heading_deg_p90': 3.3581557273864746, 'speed_ms_p90': 0.10988639295101166, 'intent_deg_p90': 1.1918213367462158, 'role_acc': 0.9999006986618042, 'role_n': 40288, 'n': 76800} gate=불통과
+[p46] k=8 sha=e36f1bf39e248ca7 {'heading_deg_p90': 2.0424041748046875, 'speed_ms_p90': 0.022089917212724686, 'intent_deg_p90': 0.6484586000442505, 'role_acc': 1.0, 'role_n': 40288, 'n': 76800} gate=통과
+[p46] k=12 sha=92e64bda9484d7b7 {'heading_deg_p90': 1.4053378105163574, 'speed_ms_p90': 0.01150987483561039, 'intent_deg_p90': 0.3287016749382019, 'role_acc': 0.9999503493309021, 'role_n': 40290, 'n': 76800} gate=통과
+[p46] 선택 k = 8
+CHOSEN_K=8

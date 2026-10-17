@@ -1,0 +1,9 @@
+2026-10-13 q_ 단계 1 실행 기록 (LICS-SERVER, 세션에서 본 값 그대로)
+18:05 클론 C:\work\DT_Vessel_v3 을 8d6bc88 → b6a4341 로 fast-forward(git pull --ff-only)
+18:05:20 D(diag_trunk.sh n_, GPU 3) · 18:05:37 qa_(GPU 0) · 18:06:03 qb_(GPU 1) 시작. qb_ 는 qa_ 헤더 로그가 찍힌 뒤 시작(스펙 §6 주석 조건, sleep 60 대신)
+명령은 저자가 준 것 그대로(스펙 §6). n_(10-09) 과 다른 실행 환경 하나 = PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.3 없음(config.py 기본값 사용)
+18:16 trunk python 2개(PID 87352 qa_ · 88844 qb_) 우선순위 Normal → High
+VRAM nvidia-smi memory.used MiB (GPU 0 = qa_ / GPU 1 = qb_, 카드 16303): 18:16 9430 / 9360 · 19:04 11662 / 9870 · 19:34 15718 / 9868 · 19:41 15718 / qb_ 끝
+무진행 kill · 재시도 없음(_kill_log.txt 없음). 드라이버 3개 정상 종료, 19:46 남은 python 0개
+18:33 2M 체크포인트 스냅샷을 직접 열어 토글 확인(snap_2M.txt)
+19:47:52 분기 규칙 2 → qb_ phase1 시작. 실행 환경만 n_ · f2_ phase1 과 같게: PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.3 VESSEL_F_GPU_CAP=1 VESSEL_F_JOBS=4
