@@ -1,4 +1,4 @@
-# analysis — 결과 분석 묶음 (2026-09-30 – 10-13)
+# analysis — 결과 분석 묶음 (2026-09-30 – 10-26)
 
 브랜치 `analysis` 전용 폴더. 코드는 `feat/fig1-latent` 8d6bc88 그대로이고, 이 폴더만 더함.
 10-13 q_ 배치는 `feat/fig1-latent` b6a4341 코드로 돎 — 그 코드 변경은 이 브랜치에 안 넣음(코드·스펙은 `feat/fig1-latent` 에서 볼 것).
@@ -9,10 +9,11 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 16개 (09-30 – 10-13) |
+| `pdf/` | 결과 보고서 PDF 17개 (09-30 – 10-26) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
+| `runs/2026-10-26_a2z/` | 10-26 A–Z 진단(읽기 전용 종합) — 보고서 원본 `report.md`·렌즈 6개 검증 결과 `findings_lenses.json`·판정식 MC `mc_pass_prob.py`·PDF 생성기 |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
@@ -38,6 +39,7 @@
 | 2026-10-09_n배치_trunk관문_결과 | `2026-10-02_fig1/report/make_report_trunk_n.py` (자료 `out/n_trunk_d6_s43.*` · `out/_gate.log`) |
 | 2026-10-13_q배치_단계1_trunk갈림길_결과 | `2026-10-02_fig1/report/make_report_trunk_q.py` (자료 `out/qa/` · `out/qb/` · `out/diag_trunk_n/` · `out/q_stage1_notes/`) |
 | 2026-10-13_q배치_qb_phase1_통신vsOFF_결과 | `2026-10-02_fig1/report/make_report_fig1_qb.py` (자료 `out/qb/` · `out/q_stage1_notes/runnote_phase1.txt`) |
+| 2026-10-26_A2Z_진단_할일 | `2026-10-26_a2z/make_pdf.sh report.md <출력.pdf>` (Mac: pandoc + Chrome headless; 자료 `findings_lenses.json` · Dropbox `runs/` 로그) |
 
 ## 다시 만들기
 
