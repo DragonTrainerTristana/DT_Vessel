@@ -91,6 +91,7 @@ unset VESSEL_USE_COMM VESSEL_COMM_FIELDS VESSEL_COMM_LATENT VESSEL_PARTNER_RANGE
 unset VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC
 unset VESSEL_ROLE_V2_PRIMARY VESSEL_ROLE_V2_RES_F6
 unset VESSEL_REWARD_RANGE VESSEL_LOGSTD_INIT0 VESSEL_LR_FINAL VESSEL_LR_DECAY_DEC   # ★2026-10-13 셸에 남은 값이 새지 않게
+unset VESSEL_ENTROPY_BONUS VESSEL_LOGSTD_MIN VESSEL_NOISE_HOLD VESSEL_GRAD_TELEMETRY   # ★2026-10-26 레퍼런스 포팅 토글(P2–P5)
 export VESSEL_RUN_PREFIX=$PRE VESSEL_ROLE_PROMISE_PEN=20 VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full
 export VESSEL_ROLE_JUDGE=v2 VESSEL_FORWARD_COEF=0 VESSEL_TIME_PENALTY=0.035 VESSEL_RISK_DCPA_GATE_M=48
 export VESSEL_ACTION_MODE=course
@@ -101,8 +102,9 @@ if [ -n "${VESSEL_F_REWARD_RANGE:-}" ]; then
   [ "$VESSEL_F_REWARD_RANGE" = 56 ] || { echo "★멈춤: VESSEL_F_REWARD_RANGE=$VESSEL_F_REWARD_RANGE — 스펙 §4·관문 v5 는 56 만"; exit 1; }
   export VESSEL_REWARD_RANGE=56; RANK_SET=v5
 fi
-for _kv in ${VESSEL_F_EXTRA_ENV:-}; do   # 화이트리스트: 최적화 토글 3개만(보상·구조 키는 못 넣음 → 관문 건너뛰기 경로 없음)
-  echo "$_kv" | grep -Eq '^VESSEL_(LOGSTD_INIT0|LR_FINAL|LR_DECAY_DEC)=-?[0-9.]+([eE][-+]?[0-9]+)?$' || { echo "★멈춤: VESSEL_F_EXTRA_ENV 항목 '$_kv' 허용 안 됨(LOGSTD_INIT0·LR_FINAL·LR_DECAY_DEC 만)"; exit 1; }
+for _kv in ${VESSEL_F_EXTRA_ENV:-}; do   # 화이트리스트: 최적화·탐색 토글 + 계측만(보상·구조 키는 못 넣음 → 관문 건너뛰기 경로 없음)
+  # ★2026-10-26 P2–P5: ENTROPY_BONUS·LOGSTD_MIN·NOISE_HOLD(학습 설정) · GRAD_TELEMETRY(로그만, 가중치 불변)
+  echo "$_kv" | grep -Eq '^VESSEL_(LOGSTD_INIT0|LR_FINAL|LR_DECAY_DEC|ENTROPY_BONUS|LOGSTD_MIN)=-?[0-9.]+([eE][-+]?[0-9]+)?$|^VESSEL_NOISE_HOLD=[0-9]+$|^VESSEL_GRAD_TELEMETRY=[01]$' || { echo "★멈춤: VESSEL_F_EXTRA_ENV 항목 '$_kv' 허용 안 됨(LOGSTD_INIT0·LR_FINAL·LR_DECAY_DEC·ENTROPY_BONUS·LOGSTD_MIN·NOISE_HOLD·GRAD_TELEMETRY 만)"; exit 1; }
   export "$_kv" || exit 1
 done
 export VESSEL_OUT_DIR=$PWD/_repro_out_${PRE%_}
@@ -448,7 +450,7 @@ trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 
   else echo "ARPA@$ARPA_R 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)" > "$O/_diag_only.txt"; log "trunk 모드 완료(ARPA@$ARPA_R 진단 전용, 갈래 없음)"; fi
 }
 # ★2026-10-13 smoke(preflight 15종 + 작은 학습)는 기본값 env 로 — 토글은 본 런에서만. 새 코드 경로는 Mac 미니 런으로 검사함
-SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC"
+SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY"
 log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke

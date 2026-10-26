@@ -863,20 +863,21 @@ class ControlActor(nn.Module):
             out[idx] = self.experts[k].consumer_decoder(z[idx])
         return out
 
-    def forward(self, x, goal, self_state, others_msg, situation=None):
+    def forward(self, x, goal, self_state, others_msg, situation=None, eps=None):
         """Returns: action [b,n,act], logprob [b,n,1], mean [b,n,act], action_raw [b,n,act].
         ★action_raw(=pre-tanh 샘플)를 함께 반환 → rollout이 memory에 raw를 저장하고 update가 그대로
           재사용(get_logprob_entropy) → tanh 보정이 비트 일치, PPO ratio가 epoch0에서 1.0(포화 샘플 포함).
-        situation: [b,n] or [b,n,1] (0~4)."""
+        situation: [b,n] or [b,n,1] (0~4).
+        eps: [b,n,act] 표준정규 잡음(★2026-10-26 NOISE_HOLD 전용) → raw = mean + std·eps. None = dist.sample()(기존, 비트동일)."""
         z, action_mean, action_logstd, batch_size, n_agent = self._route(
             x, goal, self_state, others_msg, situation)
 
         action_mean = torch.clamp(action_mean, -3.0, 3.0)            # tanh(3) ≈ 0.995
-        action_logstd = torch.clamp(action_logstd, -2.3, 0.0)       # std 0.1 ~ 1.0
+        action_logstd = torch.clamp(action_logstd, _cfg.LOGSTD_MIN, 0.0)   # std 0.1 ~ 1.0 (기본 하한 −2.3, ★2026-10-26 VESSEL_LOGSTD_MIN)
         action_std = torch.exp(action_logstd)
 
         dist = Normal(action_mean, action_std)
-        action_raw = dist.sample()
+        action_raw = dist.sample() if eps is None else action_mean + action_std * eps.reshape(action_mean.shape)
 
         # Squashed Gaussian: tanh로 [-1, 1] + log_prob 보정
         action = torch.tanh(action_raw)
@@ -902,7 +903,7 @@ class ControlActor(nn.Module):
         action_raw_flat = action_raw.reshape(batch_size * n_agent, -1)
 
         action_mean = torch.clamp(action_mean, -3.0, 3.0)
-        action_logstd = torch.clamp(action_logstd, -2.3, 0.0)
+        action_logstd = torch.clamp(action_logstd, _cfg.LOGSTD_MIN, 0.0)   # forward 와 같은 하한(미러)
         action_std = torch.exp(action_logstd)
 
         # ★저장된 raw로 tanh를 재계산 → forward의 squash 보정과 비트 일치(무손실).

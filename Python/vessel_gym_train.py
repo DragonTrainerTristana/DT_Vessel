@@ -798,12 +798,16 @@ def main():
                 f"{k} ckpt={_prev_comm[k]!r} 현재={_cur_comm[k]!r}" for k in _bad_comm)
                 + " - VESSEL_COMM_EXT/COMM_FIELDS/COMM_LATENT/PARTNER_RANGE/AUX_LOSS_SCALE 를 체크포인트와 맞출 것")
         # ★2026-10-13 최적화 토글(logstd 초기·lr 감쇠)은 가중치에 흔적이 없음 → 스냅샷에 있으면 현재 값과 같아야 함(갈래·크래시 재개 공통, 우회 없음)
-        _cur_opt = {'logstd_init0': float(cfg.LOGSTD_INIT0), 'lr_final': float(cfg.LR_FINAL), 'lr_decay_dec': float(cfg.LR_DECAY_DEC)}
-        _bad_opt = [k for k, v in _cur_opt.items() if _prev_snap.get(k) is not None and abs(float(_prev_snap[k]) - v) > 1e-12]
+        _cur_opt = {'logstd_init0': float(cfg.LOGSTD_INIT0), 'lr_final': float(cfg.LR_FINAL), 'lr_decay_dec': float(cfg.LR_DECAY_DEC),
+                    # ★2026-10-26 P3–P5 (옛 스냅샷엔 키 없음 → 10-26 이전 고정값 0.01·−2.3·0 으로 보고 비교, check_branch 와 같음)
+                    'entropy_bonus': float(cfg.ENTROPY_BONUS), 'logstd_min': float(cfg.LOGSTD_MIN), 'noise_hold': float(cfg.NOISE_HOLD)}
+        _legacy_opt = {'entropy_bonus': 0.01, 'logstd_min': -2.3, 'noise_hold': 0.0}   # 10-26 이전 코드의 고정값(키 없음 = 이 값)
+        _prev_opt = {k: _prev_snap.get(k, _legacy_opt.get(k)) for k in _cur_opt}
+        _bad_opt = [k for k, v in _cur_opt.items() if _prev_opt[k] is not None and abs(float(_prev_opt[k]) - v) > 1e-12]
         if _bad_opt:
             raise SystemExit("[resume] 거부: 최적화 토글 불일치 " + ', '.join(
-                f"{k} ckpt={_prev_snap[k]!r} 현재={_cur_opt[k]!r}" for k in _bad_opt)
-                + " - VESSEL_LOGSTD_INIT0/LR_FINAL/LR_DECAY_DEC 를 체크포인트와 맞출 것")
+                f"{k} ckpt={_prev_opt[k]!r} 현재={_cur_opt[k]!r}" for k in _bad_opt)
+                + " - VESSEL_LOGSTD_INIT0/LR_FINAL/LR_DECAY_DEC/ENTROPY_BONUS/LOGSTD_MIN/NOISE_HOLD 를 체크포인트와 맞출 것")
         if args.comm_on_at > 0 and args.resume_at == args.comm_on_at:
             if _ck.get('comm_active'):
                 # ★2026-10-02 공통 뿌리 정의(스펙 2026-10-02-fig1-latent-design.md §2): 'ARPA 있음·메시지 없음' trunk 도 인정 —
@@ -1100,6 +1104,11 @@ def main():
     _ep_cnt = torch.zeros((), dtype=torch.float64, device=device)
     _ep_oc = torch.zeros(5, device=device)          # 이번 update 의 outcome 수 (outcome_counts 의 update 단위 사본)
     _win_ep_sum = _win_ep_cnt = 0.0                 # 5-update 창(stdout 줄 끝 epRet)
+    # ★2026-10-26 NOISE_HOLD(P5, 기본 0 = 이 상태 안 만듦·dist.sample() 경로 = 비트동일): 배마다 ε 을 n 결정 유지.
+    #   _eps_age ≥ n 이면 새 ε. 처음·재개·에피소드 끝난 배는 다음 결정에 새로 뽑음. 재개 시 ε 은 저장 안 함(새로 시작)
+    if cfg.NOISE_HOLD > 0:
+        _eps_hold = torch.zeros(E, N, cfg.CONTINUOUS_ACTION_SIZE, device=device)
+        _eps_age = torch.full((E, N), cfg.NOISE_HOLD, dtype=torch.long, device=device)
 
     # ★통신 텔레메트리 CSV (2026-09-08): VESSEL_COMM_TELEMETRY=1 일 때만. 기본 0 = 비트동일.
     #   ON 팔에서만 의미 있음(OFF 는 others_msg≡0). 전용 CPU generator 로 학습 RNG 와 분리한다.
@@ -1157,7 +1166,13 @@ def main():
                             send_mask=send_mask, recv_mask=recv_mask)
                     else:
                         om = make_others_msg(env, 'OFF' if args.arm == 'ON' else args.arm, E, N, device)
-                    action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit)
+                    if cfg.NOISE_HOLD > 0:
+                        _new = _eps_age >= cfg.NOISE_HOLD
+                        _eps_hold = torch.where(_new.unsqueeze(-1), torch.randn_like(_eps_hold), _eps_hold)
+                        _eps_age = torch.where(_new, torch.zeros_like(_eps_age), _eps_age) + 1
+                        action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit, eps=_eps_hold)
+                    else:
+                        action, logp, _, action_raw = policy.ctr_actor(x, goal, self_s, om, sit)
                     _gf = build_global_feat(env) if cfg.CENTRAL_CRITIC else None
                     value = vnorm.denormalize(policy.critic(x, goal, self_s, om, sit,
                                                             global_feat=_gf).squeeze(-1))
@@ -1177,6 +1192,8 @@ def main():
                         _tl, _ = _bc_teacher.act(env)                        # 같은 결정 시점 상태의 선생님 행동
                     buf['tlab'].append(torch.atanh(_tl.clamp(-0.995, 0.995)))
                 obs, reward, done, outcome = env.step(action)                # env엔 tanh action 적용
+                if cfg.NOISE_HOLD > 0:   # 끝난 배(재스폰)는 다음 결정에 새 ε
+                    _eps_age = torch.where(done.bool(), torch.full_like(_eps_age, cfg.NOISE_HOLD), _eps_age)
                 if _bc_teacher is not None:
                     _bc_teacher.after_step(env, action, done)                # 의도 = 실제 실행 행동(1결정 늦음)
                 # ★2026-09-26 5회 루프(커널 ~15개) → bincount 1회. outcome 은 long 0..4(vessel_gym OUT_*)라 bincount 가 정확히
@@ -1272,6 +1289,8 @@ def main():
             # ★2026-09-05 fix: randperm 을 epoch 루프 *안*으로. 밖에 있으면 N_EPOCH 회가 전부 같은
             #   미니배치 분할을 반복해 epoch 간 표본 상관이 생긴다(PPO 표준은 epoch 마다 재셔플).
             mb = cfg.MINIBATCH_SIZE
+            if _grad_tele:   # ★2026-10-26 P2: update 당 approx_kl·clipfrac·entropy (GPU 누적, 출력은 update 끝 1줄)
+                _pacc = torch.zeros(4, dtype=torch.float64, device=device)
             for _ in range(cfg.N_EPOCH):
                 idx_all = torch.randperm(M, device=device)
                 for s in range(0, M, mb):
@@ -1344,6 +1363,12 @@ def main():
                     policy_loss = -torch.min(pg1, pg2).mean()
                     value_loss = ((value_new - fret[mi]) ** 2).mean()
                     loss = policy_loss + cfg.CRITIC_LOSS_WEIGHT * value_loss - cfg.ENTROPY_BONUS * entropy + aux
+                    if _grad_tele:   # 읽기만(no_grad) → 가중치·Adam·곡선 불변. kl = E[(r−1) − log r] (Schulman 근사, CleanRL·SB3 와 같은 식)
+                        with torch.no_grad():
+                            _lr_mb = logp_new.detach() - flogp[mi]
+                            _pacc += torch.stack([((torch.exp(_lr_mb) - 1.0) - _lr_mb).mean().double(),
+                                                  ((torch.exp(_lr_mb) - 1.0).abs() > cfg.EPSILON).double().mean(),
+                                                  entropy.detach().double(), torch.ones((), dtype=torch.float64, device=device)])
                     opt.zero_grad()
                     loss.backward()
                     # ★2026-09-05 붕괴 검출기: ControlActor 의 레이더 인코더에 gradient 가 흐르는가.
@@ -1426,6 +1451,12 @@ def main():
                           _gacc['aux'] / _n, _gacc['total'] / _n, _gacc['clip'] / _n,
                           _gacc['ctr'] / _n * _gacc['clip'] / _n), flush=True)
                 _gacc = {}
+            if _grad_tele:   # ★2026-10-26 P2: 원 logstd(clamp 전) 전문가별 dim0 — 0 이상이면 clamp 흡수(기울기 0), 하한 아래면 하한에 붙음
+                _kl, _cf, _en, _nm = (_pacc / torch.clamp(_pacc[3], min=1.0)).tolist()
+                _cores = list(policy.ctr_actor.experts) if hasattr(policy.ctr_actor, 'experts') else [policy.ctr_actor.core]
+                _ls0 = ' '.join(f"{float(_c.action_logstd.reshape(-1)[0]):.3f}" for _c in _cores)
+                print(f"[ppo] upd={update_i} approx_kl={_kl:.5f} clipfrac={_cf:.4f} entropy={_en:.4f} "
+                      f"logstd0_raw=[{_ls0}] lr={opt.param_groups[0]['lr']:.3g} dec={total_decisions/1e6:.2f}M", flush=True)
             update_i += 1
             # ★중간 체크포인트(2026-08-10): --ckpt_every M마다 저장 → 각 지점을 frozen eval로 찍어
             #   '신뢰할 수 있는 학습곡선'(에피소드 return) 생성. 학습 창 aliasing 우회.

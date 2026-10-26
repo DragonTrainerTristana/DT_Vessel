@@ -295,7 +295,7 @@ BATCH_SIZE = 2048               # Mini-batch 크기 (4096 → 2048, 더 자주 �
 N_EPOCH = _env_int('VESSEL_N_EPOCH', 2)  # PPO epoch (4→2: update 시간 1/2)
 MINIBATCH_SIZE = _env_int('VESSEL_MINIBATCH_SIZE', 512)  # PPO mini-batch (BATCH_SIZE는 rollout 길이로 분리)
 EPSILON = 0.2                   # PPO clipping epsilon
-ENTROPY_BONUS = 0.01            # Entropy bonus 계수 (0.005 → 0.01, 탐색 유지)
+ENTROPY_BONUS = _env_float('VESSEL_ENTROPY_BONUS', 0.01)   # Entropy bonus 계수 (0.005 → 0.01, 탐색 유지). ★2026-10-26 env 토글(기본 0.01 = 비트동일)
 CRITIC_LOSS_WEIGHT = 0.5        # Value loss 가중치
 MAX_GRAD_NORM = 0.5             # Gradient clipping norm
 
@@ -493,7 +493,16 @@ COMM_TELEMETRY_EVERY = _env_int('VESSEL_COMM_TELEMETRY_EVERY', 5)  # update 단�
 LOGSTD_INIT0 = _env_float('VESSEL_LOGSTD_INIT0', -1.0)
 LR_FINAL = _env_float('VESSEL_LR_FINAL', LEARNING_RATE)
 LR_DECAY_DEC = _env_float('VESSEL_LR_DECAY_DEC', 0.0)
-assert -2.3 <= LOGSTD_INIT0 <= 0.0, f"VESSEL_LOGSTD_INIT0={LOGSTD_INIT0} - clamp 범위 [-2.3, 0]"
+# ★2026-10-26 레퍼런스 포팅(analysis/runs/2026-10-26_ref_port P3–P5). 기본값 = 비트동일
+#   ENTROPY_BONUS(위) : VESSEL_ENTROPY_BONUS. CleanRL·SB3·gSDE PPO 기본 0.0, Andrychowicz 2021 §3.8 이득 없음. squash 항이 θ 상수라 logstd 에 늘 +1 압력
+#   LOGSTD_MIN        : ControlActor logstd clamp 하한(forward·get_logprob_entropy 같은 값). −2.3 = σ 0.1 → 침로 12° > 전타 문턱 10°
+#   NOISE_HOLD        : >0 이면 rollout 탐색 잡음 ε 을 배마다 n 결정 동안 유지(gSDE 의 재표집 간격). 끝난 배는 다음 결정에 새 ε. 0 = dist.sample()
+LOGSTD_MIN = _env_float('VESSEL_LOGSTD_MIN', -2.3)
+NOISE_HOLD = _env_int('VESSEL_NOISE_HOLD', 0)
+assert ENTROPY_BONUS >= 0.0, f"VESSEL_ENTROPY_BONUS={ENTROPY_BONUS}"
+assert -5.0 <= LOGSTD_MIN < 0.0, f"VESSEL_LOGSTD_MIN={LOGSTD_MIN} - [-5, 0)"
+assert NOISE_HOLD >= 0, f"VESSEL_NOISE_HOLD={NOISE_HOLD}"
+assert LOGSTD_MIN <= LOGSTD_INIT0 <= 0.0, f"VESSEL_LOGSTD_INIT0={LOGSTD_INIT0} - clamp 범위 [{LOGSTD_MIN}, 0]"
 assert LR_DECAY_DEC >= 0.0 and LR_FINAL > 0.0, f"VESSEL_LR_FINAL={LR_FINAL} VESSEL_LR_DECAY_DEC={LR_DECAY_DEC}"
 assert LR_DECAY_DEC > 0.0 or abs(LR_FINAL - LEARNING_RATE) < 1e-15, \
     f"VESSEL_LR_FINAL={LR_FINAL} 는 VESSEL_LR_DECAY_DEC>0 와 같이 줄 것(감쇠 없이 기록만 남는 걸 막음)"

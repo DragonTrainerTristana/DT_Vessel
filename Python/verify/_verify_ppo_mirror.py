@@ -339,7 +339,7 @@ def test_saturated_action_ratio():
         action = torch.tanh(action_raw)          # OLD 경로 입력(저장 tanh)도 주입 반영
         om = torch.zeros(1, sc['n_agents'], cfg.MSG_DIM, device=DEV)
         z, amean, alogstd, B, Nn = pol.ctr_actor._route(x, goal, self_s, om, None)
-        amean = torch.clamp(amean, -3.0, 3.0); alogstd = torch.clamp(alogstd, -2.3, 0.0)
+        amean = torch.clamp(amean, -3.0, 3.0); alogstd = torch.clamp(alogstd, cfg.LOGSTD_MIN, 0.0)
         dist = _N(amean, torch.exp(alogstd))
         raw_flat = action_raw.reshape(B * Nn, -1)
         act_flat = action.reshape(B * Nn, -1)

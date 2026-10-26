@@ -74,6 +74,10 @@ def snapshot_config(*, arm, msg_dim, seed, n_envs, n_vessels, max_partners, trun
         'logstd_init0': float(cfg.LOGSTD_INIT0),
         'lr_final': float(cfg.LR_FINAL),
         'lr_decay_dec': float(cfg.LR_DECAY_DEC),
+        # ★2026-10-26 레퍼런스 포팅 P3–P5(가중치에 흔적 없음 — 스냅샷이 근거). 키 추가만
+        'entropy_bonus': float(cfg.ENTROPY_BONUS),
+        'logstd_min': float(cfg.LOGSTD_MIN),
+        'noise_hold': int(cfg.NOISE_HOLD),
         'radar_range': float(vg.RADAR_RANGE),
         # ★2026-09-10 추가: 인코더 공유 + 스냅샷에 빠져 있던 구조·보조손실 토글 (재현용. 키 추가만)
         'shared_encoder': net.SHARED_ENCODER,
@@ -225,6 +229,13 @@ def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt
         notes.append(msg + " (allow_sim_mismatch — 스냅샷 값 적용)")
     cfg.ACTION_MODE = ck_am
     vg.ACTION_MODE = ck_am
+    # ★2026-10-26 logstd 하한(P4): 표본 평가의 σ 를 forward clamp 가 정함 → 학습 값으로 맞춤(없으면 옛 −2.3). 가중치에 흔적 없음
+    ck_lm = float(snap.get('logstd_min', -2.3))
+    if ck_lm != cfg.LOGSTD_MIN:
+        notes.append(f"logstd_min 스냅샷 {ck_lm} 적용(현재 env {cfg.LOGSTD_MIN})")
+    cfg.LOGSTD_MIN = ck_lm
+    if int(snap.get('noise_hold') or 0) > 0:
+        notes.append(f"noise_hold={int(snap['noise_hold'])} 로 학습한 모델 — 표본 평가 잡음은 매 결정 i.i.d.(학습 때 n 결정 유지와 다름)")
     radar_in_sim = ck_rr is not None and ck_sim is not None and 'RADAR_RANGE' in ck_sim
     n_sim = n_applied + (1 if radar_in_sim else 0)
     if not snap.get('dyn_profile'):
