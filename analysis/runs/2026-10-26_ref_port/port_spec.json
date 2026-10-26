@@ -1,0 +1,516 @@
+{
+ "port": {
+  "current_vs_reference": [
+   {
+    "aspect": "행동 공간·스케일(침로 모드)",
+    "ours": "a0 = 목표 방위 기준 절대 침로 오프셋 a0×120°, 결정(0.4 s)마다 새로 표본함. 조타 제어기는 침로 오차 10°에서 전타로 포화함 → 대부분 표본이 bang-bang 타각이 됨. a1 = 목표 속도",
+    "ours_location": "config.py:565-568 (ACTION_MODE, COURSE_ACT_DEG 120, COURSE_STEER_DEG 10); vessel_gym.py:1103-1111 rudder_fraction, :1870-1882 step; vessel_gym.py:29-30 DT 0.04×SUBSTEPS 10",
+    "references": "증분형·저주파 행동이 주류임. Waltz 2023 = 타각 증분 ±5°/3 s(#1). Niu 2023 = 현재 침로 기준 ±10°, 30 s, PD 제어기(#2). Hart 2024 two-step = ψ+a·2.4°, 4스텝마다(#4). Sawada 2021 = 결정 10 s 기준으로 타각 명령과 오토파일럿 침로 변경 명령이 다르게 학습되고, 연속 모델은 침로 안정성이 낮음(#1,#7). Krasowski 2024 = 회전율 7단계, 10 s(#1,#2). Meyer 2020 = 타 모멘트라 적분돼 침로가 됨(#3). Sim2Sea = 절대 목표 선수각 18개 + 마스크(#1). Seyde 2021 = 동역학이 bang-bang 입력을 저역통과함(Sec 5.3)",
+    "gap": "우리는 큰 범위(±120°)의 절대 오프셋을 짧은 간격으로 독립 재표본함. 잡음이 곧바로 10° 포화를 넘어 전타가 됨. 비슷한 절대 명령형은 Sim2Sea 하나인데, 그쪽은 이산 행동 + VO 마스크임"
+   },
+   {
+    "aspect": "std 초기값·경계",
+    "ours": "상태 무관 logstd, MoE 전문가 5벌 각자 가짐. dim0 초기값 −1.0(침로 σ≈44°), clamp [−2.3, 0](하한 σ≈12°로 10° 포화보다 큼). clamp 밖에서는 기울기 0. D 진단: 9.04M 시점 logstd −0.869(σ≈50°)",
+    "ours_location": "networks.py:705-709 (LOGSTD_INIT0), :815 (전문가별 logstd), :875 / :905 clamp; config.py:493-496; verify/_verify_ppo_mirror.py:342 (−2.3 하드코딩)",
+    "references": "Andrychowicz 2021: 초기 std에 민감하고 [−1,1] 범위 기준 0.5가 최선(C61). 하한 ρ는 너무 크지만 않으면 무관(C62, 기본 1e-3). clamp는 straight-through 기울기 사용(B.8 fn25). gSDE PPO: 초기 log σ −2(Table 10, Ant·Hopper는 −1로 덮어씀, Table 11). SB3 PPO 기본 log_std_init 0.0(verify 정정값). RL-RVO 초기 −1, 시험 σ×1e-5. CleanRL·MAPPO·baselines는 0이지만 squash 없이 clip함",
+    "gap": "우리 하한이 포화폭보다 커서 정책이 원해도 '조금만 돌기'를 표본할 수 없음(Fan 2020 §4.4: 직진 표본 확률≈0 과 같은 구조). clamp가 기울기를 끊는 문제도 있음"
+   },
+   {
+    "aspect": "squash·엔트로피",
+    "ours": "tanh squash, logprob 보정은 SAC Eq.21과 같음. 엔트로피 = Gaussian 닫힌형 + 저장 action_raw로 계산한 squash 항 → squash 항은 파라미터 기울기 0, logstd 기울기는 항상 +1(차원당, 전문가별 라우팅 비율 가중). ENTROPY_BONUS 0.01 상수",
+    "ours_location": "networks.py:915-918; vessel_gym_train.py:1346; config.py:298",
+    "references": "Andrychowicz B.8: tanh 항은 엔트로피 정규화에서만 기울기를 가져야 하고, 극단 행동 벌점 + 엔트로피 무한 증가 방지 역할을 함. Sec 3.8: 엔트로피 보너스 유의한 이득 없음. CleanRL ent 0.0, SB3 ent 0.0, baselines MuJoCo ent 0.0, gSDE PPO ent 0.0, Long 2018 코드 5e-4(구조는 우리와 같은 상수 기울기), GA3C β 1e-4(이산). SB3 squash 엔트로피 추정치 = mean(−log π(a_stored)) (verify 정정 부호)",
+    "gap": "우리는 'tanh + 엔트로피 0.01 + 제동 없는 squash 항' 조합임. 공개 기본 경로(SB3·CleanRL·baselines)에는 없는 영역. logstd를 매 미니배치 위로 미는 상수 압력이 원인(1)과 직결됨"
+   },
+   {
+    "aspect": "탐색 방식",
+    "ours": "매 결정 i.i.d. Gaussian 잡음(pre-tanh), 배마다 독립",
+    "ours_location": "networks.py:878-879 dist.sample(); vessel_gym_train.py:1160 rollout 호출",
+    "references": "gSDE (Raffin 2021): 저역통과 시스템에서 i.i.d. 잡음은 상쇄됨(Sec 1). 잡음을 n스텝마다 재표집하고 worker별로 다르게 둠(A.6). PPO gSDE vs Gaussian = Walker 1776 vs 1238, Hopper 2508 vs 1622(Hopper는 log σ −1). 평가는 결정적 μ(s)",
+    "gap": "우리 선박은 타각률 3°/s로 느리고 결정은 0.4 s라서, 잡음이 회피 방향 탐색으로 쌓이지 않고 전타만 반복함"
+   },
+   {
+    "aspect": "결정 간격",
+    "ours": "0.4 s (10 서브스텝)",
+    "ours_location": "vessel_gym.py:29-30",
+    "references": "Waltz 3 s, Sawada 10 s, Krasowski 10 s, Niu 30 s, Hart 20 s, Meyer 1 s(실세계 0.2 s), Meyer 2020 taming 0.14 s(행동이 타 모멘트임)",
+    "gap": "고주파 결정에 절대 침로 명령까지 겹친 조합은 문헌에 없음. 고주파로 성공한 Meyer는 행동이 적분형(모멘트)이라 저역통과가 됨"
+   },
+   {
+    "aspect": "PPO 데이터 사용",
+    "ours": "update당 65,536 결정, 미니배치 512 × 2 epoch = 256 grad step. clip 0.2, KL·clipfrac 기록 없음, Adam eps 1e-8(torch 기본)",
+    "ours_location": "config.py:295-297 (N_EPOCH·MINIBATCH_SIZE env 있음, 스냅샷에 minibatch 없음); vessel_gym_train.py:1272-1346, :731",
+    "references": "MAPPO: 미니배치 1–2개, epoch ≤10–15, clip <0.2, 미니배치 4개면 SMAC 실패(Sug 3–4, 이산 행동만 시험). Engstrom 2020: ratio clip이 trust region을 못 지키므로 KL을 재야 함. Huang 37: approx_kl은 보통 <0.02, target_kl 0.01은 기본 꺼짐. CleanRL/SB3: approx_kl 식, target_kl break(SB3는 1.5×). Hsu 2020: 좁은 보상 신호에서 drift(failure mode 1), KL penalty β 3 처방. Huang·CleanRL·MAPPO: Adam eps 1e-5",
+    "gap": "미니배치가 MAPPO 권고보다 64배 잘게 쪼개짐. 평균 정책 drift(원인 2)를 진단할 KL·clipfrac 로그가 없음"
+   },
+   {
+    "aspect": "LR 스케줄",
+    "ours": "3e-4 고정. 선형 감쇠 토글(LR_DECAY_DEC) 있으나 qb_에서 logstd −2.0과 함께만 시험 → 단독 효과 미측정",
+    "ours_location": "config.py:293, :493-499; vessel_gym_train.py:1124-1127",
+    "references": "Andrychowicz: 선형→0 감쇠가 5개 중 4개 과제에서 소폭 이득(Ant +15%). Huang/CleanRL/baselines: 3e-4→0 감쇠 기본. Engstrom: Adam annealing 유의. Long 2018: 5e-5→2e-5, 2단계",
+    "gap": "토글은 있음. 단독 시험만 없음"
+   },
+   {
+    "aspect": "value·advantage 정규화",
+    "ours": "ValueNorm(running), advantage는 update 전체로 정규화, 망별 grad clip 0.5, central critic 16척",
+    "ours_location": "vessel_gym_train.py:121 ValueNorm, :1244-1247, :1406-1408",
+    "references": "MAPPO Sug 1(value norm)·Sug 2(global+local critic)와 일치. advantage 버퍼 전체 정규화는 MAPPO 코드와 같고, Huang/CleanRL/SB3는 미니배치 단위. Andrychowicz C67: 정규화 범위 영향 작음",
+    "gap": "차이 거의 없음. 바꿀 근거 약함"
+   },
+   {
+    "aspect": "네트워크 초기화(정책 출력층)",
+    "ours": "action_mean = PyTorch 기본 init ×0.1, bias 0",
+    "ours_location": "networks.py:701-703",
+    "references": "Andrychowicz C57: 100× 축소(0.01)로 Humanoid +66%. Huang/CleanRL/SB3/MAPPO: 정책 출력층 gain 0.01",
+    "gap": "우리 축소 폭이 10배 작음. 침로 모드에서는 mean≈0 = 목표 직진이라 초기 영향은 제한적일 것으로 봄"
+   },
+   {
+    "aspect": "보상: 위험 비용 범위 vs 관측 범위",
+    "ours": "#6 충돌코스·#7 per-pair 위험 비용을 300 m(COMM_RANGE)까지 계산, DCPA 게이트 48 m. OFF 관측은 레이더·ARPA 56 m뿐 → 회피 가치의 약 90 %가 OFF가 못 보는 구간. VESSEL_REWARD_RANGE=56(두 팔 동일) 경로는 b6a4341에 구현됐고 미실행",
+    "ours_location": "vessel_gym.py:1350-1431 (RJ·RR 분리, risk_rw), :1569-1576 (#6·#7), :876-878; config.py:597; _run_f.sh:100-102 (VESSEL_F_REWARD_RANGE=56 → 순위 관문 v5)",
+    "references": "Meyer 2020: rewarder가 센서 측정값으로 위험 벌점 계산(#6). Heiberg 2022: 센서 범위 안 TS만 CRI 계산, dU = 최대 탐지 DCPA(#1,#3). Krasowski 2024: d_obs = 관측 섹터 거리(#4). RL-RVO: 감지 4 m 안 이웃의 RVO·TTC 보상. CADRL/SA-CADRL: 근접 벌점 0.2 m. (Waltz 2023은 verify에서 CR이 시야 검사 없이 계산된다고 확인돼 근거에서 제외)",
+    "gap": "문헌은 보상이 쓰는 위험 = 에이전트가 관측하는 위험으로 맞춤. 우리 OFF만 어긋나 있음(원인 2)"
+   },
+   {
+    "aspect": "관측에 위험 특징",
+    "ours": "OFF는 ARPA@56 참 파트너 필드, comm은 56–300 m 코덱 복원 필드. 보상이 쓰는 DCPA·TCPA·게이트 값을 관측에 명시적으로 넣지는 않음",
+    "ours_location": "vessel_gym.py _build_obs·comm_pair_features; networks.py GroundedAttention 토큰",
+    "references": "Hart 2024 two-step: dCPA·tCPA를 관측에 넣으면 return 2배 = 충돌 절반(10 실행). Hart 2024 CR-train: 장애물별 (d, u, θ, θ_obst, DCPA, TCPA)(verify 정정). Waltz: CR을 관측에 포함. Sawada: OZT 격자",
+    "gap": "위험량을 정책이 학습으로 역산해야 함. 관측 차원을 바꾸면 체크포인트가 깨짐"
+   },
+   {
+    "aspect": "커리큘럼·장면 분포",
+    "ours": "16척 respawn, 커리큘럼 없음. 학습 중 위험 장면 비율 미측정(diag_ckpt에 sit_rate 게이트만 있음)",
+    "ours_location": "vessel_gym.py reset/respawn; vessel_gym_train.py comm_telemetry 'sit_rate'",
+    "references": "Long 2018/Fan 2020: 20대 장애물 없음 → 58대. Everett 2018: 2–4 → 2–10. Semnani 2020: 2→4→8→10, 학습 때 이웃이 없는 상황을 못 봐서 실패함. Han 2022: 2–4 → 10대. Hart CR-train: 무작위 초기화는 위험 0이 36 %, 회피 불가가 24 % → 위험 분포를 통제하면 향상",
+    "gap": "우리 respawn 장면의 위험 분포를 모름. 회피 신호가 희석되는지 확인 못 함"
+   },
+   {
+    "aspect": "평가 모드",
+    "ours": "주 평가 = 표본 행동(eval_ckpt act). 평균 행동은 진단용 래퍼 eval_mean.py로만 잼(평균 54.6 % vs 표본 28.8 %)",
+    "ours_location": "eval/eval_ckpt.py:160-168; runs_fig1/2026-10-02_fig1/eval_mean.py; _run_f.sh:339-344",
+    "references": "Meyer 2020 run.py: 기본 결정론. Long 2018 코드: generate_action_no_sampling. Everett 2018/2021: 최대확률 행동. MAPPO mpe_runner: deterministic=True. SB3 evaluate_policy: deterministic=True. SAC: 평가 시 PPO 잡음 끔. gSDE: 결정적 μ(s). Colas 2019: deterministic E=20. RL-RVO: σ×1e-5. 반대 예 = CleanRL eval, Andrychowicz(확률 정책)",
+    "gap": "계보 다수가 평균 행동으로 평가함. 우리 표본 평가는 비교 불가이고, Woerner R8·Alg7 점수를 지터로 오염시킬 수 있음"
+   },
+   {
+    "aspect": "시드·통계·체크포인트",
+    "ours": "시드 1개(43), 끝 체크포인트 1점, 재분기 잡음 약 20 pt",
+    "ours_location": "_run_f.sh:54-62 (SEEDS_ALL), :339-344; summarize_fig1.py",
+    "references": "Agarwal 2021: 끝 성능 기준, max 프로토콜 금지, 3런 bootstrap CI 과소. Colas 2018: 마지막 10 평가점 평균, Welch t, power 분석. Colas 2019: ε=1이면 N≈20, Bonferroni. Henderson 2018: 같은 설정 5 vs 5가 p=0.0016. Patterson 2024: 짝 차이 D=A−B, 5런 부족. MAPPO: 마지막 10 평가 중앙값(Sec 4.3, 시드 6개). Krasowski: 10 시드·paired t. Wang 2024: 6 시드",
+    "gap": "끝 1점·1시드로는 어떤 문헌 기준에도 못 미침. 같은 trunk 짝 구조는 이미 있으니 last-K 평균 + 짝 차이 + 시드별 승패로 보강 가능"
+   },
+   {
+    "aspect": "통신 도입·사용 측정",
+    "ours": "9.04M OFF trunk에서 분기(워밍업 1200 OFF), 동결 k차원 코덱(k=8). 측정 = act_zero/act_shuf/read_ratio(전 결정 평균, 평균 행동 기준), eval --latent_zero/--field_shuffle",
+    "ours_location": "vessel_gym_train.py:476-640 comm_telemetry (act_* :625-638); eval/eval_ckpt.py:71-75; _run_f.sh:303-317 branch_one",
+    "references": "Lowe 2019: zero 절제만으로 판정 금지, CIC(KL) 등 인과 지표 권장, 장기 효과. Jaques 2019: 반사실 KL, 평균 이상 영향은 timestep의 10 % 미만 → 구간 한정 필요. Lin 2021 ae-comm: AE 표현 고정이 RL 미세조정보다 나음(우리 동결 코덱 지지). I2C: 2단계 사전학습 뒤 고정이 더 빠름, 무작위·무관 통신은 통신 없음보다 나쁨. ATOC: 재학습 없이 통신 끄면 DDPG보다 나빠짐. NDQ: 차원별 끊기",
+    "gap": "shuffle 지표는 이미 있음. 다만 KL(분포) 지표가 없고 조우 구간 한정도 없음. trunk가 0 입력을 9M 동안 봤으므로 Lowe의 분포 경고는 우리에게 약하게만 적용됨(verify 지적)"
+   }
+  ],
+  "port_items": [
+   {
+    "id": "P1",
+    "title": "평균 행동 평가를 주 평가와 같은 배치에서 병기",
+    "source_refs": "Meyer 2020 run.py:567(결정론 기본); Long 2018 Acmece circle_test.py:58; Everett 2018 §IV-A·2021 §III-D; MAPPO mpe_runner.py:154; SB3 evaluation.py:16; SAC 2018 Sec 5; gSDE Sec 4.1; Colas 2019 Sec 5; RL-RVO policy_test.py:50",
+    "addresses": "원인 (3) 평가 잡음 + 원인 (1) 표본 잡음이 지표에 섞이는 문제(평균 54.6 vs 표본 28.8)",
+    "change": "코드 신규 없음. 이미 있는 runs_fig1/2026-10-02_fig1/eval_mean.py 래퍼(tanh(mean) 실행)를 _run_f.sh 평가 단계에서 같은 인자(--envs 256 --eval_decisions 10000 --burnin 2400 --seed 999)로 한 번 더 돌림. 결과는 '<run>_mean' 열로 summarize_fig1.py 표에 추가함. 주 지표를 어느 쪽으로 할지는 사전등록으로 정함",
+    "code_locations": "runs_fig1/2026-10-02_fig1/_run_f.sh:339-344 (eval 루프 옆에 eval_mean.py 호출 1줄); runs_fig1/2026-10-02_fig1/eval_mean.py(그대로); summarize_fig1.py(열 추가)",
+    "toggle": "VESSEL_F_EVAL_MEAN=1(기본 0 = 지금과 동일 단계). eval_ckpt.py 자체는 수정 없음",
+    "approval": "paper_content",
+    "checkpoint_compat": "영향 없음(평가 전용)",
+    "test_plan": "기본값: VESSEL_F_EVAL_MEAN 미설정이면 _run_f.sh 로그·산출물이 그대로임. 단위: eval_mean.py 로그의 'mean-action actor calls' > 0이고, 같은 seed로 두 번 돌려 값이 같음(결정적). Windows: 기존 qb_ off/comm 끝 체크포인트에 평가만 돌려서 두 열을 비교함(학습 없음)",
+    "risk": "주 지표를 결과를 본 뒤 고르면 rigging이 됨 → 열 추가 전에 주 지표를 사전등록해야 함. 평균 행동은 학습 행동 분포와 다름(Fan 2020 hybrid처럼 규칙이 섞인 것은 아님)",
+    "priority": 1
+   },
+   {
+    "id": "P2",
+    "title": "update별 approx_kl·clipfrac·전문가별 logstd 기록",
+    "source_refs": "Engstrom 2020 Sec 4(ratio trust region 실패); Huang 37 'Check KL'(<0.02); CleanRL ppo_continuous_action.py:272; SB3 ppo.py:262-271; Hsu 2020 Sec 3.1 failure mode 1",
+    "addresses": "원인 (2) 평균 정책이 직진으로 drift하는지(Hsu failure mode 1) vs 과대 step인지 구분. 원인 (1) σ 추이 직접 관측",
+    "change": "PPO 미니배치 루프에서 with no_grad: logr = logp_new − flogp[mi]; kl += ((exp(logr)−1)−logr).mean(); cf += ((ratio−1).abs()>EPSILON).float().mean(). update 끝에서 기존 EVb 줄 옆에 '[ppo] kl=… clipfrac=… logstd0=[e0..e4]'를 출력함(policy.ctr_actor 코어/experts의 action_logstd[0,0]). GPU 누적, update당 동기화 1회",
+    "code_locations": "vessel_gym_train.py:1340-1346 (ratio 뒤 누적), :1238-1243 (기존 _grad_tele 출력 블록 재사용)",
+    "toggle": "기존 VESSEL_GRAD_TELEMETRY=1일 때만(기본 0 = stdout·가중치 불변). 새 env 키 없음",
+    "approval": "implementation_fix",
+    "checkpoint_compat": "영향 없음",
+    "test_plan": "기본값: verify/test_golden.py --check 3케이스 PASS(no_grad·RNG 무소비라 텔레메트리 켜도 state_dict SHA 같아야 함 → 켠 상태로도 1회 비교). 단위: epoch0 첫 미니배치 kl≈0, clipfrac=0. Windows: n_ trunk 재개 2M 정도 짧게 돌려 kl 추이와 logstd0를 보고, 평균 행동 drift 구간(4M→9M)과 맞춰 봄",
+    "risk": "없음에 가까움. 출력 문자열이 늘어나 로그 파서가 깨지지 않는지만 확인(줄 끝에만 붙임)",
+    "priority": 2
+   },
+   {
+    "id": "P3",
+    "title": "엔트로피 계수 env 토글(VESSEL_ENTROPY_BONUS)",
+    "source_refs": "Andrychowicz 2021 Sec 3.8(C32–C46)·B.8; CleanRL :69 ent 0.0; SB3 ppo.py:84-100 ent 0.0; Huang 37 MuJoCo ent 0.0; gSDE Table 10 ent 0.0; Long 2018 Acmece COEFF_ENTROPY 5e-4·net.py:78(우리와 같은 상수 기울기 구조)",
+    "addresses": "원인 (1): 저장 raw 기반 squash 항이 상수라 엔트로피 기울기 = logstd +1 고정 → σ가 안 줄어듦(9.04M logstd −0.869)",
+    "change": "config.py:298을 ENTROPY_BONUS = _env_float('VESSEL_ENTROPY_BONUS', 0.01)로 변경. 스냅샷 'entropy_bonus'는 이미 있음. _run_f.sh EXTRA_ENV 허용 정규식에 ENTROPY_BONUS 추가. 재개 검사 _cur_opt와 check_branch 기본값 묶음에 'entropy_bonus'(기본 0.01) 추가",
+    "code_locations": "config.py:298; runs_fig1/2026-10-02_fig1/_run_f.sh:93(unset 목록), :105(허용 정규식); vessel_gym_train.py:801 _cur_opt; verify/check_branch.py:57",
+    "toggle": "VESSEL_ENTROPY_BONUS, 기본 0.01(비트동일). 시험값 0 또는 5e-4",
+    "approval": "training_setting",
+    "checkpoint_compat": "키·shape 불변. 스냅샷에 값 기록됨. 분기 갈래는 두 팔 같은 값이어야 함(check_branch가 강제)",
+    "test_plan": "기본값: test_golden --check PASS. 단위: VESSEL_ENTROPY_BONUS=0으로 1 미니배치 backward 시 ctr_actor action_logstd.grad == policy_loss 단독 기울기임(엔트로피 기여 0). Windows: 시드 43, 같은 n_/qb_ 설정 trunk 75분 단계 1 형식으로 logstd0 추이 + 평균/표본 도착 차이 축소 여부(P1·P2와 함께 봄)",
+    "risk": "엔트로피 0이면 σ가 빨리 줄어 조기 수렴할 수 있음(Andrychowicz는 신중한 초기화를 전제로 함). 하한 −2.3 때문에 σ_course 12° 아래로는 안 내려감 → P4와 함께 봐야 효과가 드러남",
+    "priority": 3
+   },
+   {
+    "id": "P4",
+    "title": "logstd 하한 토글 + straight-through clamp",
+    "source_refs": "Andrychowicz 2021 C62(하한은 너무 크지만 않게, 기본 1e-3)·B.8 footnote 25(clamp 기울기 1); gSDE PPO 초기 log σ −2(Table 10); Fan 2020 §4.4(직진 표본 확률≈0)",
+    "addresses": "원인 (1): 하한 σ_course 12° > 포화 10° → 미세 침로 변경 표본 불가. clamp 밖 기울기 0으로 logstd가 고착될 수 있음",
+    "change": "config에 LOGSTD_MIN = _env_float('VESSEL_LOGSTD_MIN', -2.3) 추가. networks.py:875·:905 두 곳 clamp 하한을 cfg.LOGSTD_MIN으로 바꿈(rollout·update 같은 값 = 미러). 옵션 VESSEL_LOGSTD_CLAMP_ST=1이면 logstd + (clamp(logstd)−logstd).detach()(두 곳 동일). config.py:496 assert 하한을 LOGSTD_MIN으로 완화. 시험값 −3.0(σ_course≈6°) 또는 −3.5(≈3.6°). 산술: 포화 밖으로 덜 나가려면 logstd < ln(10/120) = −2.48",
+    "code_locations": "config.py:493-496; networks.py:875, :905; verify/_verify_ppo_mirror.py:342(하드코딩 −2.3 → cfg 값); ckpt_io.py:74 스냅샷; vessel_gym_train.py:801 _cur_opt; verify/check_branch.py:57",
+    "toggle": "VESSEL_LOGSTD_MIN 기본 −2.3, VESSEL_LOGSTD_CLAMP_ST 기본 0(둘 다 비트동일)",
+    "approval": "training_setting",
+    "checkpoint_compat": "키·shape 불변. 스냅샷에 'logstd_min'·'logstd_clamp_st' 추가(추가만 함). 재개 시 다르면 중단하도록 _cur_opt에 넣음",
+    "test_plan": "기본값: test_golden --check PASS, _verify_ppo_mirror·_verify_comm_mirror ALL PASS(Windows). 단위: LOGSTD_MIN=−3.0에서 forward와 get_logprob_entropy의 logprob이 같은 raw로 비트 일치(epoch0 ratio=1). ST=1에서 logstd=0.5일 때 grad≠0. Windows: P3과 조합(ENT 0, MIN −3.0, INIT0 −2.0) trunk 75분, 평균−표본 도착 차와 trunk 관문(마지막 4창 도착 ≥30 %)",
+    "risk": "σ가 너무 작으면 회피 탐색이 사라짐(직진 국소해 고착 = 원인 2 악화 가능). PPO ratio가 작은 σ에서 꼬리 표본에 과민(Hsu 2020) → P2의 kl 감시 필수",
+    "priority": 4
+   },
+   {
+    "id": "P5",
+    "title": "잡음 n결정 유지(held/시간상관 탐색 잡음)",
+    "source_refs": "Raffin 2021 gSDE Sec 1 drawback 3·Sec 4.2·A.6(worker별 잡음)·Table 4; Seyde 2021 Sec 5.3(동역학 저역통과); Sawada 2021 §6(연속 행동 침로 안정성 낮음)",
+    "addresses": "원인 (1): 0.4 s마다 독립 표본한 잡음이 느린 선박(타각 3°/s)에서 상쇄돼 회피 탐색이 쌓이지 않고 전타만 반복됨",
+    "change": "ControlActor.forward에 선택 인자 eps=None 추가. None이면 기존 dist.sample() 그대로, 주어지면 action_raw = mean + std*eps. 학습 rollout(vessel_gym_train.py:1160)이 배별 eps [E,N,2]를 전용 Generator로 보관하고, n결정마다 또는 done인 배만 재표집함. logprob은 저장된 raw의 주변 밀도라 update 경로(get_logprob_entropy) 수정 없음. gSDE의 상태의존 행렬은 이식하지 않고 sample_freq 아이디어만 가져옴",
+    "code_locations": "networks.py:866-879(forward, eps 인자); vessel_gym_train.py:1160(rollout 호출), done 처리 부근(재표집 마스크); config.py(NOISE_HOLD)",
+    "toggle": "VESSEL_NOISE_HOLD=n(기본 0 = 기존 dist.sample 경로, 비트동일). 시험 4(1.6 s)·8(3.2 s)",
+    "approval": "training_setting",
+    "checkpoint_compat": "파라미터 없음, 키·shape 불변. 스냅샷 'noise_hold' 추가",
+    "test_plan": "기본값: test_golden --check PASS. 단위: hold=4에서 같은 배의 연속 4결정 eps가 같고, done 직후 바뀜. 저장 act로 재계산한 logp == rollout logp(epoch0 ratio=1). Windows: P3·P4와 별개 팔로 trunk 75분, 표본 평가 도착(평균과의 격차) + 궤적 침로 변화량 비교",
+    "risk": "행동이 시간상관이라 PPO의 i.i.d. 표본 가정이 어긋남(주변 밀도 ratio는 유효하나 분산 증가 가능). gSDE 논문도 PPO가 간격에 민감하다고 함 → n 하나씩만 시험",
+    "priority": 5
+   },
+   {
+    "id": "P6",
+    "title": "위험 비용 반경 = OFF 관측 반경(56 m, 두 팔 동일) 실행",
+    "source_refs": "Meyer 2020 rewarder.py:152-156·:206(센서값으로 벌점, verify 확인); Heiberg 2022 Eq.18·Fig.7(센서 범위 안 TS만, dU=탐지 범위); Krasowski 2024 §VI-B(d_obs); Han 2022 RL-RVO(감지 4 m 안 RVO 보상); Chen 2017/2017sa(근접 벌점 0.2 m)",
+    "addresses": "원인 (2): 회피 가치의 약 90 %가 OFF가 못 보는 300→56 m 위험 비용",
+    "change": "코드 신규 없음. b6a4341에 있는 VESSEL_F_REWARD_RANGE=56 경로(보상 #6·#7만 56 m, 판정기·역할 주 상대는 300 유지, 순위 관문 v5)를 10-13 스펙 단계 2 그대로 실행함",
+    "code_locations": "vessel_gym.py:1426-1431(RR≠RJ 분기); config.py:597; runs_fig1/2026-10-02_fig1/_run_f.sh:100-102",
+    "toggle": "VESSEL_REWARD_RANGE=56(기존). 미설정 = 지금과 동일",
+    "approval": "paper_content",
+    "checkpoint_compat": "영향 없음(보상만 바뀜). 새 trunk 필요(보상이 달라짐)",
+    "test_plan": "기본값: 이미 b6a4341 골든 통과. 단위: 순위 관문 v5(규칙 배 순위가 보상 순위와 맞나)가 먼저 통과해야 함. Windows: qc_ trunk 시드 43 → trunk 관문 → off·comm. P1(평균 행동 열)과 함께 보고",
+    "risk": "comm 팔의 300 m 정보가 보상과 연결되지 않아 통신 이득이 줄 수 있음(H1b 약화). 그래도 OFF를 불구화하지 않으므로 anti-rigging에는 맞음. 판정기(300 m)와 보상(56 m)이 달라지는 비대칭이 남음",
+    "priority": 6
+   },
+   {
+    "id": "P7",
+    "title": "미니배치 확대 + 스냅샷 기록",
+    "source_refs": "MAPPO Sec 5.3 Sug 3·Sec 5.5 Sug 5(이산 행동만 시험, 한계 명시); Andrychowicz C4(배치 키워도 표본효율 손해 없음, 탐색 범위 64–256); Long 2018 코드 BATCH 1024",
+    "addresses": "원인 (2) drift·비정상성: update당 256 grad step으로 과도하게 쪼갬(MAPPO는 비정상성 때문에 정책 변화를 제한하라고 함)",
+    "change": "VESSEL_MINIBATCH_SIZE는 이미 env임(config.py:296). 빠진 것은 스냅샷뿐 → ckpt_io.snapshot_config에 'minibatch_size'·'n_epoch' 추가, _cur_opt·check_branch 기본값 묶음에도 추가, _run_f.sh EXTRA_ENV 허용 목록에 MINIBATCH_SIZE 추가. 시험값 8192(10-17 제안, 8개)",
+    "code_locations": "config.py:296; ckpt_io.py:74 부근; vessel_gym_train.py:801, :1274; verify/check_branch.py:57; _run_f.sh:105",
+    "toggle": "VESSEL_MINIBATCH_SIZE 기본 512(비트동일)",
+    "approval": "training_setting",
+    "checkpoint_compat": "키·shape 불변. 지금은 스냅샷에 값이 안 남아 '조용히 다른 실험'이 됨 → 키 추가로 해결",
+    "test_plan": "기본값: test_golden --check PASS(스냅샷 키 추가는 골든 스냅샷 비교에 걸리는지 확인 → 걸리면 regen 승인 필요). 단위: 65,536 % 8192 == 0, update당 step 수 = 8×N_EPOCH. Windows: 8192로 VRAM 피크 측정 후 trunk 75분, P2 kl·clipfrac 비교",
+    "risk": "GPU 메모리(qa_에서 15.7 GB까지 불어난 이력). step 수가 줄어 학습이 느려질 수 있음 → N_EPOCH 4와 짝으로 볼지 사전에 정함",
+    "priority": 7
+   },
+   {
+    "id": "P8",
+    "title": "last-K 체크포인트 평균 + 시드별 짝 차이 보고",
+    "source_refs": "Colas 2018 Sec 2.1 Example 1(마지막 10점 평균); MAPPO Sec 4.3(마지막 10 평가 중앙값, 시드 6); Agarwal 2021 Sec 3(끝 성능, max 금지)·Fig 6(3런 bootstrap 과소); Patterson 2024 Sec 4.4(D=A−B 짝 비교); Henderson 2018 Fig 5; Colas 2019 Sec 5(ε별 N, Bonferroni)",
+    "addresses": "원인 (3): 끝 1점·1시드·재분기 잡음 약 20 pt",
+    "change": "이미 저장되는 step10/12/14/16M 갈래 체크포인트(ckpt_every 2)를 모두 평가해 평균을 냄(best·max 선택 금지). 시드마다 D = comm − off(같은 trunk 짝)와 승패 수를 표에 넣고, 시드 ≥3이면 짝 t-CI를 붙임. 코드는 summarize_fig1.py 집계 + _run_f.sh 평가 루프 확장뿐",
+    "code_locations": "_run_f.sh:332-344(평가 대상 파일 목록); summarize_fig1.py",
+    "toggle": "VESSEL_F_LASTK=1(기본 0 = 끝 체크포인트만)",
+    "approval": "paper_content",
+    "checkpoint_compat": "영향 없음",
+    "test_plan": "단위: step16M == 끝 모델 중복(qb_에서 확인된 사실)을 집계에서 한 번만 셈. Windows: qb_ 기존 체크포인트로 무학습 재평가 → 끝 1점 대비 순위 안정성 확인",
+    "risk": "평가 시간이 약 4배. 1시드 단계에서는 여전히 단독 주장 금지(규칙). Colas 2019 기준 10 pt 효과면 ε≈0.44 → 수십 시드 필요",
+    "priority": 8
+   },
+   {
+    "id": "P9",
+    "title": "통신 사용 KL(CIC 연속판)을 조우 구간 한정으로 텔레메트리에 추가",
+    "source_refs": "Lowe 2019 §3.1·§6.2(인과 지표·장기 효과); Jaques 2019 §5 Eq.2·§5.1(영향은 timestep 10 % 미만); I2C §3.1(메시지 단위 KL); NDQ App B.1(차원별 끊기)",
+    "addresses": "원인 (3)·통신 사용 판정: act_shuf는 전 결정 평균이라 희석됨",
+    "change": "comm_telemetry에서 이미 계산한 a_base·a_s(pre-tanh 평균, 같은 logstd)로 KL = Σ_d (Δμ_d)²/(2σ_d²)를 계산함(상태 무관 logstd라 닫힌형). 마스크 = sit≠0 또는 56–300 m 파트너 존재 배. 열 'cic_shuf_enc'(조우 평균), 'cic_hi_frac'(평균 이상 비율)을 COMM_TELE_COLS 끝에만 붙임",
+    "code_locations": "vessel_gym_train.py:625-638(act_* 블록 옆), :480-487(COMM_TELE_COLS 끝)",
+    "toggle": "기존 VESSEL_COMM_TELEMETRY=1 안에서만(기본 0 = 호출 없음). 새 env 키 없음",
+    "approval": "implementation_fix",
+    "checkpoint_compat": "영향 없음(no_grad, 전용 Generator)",
+    "test_plan": "기본값: test_golden --check PASS. 단위: msg를 그대로 넣으면 KL=0, 메시지 무시 정책(게이트 0)이면 KL=0. Windows: qb_ comm 끝 체크포인트로 diag_ckpt 경로에서 1회 측정",
+    "risk": "Lowe 원 실험은 이산 행렬게임이라 Gaussian 이식은 우리 가정. 논문 지표로 쓰려면 별도 승인 필요",
+    "priority": 9
+   },
+   {
+    "id": "P10",
+    "title": "squash 엔트로피 추정 방식 토글(기울기 경로 복원)",
+    "source_refs": "Andrychowicz B.8(tanh 항은 엔트로피에서만 기울기); SB3 distributions.py:244-247·ppo.py:247-252(추정치 = mean(−log π(a_stored)), verify 정정 부호); SAC 2018b Sec 4 Eq.8-10(재매개변수화)",
+    "addresses": "원인 (1): 현재 squash 항은 저장 raw로 계산돼 기울기 0(의도한 제동이 작동 안 하는 조용한 무효)",
+    "change": "get_logprob_entropy에 cfg.ENTROPY_EST 분기. 'closed'(기본) = 현행. 'logp' = entropy = (−logprob).mean()(SB3식, logσ 기울기 기댓값 0으로 상수 push 제거). 'reparam' = 새 ε로 a=tanh(μ+σε)를 만들어 squash 항 계산(Andrychowicz 제동 복원, update RNG 소비)",
+    "code_locations": "networks.py:915-918; config.py(ENTROPY_EST)",
+    "toggle": "VESSEL_ENTROPY_EST 기본 'closed'(비트동일)",
+    "approval": "implementation_fix",
+    "checkpoint_compat": "키·shape 불변. 스냅샷 'entropy_est' 추가",
+    "test_plan": "기본값: test_golden --check PASS. 단위: 'logp'에서 on-policy 표본(raw ~ N(μ,σ)) 대량 생성 시 logstd 엔트로피 기울기 평균≈0, 'closed'에서는 +1. Windows: P3(계수 0)보다 효과가 큰지 같은 75분 trunk로 비교",
+    "risk": "P3(계수 0)이면 이 항목은 불필요해짐 → P3 결과를 보고 결정. 'reparam'은 update RNG를 소비해 randperm 순서가 바뀜(토글 켠 런만)",
+    "priority": 10
+   },
+   {
+    "id": "P11",
+    "title": "LR 선형 감쇠 단독 시험",
+    "source_refs": "Andrychowicz Sec 3.7(C31, 4/5 과제 이득); Huang 37 core #4; CleanRL anneal_lr True; Engstrom 2020 Fig 1",
+    "addresses": "원인 (2) 후반 drift(곡선 V자): qb_에서 logstd −2.0과 섞여 단독 효과 미측정",
+    "change": "코드 신규 없음. VESSEL_F_EXTRA_ENV='VESSEL_LR_DECAY_DEC=… VESSEL_LR_FINAL=…'만 줘서 logstd 기본값으로 trunk를 돌림",
+    "code_locations": "vessel_gym_train.py:1124-1127; config.py:493-499; _run_f.sh:105",
+    "toggle": "기존 VESSEL_LR_DECAY_DEC(기본 0)",
+    "approval": "training_setting",
+    "checkpoint_compat": "영향 없음(스냅샷 기록됨)",
+    "test_plan": "Windows: 시드 43 trunk 75분, qb_와 1변수 차이로 비교(P2 kl 같이)",
+    "risk": "감쇠가 drift를 가리기만 하고 원인(보상-관측 불일치)은 남을 수 있음",
+    "priority": 11
+   },
+   {
+    "id": "P12",
+    "title": "정책 출력층 초기화 0.01 토글",
+    "source_refs": "Andrychowicz C57(100× 축소, Humanoid +66 %); Huang 37 core #2; CleanRL :127; SB3 policies.py:617-622; MAPPO distributions.py gain 0.01",
+    "addresses": "원인 (1) 보조: 초기 평균 행동 크기 축소. 새 trunk에만 의미 있음",
+    "change": "networks.py:702 mul_(0.1) → mul_(cfg.ACT_MEAN_INIT_SCALE)",
+    "code_locations": "networks.py:701-703; config.py",
+    "toggle": "VESSEL_ACT_MEAN_INIT_SCALE 기본 0.1(비트동일)",
+    "approval": "training_setting",
+    "checkpoint_compat": "키·shape 불변(초기값만 다름). 분기 갈래에는 무관(trunk 가중치를 이어받음)",
+    "test_plan": "기본값: test_golden --check PASS. 단위: 0.01에서 초기 |mean| 분포가 1/10. Windows: 다른 항목과 섞지 말고 별도 trunk로만",
+    "risk": "침로 모드에서는 mean≈0이 이미 목표 직진이라 효과가 작을 가능성이 큼 → 우선순위 낮음",
+    "priority": 12
+   },
+   {
+    "id": "P13",
+    "title": "학습 중 장면 위험 분포 측정(커리큘럼 판단 전)",
+    "source_refs": "Hart 2024 CR-train §6.2(무작위 초기화는 위험 0 36 %·회피 불가 24 %); Semnani 2020 §III-C; Long 2018/Everett 2018 커리큘럼",
+    "addresses": "원인 (2): 회피 신호가 위험 없는 장면에 희석되는지 확인",
+    "change": "학습 없이 기존 trunk 체크포인트로 diag_ckpt를 돌려, 배-결정 단위로 risk_rw>0 비율과 'DCPA<충돌거리·TCPA<회피 가능 시간' 비율을 집계함(기존 sit_rate 게이트 옆에 열 추가)",
+    "code_locations": "eval/diag_ckpt.py(집계 열); vessel_gym.py:1418-1431(risk_rw 읽기만)",
+    "toggle": "diag 전용 플래그(학습기 불변)",
+    "approval": "implementation_fix",
+    "checkpoint_compat": "영향 없음",
+    "test_plan": "Windows: n_ trunk 9.04M로 1회 측정. 결과를 보고 respawn 샘플링 변경(커리큘럼)이 필요한지 저자에게 제안",
+    "risk": "측정만 함. 커리큘럼 자체는 학습 분포 변경이라 별도 승인 대상",
+    "priority": 13
+   },
+   {
+    "id": "P14",
+    "title": "증분형 침로 명령(ψ_cmd += a0·Δmax) 행동 모드",
+    "source_refs": "Waltz 2023 §4.3(±5°/3 s); Niu 2023 §3.7 Eq.9(±10°, PD); Hart 2024 two-step §7.3(2.4°, 4스텝마다); Sawada 2021 §4.1·§6; Krasowski 2024 §V-C(회전율 7단계)",
+    "addresses": "원인 (1) 구조적 해결: 잡음이 적분돼 저역통과됨",
+    "change": "ACTION_MODE='course_inc' 추가. env가 plan_course를 상태로 들고 a0·Δmax(예: 5°/결정)만큼 누적, respawn 시 목표 방위로 리셋. 정책이 자기 명령을 알도록 obs self에 (ψ_cmd − heading)/180 1차원을 추가해야 함 → 관측 차원 변경. 메시지 intent(p46)는 plan_course 기반이라 코덱 재학습 필요",
+    "code_locations": "config.py:565-568; vessel_gym.py:1103-1111, :1870-1877, _build_obs; networks.py fc2 입력(SELF_SIZE); comm_codec.py p46",
+    "toggle": "VESSEL_ACTION_MODE=course_inc(기본 rudder/현행 course 불변)",
+    "approval": "paper_content",
+    "checkpoint_compat": "obs 차원·fc2 shape 변경 → 기존 체크포인트 전부 호환 불가, 새 trunk·새 코덱·골든 신규 케이스 필요",
+    "test_plan": "기본값: test_golden --check PASS(기존 모드 불변). 단위: Δmax 누적·래핑, respawn 리셋. Windows: P3–P5가 실패한 경우에만 trunk 시드 43",
+    "risk": "가장 큰 변경. 행동 의미가 바뀌어 규칙 배·순위 관문·의도 필드를 전부 다시 맞춰야 함. 회피에 필요한 큰 변침이 느려짐(Hart는 의도적으로 어렵게 만든 설정)",
+    "priority": 14
+   },
+   {
+    "id": "P15",
+    "title": "관측 반경 안 쌍별 DCPA·TCPA를 ARPA 토큰에 추가",
+    "source_refs": "Hart 2024 two-step Abstract·§5.2(충돌 절반, 10 실행); Hart 2024 CR-train §5.1(장애물별 6특징, verify 정정); Sawada 2021 OZT; Waltz 2023 §4.3(CR 관측)",
+    "addresses": "원인 (2): 보상이 쓰는 위험량을 정책이 직접 보게 함",
+    "change": "comm_pair_features의 파트너 토큰에 (dcpa/DCPA_RISK, tcpa_risk)를 붙임. 두 팔 모두 자기 관측 범위 안 파트너만(OFF 56 m 참값, comm 300 m는 복원값으로 계산)",
+    "code_locations": "vessel_gym.py comm_pair_features·_build_obs; networks.py GroundedAttention k/v 입력 차원(relpos_dim)",
+    "toggle": "VESSEL_PAIR_RISK_FEAT=1(기본 0)",
+    "approval": "paper_content",
+    "checkpoint_compat": "토큰 차원 변경 → k_proj/v_proj shape 변경, 새 trunk 필요",
+    "test_plan": "기본값: test_golden PASS, 미러 검증기 2종 ALL PASS(토큰이 rollout·update 세 곳에 복제됨). Windows: P6 결과를 본 뒤에만",
+    "risk": "rollout=update 미러 세 곳 모두 수정해야 함(4번째 사고 위험). 정보량이 같다면 학습 속도만 바뀌고 결론에는 영향 없을 수 있음",
+    "priority": 15
+   },
+   {
+    "id": "P16",
+    "title": "target_kl 조기 종료 / clip 0.1 토글",
+    "source_refs": "MAPPO Sec 5.4 Sug 4(clip <0.2); Huang 37 aux #3(target_kl 0.01, 기본 꺼짐); CleanRL :307; SB3 ppo.py:262-271(1.5×target_kl); Hsu 2020 App C.2(KL penalty)",
+    "addresses": "원인 (2) 과대 step으로 인한 drift(P2 측정 결과가 kl>0.02를 보일 때만)",
+    "change": "EPSILON을 _env_float('VESSEL_PPO_CLIP', 0.2)로 바꿈. TARGET_KL(기본 0=끔)이면 P2의 미니배치 approx_kl 누적 평균이 1.5×TARGET_KL을 넘을 때 epoch 루프 break",
+    "code_locations": "config.py:297; vessel_gym_train.py:1275-1346",
+    "toggle": "VESSEL_PPO_CLIP 기본 0.2, VESSEL_TARGET_KL 기본 0(둘 다 비트동일)",
+    "approval": "training_setting",
+    "checkpoint_compat": "영향 없음(스냅샷 'epsilon' 있음, 'target_kl' 추가)",
+    "test_plan": "기본값: test_golden PASS. Windows: P2에서 kl이 크다고 나올 때만 trunk 75분",
+    "risk": "P2 증거 없이 켜면 근거 없는 튜닝이 됨",
+    "priority": 16
+   }
+  ],
+  "rejected": [
+   "팔마다 다른 위험 비용 반경(OFF 56 m / comm 300 m, Meyer·Heiberg 방식을 팔별로 적용): 두 팔의 보상 함수가 달라 짝 비교가 무효가 됨. H1 공정 baseline 원칙에도 어긋남 → 두 팔 동일 56 m(P6)만 권고",
+   "VO/TTC 행동 마스크(Sim2Sea §4.2, Krasowski 2024): 성능을 규칙이 만들어 '모방 아닌 학습'(노벨티 d)과 충돌함. Krasowski는 사후 마스크만 씌우면 도착이 약 40 pt 떨어진다고 보고 → 넣으려면 trunk부터 넣어야 하고, 이건 새 실험이라 저자 결정 사항. 지금 권고하지 않음",
+   "hybrid 규칙 조타(Fan 2020 PID/safe, Semnani 2020 FMP): 그림의 팔 구성·평가 프로토콜이 바뀌고 학습 정책 주장도 약해짐. 평균 행동 평가·σ 축소(P1·P3·P4)를 먼저 시도",
+   "positive listening 보조손실(Eccles 2019): comm 팔에만 목적함수가 추가돼 OFF와 비대칭이 됨(AUX_LOSS_SCALE=0 철학과 반대). 원 논문도 '채널을 쓰기 시작하게만 한다'고 함. 우리 문제는 OFF 자체 학습 실패라 우선순위 밖",
+   "social influence 보상(Jaques 2019): Eccles 2019에서 유의한 개선 없음, 보상 변경이기도 함",
+   "코덱 RL 미세조정·IB 정규화(Lin 2021 ae-rl-comm은 오히려 하락, IMAC/NDQ는 RL과 함께 학습하는 설정): 우리 동결 코덱 설계와 맞지 않고 문헌도 동결을 지지함",
+   "엔트로피 온도 자동조정(SAC 2018b target −dim(A)): off-policy SAC 맥락이고, PPO에서의 엔트로피 제약은 Andrychowicz C34에서 이득이 없었음. 목표치 −2는 우리 포화 구간과 근거 연결이 없음",
+   "Beta 분포 정책(Hsu 2020): tanh·logstd·미러 경로 전부 교체가 필요함. Hsu의 균등 초기화는 failure mode 3(다봉) 처방이지 drift(mode 1) 처방이 아님(verify 지적)",
+   "전체 상태의존 gSDE(행렬 θε를 ControlActor fc3 특징에 연결): 분포 클래스가 바뀌어 rollout·update 미러를 양쪽 다 수정해야 하고 골든도 재생성해야 함. 같은 효과의 핵심(재표집 간격)은 P5로 더 작게 이식",
+   "결정 간격 연장(SUBSTEPS 10→N, Waltz 3 s·Sawada 10 s): 결정당 시간 벌점 0.035·×SUBSTEPS 보상 항·MAX_EPISODE_STEPS·판정기 타이밍이 함께 바뀌어 보상 정의 변경과 같음. P5(잡음 유지)가 같은 저역통과 효과를 행동 해상도 손실 없이 줌",
+   "advantage 미니배치 단위 정규화·GAE λ 0.9·value clipping 변경(Huang 37, Andrychowicz C67·C8): 영향이 작다는 결과가 있고 진단된 원인과 연결되지 않음",
+   "Adam eps 1e-5(Huang 37, CleanRL, MAPPO): 진단된 원인과 무관한 미세 설정. 다른 항목과 섞으면 효과 귀속만 흐려짐",
+   "best 체크포인트 선택(Sim2Sea, Gorsane absolute metric): Agarwal 2021 Sec 3이 max 프로토콜을 비교 불가로 봄. 우리 '끝/last-K' 원칙과 충돌 → last-K 평균(P8)으로 대체",
+   "보상 trade-off λ를 관측에 넣는 조건부 정책(Meyer 2020 taming): 위험 반경 논쟁을 한 trunk로 풀 수는 있으나 새 실험이고, 정적 장애물 근거뿐이라 약함",
+   "QMIX·MADDPG·DQN 계열 하이퍼파라미터(Wei 2022, Wang 2025, Niu 2023, Waltz 2023, Hart 2024): 알고리즘이 달라 PPO에 옮길 값이 없음. Wang 2025의 79.3 vs 52.7은 MADDPG vs DDPG 비교라 통신 효과 근거로도 인용 금지",
+   "메시지 링크 비용(Arul 2022 λ_comm), 이산 DRU 잡음(DIAL), 학습 게이트(IC3Net): 팔 구성·보상 변경이고, IC3Net은 협력 과제에서 게이트를 1로 고정하는 편이 낫다고 함 = 현행 중립 게이트와 같은 방향",
+   "Kim 2021 의도 공유(초록만 읽음): 설정·수치 인용 불가. 다단계 의도 payload는 코덱 재학습이 필요한 paper_content라 본문 확보 전까지 보류"
+  ]
+ },
+ "portCheck": {
+  "checks": [
+   {
+    "ref_id": "P1",
+    "aspect": "'코드 신규 없음' · eval_mean.py 를 주 평가와 같은 인자로 돌림",
+    "verdict": "wrong",
+    "correct_value": "주 평가 eval_all(_run_f.sh:332-344)은 eval_ckpt.py 를 직접 부르지 않음. runs_fig1/2026-10-01_scripted/eval_scripted.py --policy learned 로 돌리고, Woerner·scripted-rudder 줄을 덧붙임(summarize_fig1 의 w_score·rud_* 열이 여기서 나옴). eval_mean.py 는 eval_ckpt.main() 만 감싸므로 평균 열에는 Woerner R8·타 지표가 빠짐. 그래서 스펙이 내세운 'R8 지터 오염' 확인 자체를 못 함. 작은 래퍼가 하나 필요함: eval_scripted learned 경로에 eval_mean 의 ctr_actor.forward→tanh(mean) 패치를 얹는 것. 출력 파일 이름은 summarize_fig1 의 glob 'lr_{pre}{arm}_s*.txt'·최선 OFF 풀(t_off 표본 평가)과 섞이지 않게 정해야 함. 승인 등급 paper_content 는 맞음",
+    "evidence": "_run_f.sh eval_all: \"$SDROP/eval_scripted.py --py_root ... --policy learned -- --ckpt ... --envs 256 --eval_decisions 10000 --burnin 2400 --seed 999\"; eval_mean.py 끝 'eval_ckpt.main()'(Woerner report 없음); eval_scripted.py:226-233 print(st['woer'].report()); summarize_fig1.py MAIN 에 w_score. dist.sample() 은 패치 뒤에도 원 forward 안에서 불리므로 RNG 소비는 같음(이 부분은 맞음)"
+   },
+   {
+    "ref_id": "P2",
+    "aspect": "출력 위치",
+    "verdict": "confirmed",
+    "correct_value": "approx_kl·clipfrac 식은 CleanRL 과 같고 위치도 맞음(ratio :1340, EPSILON 클립 :1343). 다만 :1238-1243 EVb 블록은 GAE 직후, PPO 루프 *앞*에 있어서 이번 update 의 kl 을 거기서 찍을 수 없음. 루프 뒤(:1346 이후 epoch 루프가 끝난 지점)에 '[ppo] kl=...' 줄을 새로 둘 것. 'EVb' 를 grep 하는 diag_trunk.sh:41-53 은 새 줄에 영향 안 받음. test_golden 은 VESSEL_* 를 지우고 케이스 env 만 넣으므로(:240), '텔레메트리 켜고 골든 비교'는 따로 env 를 주입해야 함",
+    "evidence": "vessel_gym_train.py:1238 'if _grad_tele:' → :1244 adv 정규화 → :1272 PPO 루프; config.py:481 GRAD_TELEMETRY 기본 '0'"
+   },
+   {
+    "ref_id": "P3",
+    "aspect": "스냅샷 'entropy_bonus' 는 이미 있음",
+    "verdict": "wrong",
+    "correct_value": "gym 학습기 스냅샷(ckpt_io.snapshot_config, vessel_gym_train._cfg_snapshot :966)에는 entropy_bonus·epsilon·n_epoch 가 없음. 'entropy_bonus' 는 config.get_config_dict() 에만 있고, 이 함수는 Unity 경로(_archive/unity_path_2026-09/main.py:983)만 씀. 그대로 두면 _cur_opt 와 check_branch 대조가 늘 None 이 되어 아무것도 안 하는 검사가 됨. ckpt_io.snapshot_config 에 'entropy_bonus' 를 추가해야 함(test_golden 은 키 추가 허용). 나머지 설명은 맞음: config.py:298 리터럴, _run_f.sh:93/:105, _cur_opt :801, check_branch :57 opt 묶음, 엔트로피 기울기가 logstd 에 상수 +1(전문가별 라우팅 비율 가중, clamp 안에서만)이고 squash 항은 기울기 0",
+    "evidence": "ckpt_io.py:43-118 반환 dict 에 entropy_bonus 없음; config.py:381 'entropy_bonus' 는 get_config_dict(:353) 안; networks.py:917 squash_correction 은 저장된 action_raw 로만 계산됨"
+   },
+   {
+    "ref_id": "P4",
+    "aspect": "코드 위치 완결성·평가 복원",
+    "verdict": "wrong",
+    "correct_value": "clamp 두 곳(networks.py:875, :905)과 _verify_ppo_mirror.py:342 는 맞음. 빠진 것이 있음: ckpt_io.restore_policy 가 스냅샷 'logstd_min' 을 cfg 에 되돌려야 함. 주 평가는 표본 행동이라 forward clamp 하한이 그대로 σ 를 정함. −3.0 으로 학습한 체크포인트를 기본 −2.3 으로 평가하면 다른 σ 로 조용히 재게 됨(§8 '스냅샷이 유일 근거' 규약). ST=1 에는 위험이 하나 더 있음: 엔트로피 +1 상수 압력 아래에서 원시 logstd 파라미터가 상한 0 위로 계속 커질 수 있고, 되돌아오는 데 오래 걸림. P10 'closed' 와 같이 켜지 말 것. 산술은 맞음: e^−2.3·120=12.0°, ln(10/120)=−2.485, e^−3·120=6.0°, e^−3.5·120=3.6°, e^−0.869·120=50.3°",
+    "evidence": "ckpt_io.snapshot_config 에 logstd_init0 만 있음(:74, 초기화용이라 평가 복원 불필요). eval_ckpt.py:167 policy.ctr_actor(...) = forward → clamp(:875) → dist.sample()"
+   },
+   {
+    "ref_id": "P5",
+    "aspect": "'주변 밀도 ratio 는 유효'",
+    "verdict": "wrong",
+    "correct_value": "구현 위치(forward eps 인자, rollout 호출 :1160, 기본 경로 비트동일)는 맞음. 하지만 잡음을 n결정 유지하면 s_t 조건부로 본 ε 는 N(0,1) 이 아님. ε 가 이전 행동을 통해 s_t 에 영향을 줬기 때문임. 그래서 N(raw; μ(s_t), σ) 는 실제 행동 분포의 조건부 밀도가 아니고, 중요도 비율은 분산만 커지는 게 아니라 편향됨(gSDE·SB3 도 같은 근사를 감수함). epoch0 ratio=1 테스트는 통과하지만 이 편향은 못 잡음. 위험 칸을 '근사, 편향 가능'으로 고칠 것",
+    "evidence": "networks.py:878-884 logprob = Normal(mean,std).log_prob(raw) — 상태 조건부 독립 표본 가정; get_logprob_entropy(:893-918)도 같은 가정"
+   },
+   {
+    "ref_id": "P6",
+    "aspect": "코드 경로·승인",
+    "verdict": "confirmed",
+    "correct_value": "코드 위치는 모두 맞음: vessel_gym.py:1426-1431 RR≠RJ 분기, #6 max_risk = risk_rw.max(:1546), #7 rj = pw['risk_rw'](:1572), 학습기 reward_range(:724), config.py:597, _run_f.sh:100-102 v5. 다만 10-13 사전등록에서 단계 2 는 'B 확정' 조건부였고 결과는 B 미확정(47.1 < 50)이었음. '스펙 단계 2 그대로 실행'은 사전등록 분기 규칙을 벗어나므로 저자 override 를 명시적으로 받아야 함",
+    "evidence": "CLAUDE.md §0 10-13 항목: 'B 확정(T-A goal ≥ 50 · vColl ≤ 49.8) 시 단계 2', 결과 'B 미확정(도착 < 50)'"
+   },
+   {
+    "ref_id": "P7",
+    "aspect": "골든 regen 필요 여부·스냅샷",
+    "verdict": "confirmed",
+    "correct_value": "맞음: VESSEL_MINIBATCH_SIZE env 가 있고(config.py:296) gym 스냅샷에 minibatch_size·n_epoch 가 없음. 한 가지 정정: test_golden 은 cfg_snapshot 키 *추가*를 허용하므로(:147-151) regen 은 필요 없음. 65,536/512=128 미니배치이고 MAPPO 권고 2개의 64배라는 산술도 맞음. 8192 면 update 당 16 step",
+    "evidence": "verify/test_golden.py:147 '골든에 있는 키만 비교. 키 추가는 허용'"
+   },
+   {
+    "ref_id": "P8",
+    "aspect": "갈래 체크포인트·평가 확장",
+    "verdict": "confirmed",
+    "correct_value": "ckpt_every 2 → '<save>.step{mark*2}M.pt' 가 저장되고(vessel_gym_train.py:1439) cfg_snapshot 이 들어 있어 eval 가능함. 평가 루프는 _run_f.sh eval_all 임. paper_content 맞음. P1 과 같은 주의가 붙음: 중간 체크포인트 평가 결과 파일이 summarize glob·최선 OFF 풀에 섞이지 않게 할 것",
+    "evidence": "vessel_gym_train.py:1432-1444"
+   },
+   {
+    "ref_id": "P9",
+    "aspect": "열 위치·토글·단위 테스트",
+    "verdict": "wrong",
+    "correct_value": "(1) COMM_TELE_COLS '끝'에 붙이면 comm_tele_cols() 가 그 뒤에 COMM_TELE_EXT_COLS 를 이어 붙임(:495). 그래서 EXT(ARPA/코덱) 정책 CSV 에서 alpha_dext 등 기존 열 위치가 밀림. 새 튜플로 EXT 뒤에 붙일 것. (2) 'VESSEL_COMM_TELEMETRY=1 안에서만' 은 학습기에만 해당함. eval/diag_ckpt.py:143 은 설정과 무관하게 comm_telemetry 를 부르므로 diag 출력은 기본에서도 바뀜(추가 열뿐). (3) '게이트 0 이면 KL=0' 은 틀림. msg_gate 0 = sigmoid 0.5 중립(networks.py:691)이고 무시가 아님. fc2 메시지 슬라이스 가중치를 0 으로 둔 정책으로 테스트할 것. (4) _route 는 clamp 전 mean·logstd 를 돌려줌. KL 은 forward 와 같게 mean ±3·logstd [하한,0] 으로 clamp 한 뒤 계산해야 함. pre-tanh 공간 KL = squash 뒤 KL(가역 변환)이라 닫힌형 자체는 맞음. comm_telemetry 정의 위치는 :527(:476 아님), act_* 는 :628-638",
+    "evidence": "vessel_gym_train.py:481-495, :527, :628-638; eval/diag_ckpt.py:143; networks.py:690-691 msg_gate=0.0 '중립'"
+   },
+   {
+    "ref_id": "P10",
+    "aspect": "승인 등급",
+    "verdict": "wrong",
+    "correct_value": "training_setting 으로 고칠 것. 'logp'·'reparam' 은 켰을 때 학습 목적함수가 바뀜(현행이 버그라 해도 기본값 'closed' 를 유지하는 토글이므로, 켠 런은 새 학습 설정임). 'logp' 의 logσ 기울기는 on-policy 표본에서 기댓값 1−E[(raw−μ)²/σ²]=0 이므로, 기댓값으로는 P3(계수 0)에 표본 잡음을 더한 것과 같음. 둘을 따로 시험할 가치가 낮다는 점을 적을 것. 코드 위치 networks.py:915-918 과 단일 경로(evaluate_actions :1449 도 get_logprob_entropy 경유)는 맞음",
+    "evidence": "networks.py:915-918, :1449; vessel_gym_train.py:1346"
+   },
+   {
+    "ref_id": "P11",
+    "aspect": "토글·위치",
+    "verdict": "confirmed",
+    "correct_value": "vessel_gym_train.py:1123-1126, config.py:493-499(LR_FINAL 은 LR_DECAY_DEC>0 일 때만 허용하는 assert), _run_f.sh:105 화이트리스트에 LR_FINAL·LR_DECAY_DEC 포함, _cur_opt 가 갈래 상속을 강제함",
+    "evidence": "config.py:497-499 assert; vessel_gym_train.py:801-806"
+   },
+   {
+    "ref_id": "P12",
+    "aspect": "초기화 위치·비트동일",
+    "verdict": "confirmed",
+    "correct_value": "networks.py:702 mul_(0.1) 이고 RNG 를 소비하지 않음. 비교 기준 차이를 적어 둘 것: 우리 쪽은 PyTorch 기본(kaiming uniform)×0.1, CleanRL·SB3 쪽은 orthogonal gain 0.01 이라 '10배'는 대략치임",
+    "evidence": "networks.py:701-703"
+   },
+   {
+    "ref_id": "P13",
+    "aspect": "측정 전용",
+    "verdict": "confirmed",
+    "correct_value": "risk_rw 는 pw 에서 읽을 수 있음(vessel_gym.py:1436-1440). 다만 eval/diag_ckpt.py 는 Assets/Scripts/.claude/CLAUDE.md §10 '학습기 본체(수정 전 담당 확인)' 목록에 있음",
+    "evidence": "vessel_gym.py:1436-1440, :1546"
+   },
+   {
+    "ref_id": "P14",
+    "aspect": "변경 범위",
+    "verdict": "confirmed",
+    "correct_value": "paper_content 와 체크포인트 비호환은 맞음. 동시 수정 목록이 빠져 있으니 보탤 것: obs 계약 표(config OBSERVATION_SIZE·SELF_SIZE, vessel_gym_train.parse_obs, networks fc2 입력, Unity C# VesselAgent.cs·_archive obs_utils 의 369D 빌드 트랩), 그리고 규칙 배·순위 관문 check_reward_rank(행동 모드 처리)",
+    "evidence": "vessel_gym.py:1870-1877 plan_course; config.py:566-569"
+   },
+   {
+    "ref_id": "P15",
+    "aspect": "미러 위험 서술",
+    "verdict": "wrong",
+    "correct_value": "gym 경로에서 파트너 확장필드는 rollout 의 comm_gather 가 vg.comm_pair_features(vessel_gym.py:302)로 한 번 계산함. 그 값이 prel 로 저장되고 update(evaluate_actions)는 저장값 fprel 을 그대로 씀. Unity _get_others_msg 는 relpos_dim≠3 이면 거부함(networks.py:1163-1166). 그래서 세 곳 복제 위험은 해당 없고, 실제 수정 지점은 comm_pair_features·COMM_EXT_DIM 임. shape 변경은 attn k/v 에 더해 msg_encoder 입력(networks.py:1078)에도 걸림. comm 팔 300 m 파트너 값이 코덱 복원값이라는 점은 맞음",
+    "evidence": "vessel_gym_train.py:301, :341; networks.py:1076-1086, :1163-1166"
+   },
+   {
+    "ref_id": "P16",
+    "aspect": "스냅샷 'epsilon' 있음 · target_kl 방식",
+    "verdict": "wrong",
+    "correct_value": "gym 스냅샷에는 'epsilon' 이 없음(get_config_dict 에만 있음). 'epsilon' 과 'target_kl' 을 ckpt_io.snapshot_config·_cur_opt 에 추가해야 함. SB3 는 '누적 평균'이 아니라 현재 미니배치의 approx_kl 이 1.5×target_kl 을 넘으면 break 함. CleanRL 은 epoch 끝에서 마지막 미니배치 값을 봄. 어느 쪽을 따를지 명시할 것",
+    "evidence": "ckpt_io.py:43-118; config.py:380 'epsilon' 은 get_config_dict 안"
+   },
+   {
+    "ref_id": "CVR-통신도입",
+    "aspect": "분기 워밍업 1200 OFF",
+    "verdict": "wrong",
+    "correct_value": "Fig1 배치(_run_f.sh)는 VESSEL_BRANCH_WARMUP=2400, branch_one wu=2400(offb 2401)을 씀. 1200 은 run_repro.sh 기본값임",
+    "evidence": "_run_f.sh:88 'export VESSEL_BRANCH_WARMUP=2400', branch_one 'wu=2400'"
+   },
+   {
+    "ref_id": "CVR-행동공간·std·squash·PPO",
+    "aspect": "현행 동작 서술",
+    "verdict": "confirmed",
+    "correct_value": "모두 코드와 맞음: DT 0.04×10=0.4 s(vessel_gym.py:29-30), rudder_fraction 의 10° 포화(:1103-1111), logstd 초기 [LOGSTD_INIT0,−0.5](networks.py:707), clamp [−2.3,0](:875/:905), Adam 기본 eps(vessel_gym_train.py:731), advantage 를 update 전체로 정규화(:1244), KL·clipfrac 로그 없음",
+    "evidence": "위 줄 번호 직접 확인(b6a4341, _dev_dyn)"
+   },
+   {
+    "ref_id": "P8/rejected-Agarwal Sec 3",
+    "aspect": "max 프로토콜 비판 위치",
+    "verdict": "unverifiable",
+    "correct_value": "검증 요약은 Agarwal 의 유의성 Remark 를 Sec 2 끝으로만 정정했음. 'Sec 3 = 끝 성능·max 금지' 위치는 요약으로 확인 안 됨. 인용 전에 절 번호를 확인할 것",
+    "evidence": "VERIFIED REFERENCE SUMMARY eval-agarwal2021 항목"
+   },
+   {
+    "ref_id": "P5/Seyde Sec 5.3",
+    "aspect": "동역학 저역통과 인용 위치",
+    "verdict": "unverifiable",
+    "correct_value": "검증 요약은 Seyde 의 Sec 5.2/Fig 2 caption 만 다룸. Sec 5.3 저역통과 서술은 확인 안 됨",
+    "evidence": "ppo-seyde2021-bangbang wrong 항목"
+   }
+  ],
+  "zotero_issues": [
+   "Wang & Zhao 2025 (Ocean Engineering) 학술지 항목이 둘로 중복됨: 4RT2TJ9D(R4) · JCQP8XZM(R1). 여기에 arXiv 판 XA5F4XZ8(R5)도 따로 있음 → 병합 필요",
+   "Krasowski & Althoff 2024: 학술지 2EBPDXCM 과 preprint ASWVUCCB 가 따로 있음(병합 또는 관계 연결)",
+   "Heiberg/Larsen 2022: 학술지 NUUNU46P 와 preprint H3MBT4BI 가 따로 있음. preprint 저자명 오타 'Rasheeda, Adil' → 'Rasheed'",
+   "Long 2018 (CGB6R2UA) 저자명 오타 'Fanl, Tingxiang' → 'Fan'",
+   "Kim 2021 Intention Sharing(ICLR 2021)은 Zotero 에 없음(검색 0건). 스펙 rejected 에서 인용함",
+   "Huang 2022 '37 Implementation Details' 블로그는 Zotero 에 없음. 스펙 P2·P11·P12·P16 이 인용함. CleanRL·SB3 코드 인용도 항목 없음(커밋 해시 포함 webpage/software 항목 권장)",
+   "출판판이 있는데 preprint 유형으로만 저장된 항목: Andrychowicz(ICLR 2021, 제목도 출판판과 다름), MAPPO(NeurIPS 2022), Lowe(AAMAS 2019), Jaques(ICML 2019), Engstrom(ICLR 2020), Agarwal(NeurIPS 2021), Henderson(AAAI 2018) — 논문 인용 시 판 지정 확인",
+   "날짜가 온라인 선공개일로 들어간 항목: Sawada 2020-8-3(인용은 JMST 26, 2021), Woerner 2018-5-23(인용은 Auton Robots 43(4), 2019)"
+  ],
+  "missed_references": [
+   "Schulman et al. 2017, Proximal Policy Optimization Algorithms (arXiv:1707.06347) — clip 0.2 원 설정과 KL penalty/adaptive β 변형의 1차 근거(P2·P16)",
+   "Pardo et al. 2018, Time Limits in Reinforcement Learning (ICML) — 우리 TIMEOUT_BOOTSTRAP 기본 0(timeout=진짜 종료)과 시간 벌점 0.035 조합이 value 편향·drift(원인 2)와 연결될 수 있음",
+   "Eberhard et al. 2023, Pink Noise Is All You Need: Colored Noise Exploration in Deep RL (ICLR) — 시간상관 탐색 잡음의 직접 근거(P5, gSDE 보다 작은 이식)",
+   "Chou, Maturana, Scherer 2017, Improving Stochastic Policy Gradients in Continuous Control with Deep RL using the Beta Distribution (ICML) — 유계 행동·경계 편향의 원 근거(rejected Beta 항목이 Hsu 만 인용)"
+  ]
+ }
+}
