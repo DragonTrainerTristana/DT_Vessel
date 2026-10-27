@@ -1,0 +1,4 @@
+qb_off_s43.step10M.pt              steps=10027008 logstd0=-1.222 -1.983 -1.995 -1.724 -1.830 mean=-1.751 sigma_course=20.8deg
+qb_off_s43.step12M.pt              steps=12058624 logstd0=-1.133 -1.967 -1.990 -1.763 -1.819 mean=-1.735 sigma_course=21.2deg
+qb_off_s43.step14M.pt              steps=14024704 logstd0=-1.045 -1.971 -1.982 -1.778 -1.849 mean=-1.725 sigma_course=21.4deg
+qb_off_s43.step16M.pt              steps=16056320 logstd0=-0.996 -1.989 -2.006 -1.773 -1.847 mean=-1.722 sigma_course=21.4deg

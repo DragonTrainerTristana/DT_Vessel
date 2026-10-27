@@ -1,0 +1,6 @@
+2026-10-27 17:22:30 meaneval qa_ [trunk_d6] s43 ARPA=300 071487b feat: reference-porting toggles for exploration noise, PPO telemetry and mean-action re-evaluation GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qa/meaneval
+2026-10-27 18:32:03 trunk_d6 2M 끝
+2026-10-27 19:43:56 trunk_d6 4M 끝
+2026-10-27 19:43:57 trunk_d6 6M 끝
+2026-10-27 19:43:58 trunk_d6 8M 끝
+2026-10-27 19:43:59 trunk_d6 9.04397M 끝

@@ -1,0 +1,5 @@
+qa_trunk_d6_s43.step2M.pt          steps=2031616 logstd0=-0.920 -0.949 -0.934 -0.897 -0.969 mean=-0.934 sigma_course=47.2deg
+qa_trunk_d6_s43.step4M.pt          steps=4063232 logstd0=-0.823 -0.917 -0.920 -0.967 -0.955 mean=-0.916 sigma_course=48.0deg
+qa_trunk_d6_s43.step6M.pt          steps=6029312 logstd0=-0.731 -0.898 -0.994 -1.012 -0.951 mean=-0.917 sigma_course=47.9deg
+qa_trunk_d6_s43.step8M.pt          steps=8060928 logstd0=-0.662 -0.884 -1.040 -1.018 -0.947 mean=-0.910 sigma_course=48.3deg
+qa_trunk_d6_s43.pt                 steps=9043968 logstd0=-0.620 -0.894 -1.016 -1.021 -0.960 mean=-0.902 sigma_course=48.7deg

@@ -1,7 +1,7 @@
-# analysis — 결과 분석 묶음 (2026-09-30 – 10-26)
+# analysis — 결과 분석 묶음 (2026-09-30 – 10-27)
 
 브랜치 `analysis` 전용 폴더. 코드는 `feat/fig1-latent` 8d6bc88 그대로이고, 이 폴더만 더함.
-10-13 q_ 배치는 `feat/fig1-latent` b6a4341 코드로 돎 — 그 코드 변경은 이 브랜치에 안 넣음(코드·스펙은 `feat/fig1-latent` 에서 볼 것).
+10-13 q_ 배치는 `feat/fig1-latent` b6a4341, 10-27 R0 재평가는 071487b 코드로 돎 — 그 코드 변경은 이 브랜치에 안 넣음(코드·스펙은 `feat/fig1-latent` 에서 볼 것).
 새 분석은 날짜별로 이 폴더에 계속 추가함(PDF 는 `pdf/<날짜>_…`, 자료·생성기는 `runs/` 아래 원본 구조 그대로).
 학습·평가 코드는 여기서 안 바꿈. 새 실험 없음 — 이미 돈 배치의 로그와 그것을 읽어 만든 보고서임.
 
@@ -9,13 +9,13 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 18개 (09-30 – 10-26) |
+| `pdf/` | 결과 보고서 PDF 19개 (09-30 – 10-27) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
 | `runs/2026-10-26_a2z/` | 10-26 A–Z 진단(읽기 전용 종합) — 보고서 원본 `report.md`·렌즈 6개 검증 결과 `findings_lenses.json`·판정식 MC `mc_pass_prob.py`·PDF 생성기 |
 | `runs/2026-10-26_ref_port/` | 10-26 레퍼런스 포팅 — 논문·코드 원문에서 뽑은 설정과 검증 판정 `references_verified.json`·포팅 명세와 리뷰 `port_spec.json`·보고서 원본 `report.md`(Zotero 컬렉션 MNMHENXE) |
-| `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
+| `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
 체크포인트(`.pt`)는 안 넣음.
@@ -42,6 +42,7 @@
 | 2026-10-13_q배치_qb_phase1_통신vsOFF_결과 | `2026-10-02_fig1/report/make_report_fig1_qb.py` (자료 `out/qb/` · `out/q_stage1_notes/runnote_phase1.txt`) |
 | 2026-10-26_A2Z_진단_할일 | `2026-10-26_a2z/make_pdf.sh report.md <출력.pdf>` (Mac: pandoc + Chrome headless; 자료 `findings_lenses.json` · Dropbox `runs/` 로그) |
 | 2026-10-26_레퍼런스_포팅 | `2026-10-26_ref_port/make_pdf.sh report.md <출력.pdf>` (자료 `references_verified.json` · `port_spec.json`) |
+| 2026-10-27_R0_무학습재평가_표본vs평균행동_결과 | `2026-10-02_fig1/report/make_report_r0.py` (자료 `out/meaneval_qb/` · `out/meaneval_qa/` · `out/diag_trunk_n/` · `out/qb/curve_qb_*.txt` · `out/r0_notes/`) |
 
 ## 다시 만들기
 
@@ -56,4 +57,5 @@
 - `out/` 의 접두어 없는 파일(`_gate.log` · `_timeline.txt` 등)은 n_ 배치 것임. f2_ 때 값은 `out/_f2_unprefixed_2026-10-06/`, q_ 배치 값은 `out/qa/` · `out/qb/` 안에 따로 있음
 - 진단(`diag_*`)은 기록용 측정임. 관문 판정은 배치가 남긴 기록(`_rank_v4.json` · `_gate.log` · `out/qa|qb/_gate.log`)이 정본. `diag_trunk_n/` 은 q_ 스펙 단계 1 의 D 항목(n_ 체크포인트 진단)임 — 분기 규칙은 T-A · T-B 관문 기록만 씀
 - `out/q_stage1_notes/` = 세션이 실행 중 직접 본 기록(시작 시각·VRAM·우선순위·실행 env·2M 스냅샷 토글). 배치 스크립트가 쓴 파일 아님
+- `out/meaneval_q*/` = `meaneval_ckpts.sh` 출력(표본 / 평균 행동 짝, 기록용 · 관문 아님). `_extra_log.txt` = 속도용 추가 프로세스(같은 명령 · 같은 파일 이름) 기록, `out/r0_notes/` = 세션 실행 기록 · 추가 프로세스 스크립트 · 드라이버 로그
 - 설계·사전등록은 `docs/superpowers/specs/` 에 있음

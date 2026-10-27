@@ -1,0 +1,17 @@
+R0 무학습 재평가 실행 기록 (2026-10-27, 세션이 실행 중 직접 본 것 · 배치 스크립트가 쓴 파일 아님)
+- 클론 C:\work\DT_Vessel_v3, 브랜치 feat/fig1-latent 071487b (git pull 로 b6a4341 → 071487b fast-forward). 스펙 docs/superpowers/specs/2026-10-26-ref-port-sigma-trunk-design.md §2 (R0, 기록용 · 관문 아님)
+- 명령 = 저자가 준 4줄 그대로(meaneval_ckpts.sh qb_ trunk_d6 / off / comm, VESSEL_F_ARPA_RANGE=300 qa_ trunk_d6). PYTORCH_CUDA_ALLOC_CONF 등 실행 env 추가 없음
+- 시작 전 GPU(17:21): 0 = 841 MiB 2 % · 1 = 3258 MiB 12 % · 2 = 70 MiB 0 % · 3 = 2314 MiB 0 %. 다른 계정(HKK) python 이 돌고 있었음. 남의 프로세스는 안 건드림
+- 시작: qb_ trunk 17:21:59. qb_ off · comm 17:22:29 · qa_ trunk 17:22:30 — 세션 실수로 30초 늦음(첫 실행에서 로그 폴더 mkdir 이 백그라운드로 가서 3개가 '로그 파일 없음'으로 못 뜸 → 바로 다시 띄움). 평가 결과와 무관
+- 평가 python(mltest) 우선순위 High 로 올림(15초마다 확인 루프). 결과 무관
+- 평가 1개(체크포인트 1개 · 표본 또는 평균) ≈ 30–37분: 결정 5400(burn-in 2400 + 창 3000)에 ≈ 21분 + drain ≈ 10–12분(drain 중에는 진행 줄 안 찍힘). 인자 = curve_all 과 같음(--envs 256 --eval_decisions 3000 --burnin 2400 --drain 3000 --seed 999)
+- 병목 = 프로세스당 CPU 코어 1개(17:50 실측 코어 0.92–0.94개/프로세스, GPU 사용률 10–28 %). 서버 CPU 40개 100 % 사용 중 — HKK python ≈ 33개가 각 ≈ 0.83 코어
+- VRAM: 평가 프로세스당 ≈ 1.1 GB. 최대 GPU 1 = 6.0 GB(추가 프로세스 포함)
+- 18:21 속도용 추가 프로세스 7개(저자 승인 '진행해줘요'): r0_extra.sh = meaneval_ckpts.sh 20–47행 env 를 그대로 eval 하고 같은 명령 · 같은 파일 이름으로 지정 체크포인트만 평가. 본 스크립트는 'epReward=' 있는 파일을 건너뜀
+  GPU 0 = qa_ 6M 표본 · qb_ trunk 9.04M 평균 / GPU 1 = qa_ 6M 평균 · qa_ 8M 표본 / GPU 2 = qa_ 8M 평균 / GPU 3 = qa_ 9.04M 표본 · 평균
+  [eval] 헤더 줄(설정 · partner_range qa_ 300 / qb_ 56 · max_partners 경고)이 본 스크립트 실행분과 같음을 확인. 속도 540 스텝당 1.5–2.1분(추가 전 1.7분)
+  추가 7개 끝 18:46:45 – 19:03:38. 본 스크립트가 그 체크포인트에 닿기 전에 끝남(파일 충돌 없음)
+- 끝: qb_ off 19:32:42 · qb_ comm 19:40:22 · qa_ trunk 19:44:00 · qb_ trunk 19:45:18. 표 재생성(--table) 19:46 qb_ · qa_
+- ★멈춤 · ★FAIL 없음. kill · 재시도 없음
+- qb_ 표본 값 = 10-13 phase1 고정 장면 곡선(curve_qb_*.txt, 같은 인자) 재사용. qa_ 표본은 새로 잼
+- qb_ 갈래 16M = step16M 체크포인트 = 끝 모델과 같은 파일(10-13 확인) → 스크립트가 끝 모델 .pt 를 따로 안 셈

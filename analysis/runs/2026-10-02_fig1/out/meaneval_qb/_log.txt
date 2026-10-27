@@ -1,0 +1,16 @@
+2026-10-27 17:21:59 meaneval qb_ [trunk_d6] s43 ARPA=56 071487b feat: reference-porting toggles for exploration noise, PPO telemetry and mean-action re-evaluation GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qb/meaneval
+2026-10-27 17:22:29 meaneval qb_ [comm] s43 ARPA=56 071487b feat: reference-porting toggles for exploration noise, PPO telemetry and mean-action re-evaluation GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qb/meaneval
+2026-10-27 17:22:29 meaneval qb_ [off] s43 ARPA=56 071487b feat: reference-porting toggles for exploration noise, PPO telemetry and mean-action re-evaluation GPU=1 → /c/work/DT_Vessel_v3/Python/_repro_out_qb/meaneval
+2026-10-27 17:54:11 comm 10M 끝
+2026-10-27 17:54:19 off 10M 끝
+2026-10-27 17:56:29 trunk_d6 2M 끝
+2026-10-27 18:26:39 off 12M 끝
+2026-10-27 18:30:02 comm 12M 끝
+2026-10-27 18:33:37 trunk_d6 4M 끝
+2026-10-27 19:01:28 off 14M 끝
+2026-10-27 19:06:12 comm 14M 끝
+2026-10-27 19:12:42 trunk_d6 6M 끝
+2026-10-27 19:32:40 off 16M 끝
+2026-10-27 19:40:20 comm 16M 끝
+2026-10-27 19:45:15 trunk_d6 8M 끝
+2026-10-27 19:45:16 trunk_d6 9.04397M 끝
