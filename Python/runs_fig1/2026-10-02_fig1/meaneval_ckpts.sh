@@ -58,14 +58,17 @@ if [ "$RUNS" != "--table" ]; then
     "$PY" "$HERE/logstd_dump.py" $files 2>&1 | tee "$D/logstd_${PRE}${run}.txt"
     for f in $files; do
       x=$(mtag "$f" "$last")
+      # ★2026-10-28 VESSEL_F_ONLY="4 9.04397" = 그 체크포인트만 · VESSEL_F_WHICH=sample|mean(기본 둘 다) = 프로세스를 나눠 GPU 여러 장에 동시에
+      [ -z "${VESSEL_F_ONLY:-}" ] || case " $VESSEL_F_ONLY " in *" $x "*) ;; *) continue ;; esac
+      W=${VESSEL_F_WHICH:-both}
       smp="$D/sample_${PRE}${run}_${x}M.txt"; mean="$D/mean_${PRE}${run}_${x}M.txt"
       cur="$O/curve_${PRE}${run}_s${SEED}_${x}M.txt"   # curve_all 이 같은 인자로 잰 표본 평가가 있으면 재사용
-      if ! grep -q 'epReward=' "$smp" 2>/dev/null; then
+      if [ "$W" != mean ] && ! grep -q 'epReward=' "$smp" 2>/dev/null; then
         if grep -q 'epReward=' "$cur" 2>/dev/null; then cp "$cur" "$smp"; echo "  표본 = 기존 curve 재사용 $(basename "$cur")"
         else "$PY" -u eval/eval_ckpt.py --ckpt "$f" $EV_ARGS > "$smp" 2>&1; fi
       fi
-      grep -q 'epReward=' "$mean" 2>/dev/null || "$PY" -u "$HERE/eval_mean.py" "$R/Python" -- --ckpt "$f" $EV_ARGS > "$mean" 2>&1
-      grep -q 'epReward=' "$smp" && grep -q 'epReward=' "$mean" || { echo "★FAIL 평가 실패 $f (로그 $smp · $mean)"; exit 1; }
+      [ "$W" = sample ] || grep -q 'epReward=' "$mean" 2>/dev/null || "$PY" -u "$HERE/eval_mean.py" "$R/Python" -- --ckpt "$f" $EV_ARGS > "$mean" 2>&1
+      { [ "$W" = mean ] || grep -q 'epReward=' "$smp"; } && { [ "$W" = sample ] || grep -q 'epReward=' "$mean"; } || { echo "★FAIL 평가 실패 $f (로그 $smp · $mean)"; exit 1; }
       echo "$(date '+%F %T') $run ${x}M 끝" | tee -a "$D/_log.txt"
     done
   done
