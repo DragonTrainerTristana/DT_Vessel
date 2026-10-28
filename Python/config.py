@@ -605,15 +605,21 @@ FARPAIR_COEF = _env_float('VESSEL_FARPAIR_COEF', 0.0)   # far-field 직접 비�
 FARPAIR_EXP = _env_float('VESSEL_FARPAIR_EXP', 2.0)
 REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → VesselBatchEnv 가 DETECTION_RANGE(56) 사용
 # ★2026-10-28 연속 위험 예고 PBRS (설계 analysis/runs/2026-10-28_early_avoid/report.md §4 후보 G). 기본 0 = 끔(비트동일, 연산 없음).
-#   Φ_i = −c·Σ_j g(dcpa_ij)·h(tcpa_ij), 쌍 = 'risk' 와 같은 마스크(자기 제외·dist ≤ risk_range(=COMM_RANGE)·raw_tcpa ≥ 0·가림 제외).
+#   Φ_i = −c·Σ_j g(dcpa_ij)·h(tcpa_ij)·w(dist_ij), 쌍 = 'risk' 와 같은 마스크(자기 제외·dist ≤ risk_range(=COMM_RANGE)·raw_tcpa ≥ 0·가림 제외).
 #   g = clamp((G − dcpa)/(G − DCPA_RISK 24), 0, 1) · h = 1 − clamp(tcpa/T, 0, 1). 상황곱·56 m 띠 경계 없음(56 m 에서 연속).
-#   F = γΦ(s′) − Φ(s) (γ = DISCOUNT_FACTOR), 결정당 1회 ×SUBSTEPS 밖. 끝난 배·재출현 첫 결정은 F = 0. 두 팔 같은 보상
+#   w = 거리 감쇠(아래 TAPER) → RJ 에서도 연속. F_i = Σ_j keep_ij·(γφ′_ij − φ_ij) (쌍별, γ = DISCOUNT_FACTOR), 결정당 1회 ×SUBSTEPS 밖.
+#   keep_ij = 두 배 모두 직전 Φ 유효(재출현 첫 결정 아님)·이번 결정 안 끝남 → 상대가 끝나거나 재출현한 쌍은 그 결정 0(스파이크 없음).
+#   끝난 배·재출현 첫 결정은 F = 0. 두 팔 같은 보상
 PREVIEW_PBRS_COEF = _env_float('VESSEL_PREVIEW_PBRS_COEF', 0.0)   # c
 PREVIEW_DCPA_G = _env_float('VESSEL_PREVIEW_DCPA_G', 48.0)        # G (m) — RISK_DCPA_GATE_M 과 같은 뜻
 PREVIEW_T_S = _env_float('VESSEL_PREVIEW_T_S', 120.0)             # T (s) — pw['tcpa'] 가 초 단위(속도 m/s, DT 0.04 s)
+# 거리 감쇠 w = clamp((RJ − dist)/TAPER, 0, 1) — RJ(300 m) 진입 순간 Φ 계단 제거(RJ−TAPER 안쪽은 w = 1, 56 m 영향 없음)
+PREVIEW_TAPER_M = _env_float('VESSEL_PREVIEW_TAPER_M', 60.0)
 assert PREVIEW_PBRS_COEF >= 0.0, f"VESSEL_PREVIEW_PBRS_COEF={PREVIEW_PBRS_COEF} - 0(끔) 또는 > 0"
 assert PREVIEW_DCPA_G > 24.0, f"VESSEL_PREVIEW_DCPA_G={PREVIEW_DCPA_G} - > DCPA_RISK 24"
 assert PREVIEW_T_S > 0.0, f"VESSEL_PREVIEW_T_S={PREVIEW_T_S} - > 0"
+assert PREVIEW_TAPER_M > 0.0 and (PREVIEW_PBRS_COEF == 0.0 or PREVIEW_TAPER_M < COMM_RANGE - 56.0), \
+    f"VESSEL_PREVIEW_TAPER_M={PREVIEW_TAPER_M} - 0 < TAPER < COMM_RANGE({COMM_RANGE}) − 56"
 
 # ── ★동역학 프로필 (2026-09-21, feat/dyn-profile-imo — 스펙 docs/superpowers/specs/2026-09-19-dyn-profile-imo-design.md) ──
 #   agile = 현행(전타 yaw 45 °/s, 선회직경 0.18 L). 기본 = 비트동일.
@@ -675,7 +681,7 @@ SIM_SNAPSHOT_KEYS = (
     'ROLE_PROMISE_PEN',
     'FORWARD_COEF', 'TIME_PENALTY', 'RISK_DCPA_GATE_M', 'ROLE_JUDGE',   # ★2026-09-30 보상 v3 (+4 = 31)
     'ROLE_V2_PRIMARY', 'ROLE_V2_RES_F6',                                # ★2026-10-07 n_ 판정기 (+2 = 33)
-    'PREVIEW_PBRS_COEF', 'PREVIEW_DCPA_G', 'PREVIEW_T_S',               # ★2026-10-28 연속 위험 예고 PBRS (+3 = 36)
+    'PREVIEW_PBRS_COEF', 'PREVIEW_DCPA_G', 'PREVIEW_T_S', 'PREVIEW_TAPER_M',   # ★2026-10-28 연속 위험 예고 PBRS (+4 = 37)
 )
 # 스냅샷 키 → env 이름 (config 가 실제로 읽는 이름과 다른 것만; 나머지는 VESSEL_<KEY>)
 SIM_ENV_NAMES = {'COLREGS_RISK_GATE': 'VESSEL_COLREGS_GATE', 'MAX_EPISODE_STEPS': 'VESSEL_MAX_EP_STEPS',
