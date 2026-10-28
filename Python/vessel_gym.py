@@ -131,6 +131,9 @@ ROLE_V2_RESOLVE_N         = _cfg.ROLE_V2_RESOLVE_N
 ROLE_V2_LATE_START_TCPA_S = _cfg.ROLE_V2_LATE_START_TCPA_S
 ROLE_V2_PRIMARY           = _cfg.ROLE_V2_PRIMARY   # ★2026-10-07 'risk'(옛) | 'cum'(조우 시작부터 위험 합 최대 = 주 상대)
 ROLE_V2_RES_F6            = _cfg.ROLE_V2_RES_F6    # ★2026-10-07 1 = '해소' 종료에도 F6 검사
+PREVIEW_PBRS_COEF  = _cfg.PREVIEW_PBRS_COEF     # ★2026-10-28 연속 위험 예고 PBRS 계수 c (0 = 끔, 비트동일). _pairwise Φ · step() F
+PREVIEW_DCPA_G     = _cfg.PREVIEW_DCPA_G        # g(dcpa) 0 이 되는 dcpa (m)
+PREVIEW_T_S        = _cfg.PREVIEW_T_S           # h(tcpa) 0 이 되는 tcpa (s)
 CMD_MISMATCH_COEF  = _cfg.CMD_MISMATCH_COEF# 타속 포화 패널티
 PROXRAMP_COEF      = _cfg.PROXRAMP_COEF        # C# 기본 0=off
 PROXRAMP_DIST      = _cfg.PROXRAMP_DIST     # = DCPA_RISK
@@ -891,6 +894,9 @@ class VesselBatchEnv:
         self.goal = z(E, N, 2)
         self.prev_dist = z(E, N)       # progress 보상용
         self.prev_far_risk = z(E, N)   # far-field PBRS용 (리셋 시 -1)
+        # ★2026-10-28 연속 위험 예고 PBRS 직전 Φ. Φ ≤ 0 이라 −1 표지를 못 씀 → 유효 플래그 따로(재출현 = False)
+        self.prev_phi = z(E, N)
+        self.prev_phi_ok = torch.zeros(E, N, device=self.device, dtype=torch.bool)
         self.prev_rudder = z(E, N)     # smoothness용
         # ★C# 이식용 추적 상태 (VesselAgent.prevDcpa / prevVesselStates 대응)
         self.prev_dcpa = z(E, N) - 1.0     # 최고위험선 DCPA 직전값 (-1 = 미초기화)
@@ -1094,6 +1100,8 @@ class VesselBatchEnv:
             self.step_count = torch.where(m, torch.zeros_like(self.step_count), self.step_count)
         self.prev_dist = torch.where(m, torch.linalg.norm(goal - base, dim=-1), self.prev_dist)
         self.prev_far_risk = torch.where(m, torch.full_like(self.prev_far_risk, -1.0), self.prev_far_risk)  # 첫 스텝 PBRS 스킵
+        if PREVIEW_PBRS_COEF > 0.0:
+            self.prev_phi_ok = self.prev_phi_ok & ~m     # ★2026-10-28 재출현 첫 결정 예고 PBRS F = 0 (reset() 포함)
         self.prev_rudder = torch.where(m, torch.zeros_like(self.prev_rudder), self.prev_rudder)
         # ★C# 이식: 재스폰 시 추적 상태 초기화 (prevDcpa=-1 → 첫 스텝 earlyAvoid 스킵)
         self.prev_dcpa = torch.where(m, torch.full_like(self.prev_dcpa, -1.0), self.prev_dcpa)
@@ -1437,6 +1445,15 @@ class VesselBatchEnv:
             risk_rw = _rb * _g
         else:
             risk_rw = _rb
+        # ★2026-10-28 연속 위험 예고 PBRS 퍼텐셜 Φ [E,N] (PREVIEW_PBRS_COEF>0 만, 끄면 키만 None = 연산 없음).
+        #   쌍 마스크 = 위 'risk' 의 invalid 그대로(자기·RJ 밖·멀어지는 쌍·가림 제외). 상황곱·56 m 띠 없음 → 56 m 에서 연속.
+        #   tcpa 는 초(속도 m/s). 상대속도 ≈ 0(tcpa=inf) 은 h = 0.
+        if PREVIEW_PBRS_COEF > 0.0:
+            _gp = torch.clamp((PREVIEW_DCPA_G - dcpa) / (PREVIEW_DCPA_G - DCPA_RISK), 0.0, 1.0)
+            _hp = 1.0 - torch.clamp(tcpa / PREVIEW_T_S, 0.0, 1.0)
+            preview_phi = -PREVIEW_PBRS_COEF * torch.where(invalid, torch.zeros_like(_gp), _gp * _hp).sum(dim=-1)
+        else:
+            preview_phi = None
 
         # far-field risk (56m~riskRange 띠, 상황곱 없음) — commgate far-field 보상용
         # ★2026-09-26 perf(비트동일): 읽는 곳이 _reward #7-b(farpair_coef≠0)·#8(farfield_coef>0) 뿐 — 둘 다 0 이면
@@ -1460,7 +1477,8 @@ class VesselBatchEnv:
             far_sit = None
 
         return {'dist': dist, 'risk': risk, 'risk_rw': risk_rw, 'near_risk': near_risk, 'sit': sit,
-                'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk, 'far_sit': far_sit}
+                'tcpa': tcpa, 'raw_tcpa': raw_tcpa, 'dcpa': dcpa, 'far_risk': far_risk, 'far_sit': far_sit,
+                'preview_phi': preview_phi}
 
     def _far_field_on(self):
         """far_risk 가 보상에 쓰이는가 (#7-b farpair / #8 farfield PBRS). 호출 시점 계수로 판정."""
@@ -1937,6 +1955,16 @@ class VesselBatchEnv:
             obs = self._build_obs(radar)
         else:
             obs = self._build_obs(radar)               # 상태 불변 → 재계산 불필요(위 주석)
+        # ★2026-10-28 연속 위험 예고 PBRS F = γΦ(s′) − Φ(s) (끄면 파이썬 비교 하나). _reward 는 종료 판정 *전*에 돌아 done 을 모르므로
+        #   여기서 더한다(×SUBSTEPS 밖 = 차분 항). s′ = 지금 _last_pw = 배가 다음 결정에 보는 상태(재스폰 있었으면 그 뒤 —
+        #   상대 재출현도 Φ 에 들어가 다음 F 가 같은 Φ 에서 이어짐). 이번 결정에 끝난 배 F = 0(충돌 순간 Φ→0 '+|Φ|' 차단),
+        #   재출현 첫 결정 F = 0(prev_phi_ok, _respawn 이 내림).
+        if PREVIEW_PBRS_COEF > 0.0:
+            phi = self._last_pw['preview_phi']
+            reward = reward + torch.where(self.prev_phi_ok & ~done, _cfg.DISCOUNT_FACTOR * phi - self.prev_phi,
+                                          torch.zeros_like(phi))
+            self.prev_phi = phi
+            self.prev_phi_ok = ~done
         return obs, reward, done, outcome
 
     def partner_goals_oracle(self):
