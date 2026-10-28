@@ -2,18 +2,18 @@
 
   python verify/test_preview_pbrs.py        # ALL PASS 여야 함 (imo·none, CPU, ~10 s)
 
-φ_ij = g(dcpa)·h(tcpa)·w(dist) ('risk' 쌍 마스크, 300 m), Φ_i = −c·Σ_j φ_ij,
+φ_ij = g(dcpa)·h(tcpa)·w(dist) (Φ 전용 마스크: 자기·300 m 밖·가림 제외, 멀어지는 쌍 포함), Φ_i = −c·Σ_j φ_ij,
 F_i = Σ_j keep_ij·(γφ′_ij − φ_ij), keep_ij = 두 배 모두 직전 유효·이번 결정 안 끝남. 끝난 배·재출현 첫 결정 F = 0.
 F 는 env.last_preview_F(실제로 더한 값). (b) 는 같은 장면 c=1 / c=0 보상 차로도 확인(PBRS 는 난수 안 씀).
 a  상대 거리가 56 m · 300 m 를 넘나들 때 Φ 연속(보상 위험 risk_rw 는 56 m 반경이면 끊김 — 대조로만 출력)
 b  끝난 배(충돌·시간초과) 결정 F = 0 · 재출현 첫 결정 F = 0 (보상 차 == 0 정확히)
 c  직진 통과 조우(300 m 밖 → 진입 → 지나감, 충돌 없음) Σ_t γ^t F_t = γ^T Φ_T − Φ_0 (= 0) · 300 m 진입 계단 없음 — float64
-   (INFO: CPA 통과 결정의 F — h(tcpa→0)=1 인 쌍이 raw_tcpa<0 로 마스크되며 생기는 +g 계단, 설계 그대로라 검사 아님)
 d  우현 변침(dcpa↑) 결정의 F > 직진 F, 그리고 F > 0
 e  계수 0 이면 보상·obs·done·outcome 이 base 2cd2fbd vessel_gym 과 torch.equal (git 없으면 SKIP) + 키·F None
 f  i 와 위험 코스인 j 가 제3의 배 k 와 충돌(300 m 안): 그 결정 i 의 F = 남은 쌍(i,m) 몫만, (i,j) 몫 0 — 옛 배당 값과 대조
 g  i 옆 300 m 안 위험 코스로 상대가 재출현: 그 결정·다음 결정 i 의 F = 0 (음의 스파이크 없음) — 옛 배당 값과 대조
-info  위험한 정면 조우(옆 간격 3 m) 직진 통과의 Φ 크기와 n_ 보상(반경 56·게이트 48·per-pair −0.15 exp 3) #6+#7 비용 합 — c 보정용
+h  위험한 정면 조우(옆 간격 3 m) CPA 통과: 멀어지는 쌍 dcpa == 현재 거리 · 통과 구간 max|F| 작음(옛 마스크 +0.999) ·
+   Σγ^tF = γ^TΦ_T − Φ_0. INFO = Φ 크기와 n_ 보상(반경 56·게이트 48·per-pair −0.15 exp 3) #6+#7 비용 합 — c 보정용
 """
 import importlib.util
 import os
@@ -184,8 +184,7 @@ def c_telescoping():
           and F[far].abs().max().item() < 0.01,
           f"첫 비0 Φ={phis[i1, 0].item():.2e} @ dist {on['dist'][i1 - 1]:.2f}  240 m 밖 max|F|={F[far].abs().max().item():.5f}")
     ic = int(F[:, 0].abs().argmax())
-    print(f"  INFO  c 전체 max|F|={F[ic, 0].item():+.4f} @ 결정 {ic} (dist {on['dist'][ic]:.1f} m, 최근접 결정 {int(dist.argmin())})"
-          f" — CPA 통과 계단: h(tcpa→0)=1 인데 raw_tcpa<0 이면 마스크 → φ −g→0")
+    print(f"  INFO  c 전체 max|F|={F[ic, 0].item():+.4f} @ 결정 {ic} (dist {on['dist'][ic]:.1f} m, 최근접 결정 {int(dist.argmin())})")
     check('c Σγ^tF_t = γ^TΦ_T − Φ_0 (= 0)', err < 1e-9 and lhs.abs().max().item() < 1e-9,
           f"Σγ^tF={lhs.tolist()}  |오차|={err:.1e}  minΦ={phis.min().item():.4f}  (할인 없는 ΣF={F.sum(0).tolist()})")
     check('c 퍼텐셜이 실제로 움직임(minΦ < −0.3)', phis.min().item() < -0.3)
@@ -318,14 +317,42 @@ def g_respawn_near():
           f"셋째 결정 F_i={F2[0].item():.5f} @ dist {dist2:.1f} m")
 
 
-# ── info ──
-def info_calibration():
-    """위험한 정면(옆 간격 3 m) 직진 통과, c=1. n_ 보상 설정(반경 56·DCPA 게이트 48·per-pair −0.15 exp 3)의 #6·#7 비용 합과 나란히."""
+# ── h ──
+def h_cpa_passage():
+    """위험한 정면(옆 간격 3 m) 직진 통과, c=1. CPA 통과 구간 F 크기 · telescoping · c 보정용 INFO.
+    n_ 보상 설정(반경 56·DCPA 게이트 48·per-pair −0.15 exp 3)의 #6·#7 비용 합과 나란히 출력(Φ·F 는 보상 설정과 무관)."""
     pp = (cfg.PERPAIR_COEF, 3.0)                       # = vessel_gym_train 이 env 에 넘기는 값
-    rec = run([ship(0.0, -170.0, 0.0), ship(3.0, 170.0, 180.0)], 380, 1.0, dtype=torch.float64, gate=48.0, perpair=pp)
-    phi = torch.stack(rec['phi'])[:, 0]
-    F = torch.stack(rec['F'])[:, 0]
+    T = 380
+    saved = vg.PREVIEW_PBRS_COEF
+    vg.PREVIEW_PBRS_COEF = 1.0
+    try:                                               # 멀어지는 쌍의 dcpa 가 현재 거리와 같은 값인지(마스크 바꾼 근거)
+        env = make_env(dtype=torch.float64)
+        place(env, [ship(0.0, 0.0, 0.0), ship(3.0, -40.0, 180.0)])
+        pw = env._last_pw
+        rec_ok = bool(pw['raw_tcpa'][0, 0, 1] < 0) and torch.equal(pw['dcpa'][0, 0, 1], pw['dist'][0, 0, 1]) \
+            and pw['tcpa'][0, 0, 1].item() == 0.0
+    finally:
+        vg.PREVIEW_PBRS_COEF = saved
+    check('h 멀어지는 쌍: tcpa = 0 · dcpa == 현재 거리(비트 같음)', rec_ok)
+    rec = run([ship(0.0, -170.0, 0.0), ship(3.0, 170.0, 180.0)], T, 1.0, dtype=torch.float64, gate=48.0, perpair=pp)
+    phis = torch.stack([rec['phi0']] + rec['phi'])                     # [T+1, N]
+    phi = phis[1:, 0]
+    F = torch.stack(rec['F'])                                          # [T, N]
     dist = torch.tensor(rec['dist'], dtype=torch.float64)
+    done = bool(torch.stack(rec['d']).any())
+    icpa = int(dist.argmin())
+    win = dist < 60.0                                                  # CPA 앞뒤 60 m 안
+    fmax = F[win].abs().max().item()
+    iw = int(torch.where(win, F[:, 0].abs(), torch.zeros_like(dist)).argmax())
+    check('h 충돌 없이 지나감 · 끝 Φ = 0', not done and phis[-1].abs().max().item() == 0.0,
+          f"최근접 {dist[icpa].item():.2f} m @ 결정 {icpa} · 끝 dist {dist[-1].item():.1f} m")
+    check('h CPA 통과 구간(60 m 안) max|F| < 0.1 (옛 마스크 +0.999)', fmax < 0.1,
+          f"max|F|={fmax:.4f} @ 결정 {iw} (dist {dist[iw].item():.1f} m, CPA 뒤 {iw - icpa} 결정) · 전체 max|F|={F.abs().max().item():.4f}")
+    disc = torch.tensor([GAMMA ** t for t in range(T)], dtype=torch.float64).unsqueeze(-1)
+    lhs = (disc * F).sum(0)
+    rhs = GAMMA ** T * phis[-1] - phis[0]
+    check('h Σγ^tF_t = γ^TΦ_T − Φ_0 (= 0)', (lhs - rhs).abs().max().item() < 1e-9 and lhs.abs().max().item() < 1e-9,
+          f"Σγ^tF={lhs[0].item():.2e}  할인 없는 ΣF={F[:, 0].sum().item():.4f}")
     nz = (phi != 0).nonzero()
     i300 = int(nz[0]) if len(nz) else -1
     i56 = int((dist <= 56.0).nonzero()[0])
@@ -333,13 +360,11 @@ def info_calibration():
     mr = rr.max(dim=-1).values
     cost6 = torch.where(mr > 0.05, 0.8 * mr ** 3, torch.zeros_like(mr)) * vg.SUBSTEPS
     cost7 = -pp[0] * torch.where(rr > 0.05, rr.clamp(max=1.0) ** pp[1], torch.zeros_like(rr)).sum(-1) * vg.SUBSTEPS
-    done = bool(torch.stack(rec['d']).any())
     print(f"  INFO  위험 정면(간격 3 m, 접근 3 m/s, c=1, T={vg.PREVIEW_T_S:g}s, G={vg.PREVIEW_DCPA_G:g}m, "
-          f"TAPER={vg.PREVIEW_TAPER_M:g}m): 끝남={done}")
+          f"TAPER={vg.PREVIEW_TAPER_M:g}m)")
     print(f"        Φ 첫 비0 = {phi[i300].item():.2e} @ dist {dist[i300].item():.1f} m · Φ @240 m 안쪽 첫 결정 = "
           f"{phi[int((dist <= 240.0).nonzero()[0])].item():.4f}")
-    print(f"        Φ @56 m = {phi[i56].item():.4f} · minΦ = {phi.min().item():.4f} · max|F| = {F.abs().max().item():.5f} · "
-          f"직진 접근 F @56 m ≈ {F[i56 + 1].item():.5f}/결정 · 할인 없는 ΣF = {F.sum().item():.4f}")
+    print(f"        Φ @56 m = {phi[i56].item():.4f} · minΦ = {phi.min().item():.4f} · 직진 접근 F @56 m ≈ {F[i56 + 1, 0].item():.5f}/결정")
     print(f"        n_ 보상(56 m 안, 게이트 48, ×SUBSTEPS) #6 충돌코스 합 = {cost6.sum().item():.2f} · #7 per-pair 합 = "
           f"{cost7.sum().item():.2f} · #6+#7 = {(cost6 + cost7).sum().item():.2f} ({int((cost6 > 0).sum())} 결정, per-pair {pp})")
 
@@ -348,7 +373,7 @@ if __name__ == '__main__':
     torch.set_num_threads(1)
     print('=' * 78); print('연속 위험 예고 PBRS 테스트 (imo·none, CPU)'); print('=' * 78)
     for fn in (a_continuity, b_terminal_respawn, c_telescoping, d_starboard, e_off_equals_base,
-               f_third_party_collision, g_respawn_near, info_calibration):
+               f_third_party_collision, g_respawn_near, h_cpa_passage):
         try:
             fn()
         except Exception as e:  # noqa: BLE001

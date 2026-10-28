@@ -1448,7 +1448,9 @@ class VesselBatchEnv:
         else:
             risk_rw = _rb
         # ★2026-10-28 연속 위험 예고 PBRS 쌍별 퍼텐셜 −c·φ_ij [E,N,N] (PREVIEW_PBRS_COEF>0 만, 끄면 키만 None = 연산 없음).
-        #   φ = g(dcpa)·h(tcpa)·w(dist). 쌍 마스크 = 위 'risk' 의 invalid 그대로(자기·RJ 밖·멀어지는 쌍·가림 제외).
+        #   φ = g(dcpa)·h(tcpa)·w(dist). ★Φ 전용 마스크(자기·RJ 밖·가림만) — 'risk' 의 invalid 와 달리 멀어지는 쌍(raw_tcpa<0)도 넣는다:
+        #   그때 tcpa = clamp(raw,0) = 0 → h = 1, pos_at = rel_pos → dcpa = 현재 거리(dist 와 같은 값) → φ = g(dist)·w,
+        #   CPA 를 지나도 연속이고 48 m 벌어지면 0. (마스크하면 CPA 순간 φ −g→0 계단 = F +g 스파이크였음.)
         #   상황곱·56 m 띠 없음 → 56 m 연속, w → RJ 연속. tcpa 는 초(속도 m/s). 상대속도 ≈ 0(tcpa=inf) 은 h = 0. Φ_i = 행 합.
         if PREVIEW_PBRS_COEF > 0.0:
             if not PREVIEW_TAPER_M < RJ - DETECTION_RANGE:
@@ -1456,7 +1458,8 @@ class VesselBatchEnv:
             _gp = torch.clamp((PREVIEW_DCPA_G - dcpa) / (PREVIEW_DCPA_G - DCPA_RISK), 0.0, 1.0)
             _hp = 1.0 - torch.clamp(tcpa / PREVIEW_T_S, 0.0, 1.0)
             _wp = torch.clamp((RJ - dist) / PREVIEW_TAPER_M, 0.0, 1.0)
-            preview_pair = -PREVIEW_PBRS_COEF * torch.where(invalid, torch.zeros_like(_gp), _gp * _hp * _wp)
+            _pinv = eye | (dist > RJ) | occluded
+            preview_pair = -PREVIEW_PBRS_COEF * torch.where(_pinv, torch.zeros_like(_gp), _gp * _hp * _wp)
         else:
             preview_pair = None
 

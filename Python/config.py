@@ -605,7 +605,8 @@ FARPAIR_COEF = _env_float('VESSEL_FARPAIR_COEF', 0.0)   # far-field 직접 비�
 FARPAIR_EXP = _env_float('VESSEL_FARPAIR_EXP', 2.0)
 REWARD_RANGE = _env_float('VESSEL_REWARD_RANGE', None)   # None=미설정 → VesselBatchEnv 가 DETECTION_RANGE(56) 사용
 # ★2026-10-28 연속 위험 예고 PBRS (설계 analysis/runs/2026-10-28_early_avoid/report.md §4 후보 G). 기본 0 = 끔(비트동일, 연산 없음).
-#   Φ_i = −c·Σ_j g(dcpa_ij)·h(tcpa_ij)·w(dist_ij), 쌍 = 'risk' 와 같은 마스크(자기 제외·dist ≤ risk_range(=COMM_RANGE)·raw_tcpa ≥ 0·가림 제외).
+#   Φ_i = −c·Σ_j g(dcpa_ij)·h(tcpa_ij)·w(dist_ij), 쌍 = Φ 전용 마스크(자기 제외·dist ≤ risk_range(=COMM_RANGE)·가림 제외 —
+#   'risk' 마스크와 달리 멀어지는 쌍도 포함: tcpa 0 → h = 1, dcpa = 현재 거리 → CPA 통과에서 연속, 48 m 벌어지면 0).
 #   g = clamp((G − dcpa)/(G − DCPA_RISK 24), 0, 1) · h = 1 − clamp(tcpa/T, 0, 1). 상황곱·56 m 띠 경계 없음(56 m 에서 연속).
 #   w = 거리 감쇠(아래 TAPER) → RJ 에서도 연속. F_i = Σ_j keep_ij·(γφ′_ij − φ_ij) (쌍별, γ = DISCOUNT_FACTOR), 결정당 1회 ×SUBSTEPS 밖.
 #   keep_ij = 두 배 모두 직전 Φ 유효(재출현 첫 결정 아님)·이번 결정 안 끝남 → 상대가 끝나거나 재출현한 쌍은 그 결정 0(스파이크 없음).
