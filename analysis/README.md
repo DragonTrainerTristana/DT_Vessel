@@ -9,13 +9,14 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 20개 (09-30 – 10-28) |
+| `pdf/` | 결과 보고서 PDF 21개 (09-30 – 10-28) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
 | `runs/2026-10-26_a2z/` | 10-26 A–Z 진단(읽기 전용 종합) — 보고서 원본 `report.md`·렌즈 6개 검증 결과 `findings_lenses.json`·판정식 MC `mc_pass_prob.py`·PDF 생성기 |
 | `runs/2026-10-26_ref_port/` | 10-26 레퍼런스 포팅 — 논문·코드 원문에서 뽑은 설정과 검증 판정 `references_verified.json`·포팅 명세와 리뷰 `port_spec.json`·보고서 원본 `report.md`(Zotero 컬렉션 MNMHENXE) |
 | `runs/2026-10-28_r0_interp/` | 10-28 R0 해석 — 잡음 격차·trunk 별 평균 행동 하락 모양(직진형·우회형·불안정)·통신 vs OFF 평균 행동, 표 생성기 `r0_interpret.py`(입력 = `runs/2026-10-02_fig1/out/meaneval_*`·`diag_trunk_n`) |
+| `runs/2026-10-28_early_avoid/` | 10-28 미리 피하는 보상 A–Z(설계 분석, 학습 없음) — 시간 척도·조건 5·후보 7(A–G)·연속 위험 예고 PBRS 제안 |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
@@ -45,6 +46,7 @@
 | 2026-10-26_레퍼런스_포팅 | `2026-10-26_ref_port/make_pdf.sh report.md <출력.pdf>` (자료 `references_verified.json` · `port_spec.json`) |
 | 2026-10-27_R0_무학습재평가_표본vs평균행동_결과 | `2026-10-02_fig1/report/make_report_r0.py` (자료 `out/meaneval_qb/` · `out/meaneval_qa/` · `out/diag_trunk_n/` · `out/qb/curve_qb_*.txt` · `out/r0_notes/`) |
 | 2026-10-28_R0_해석_다음단계 | `2026-10-28_r0_interp/make_pdf.sh report.md <출력.pdf>` (표 = `python3 r0_interpret.py runs/2026-10-02_fig1/out`) |
+| 2026-10-28_미리피하기_보상_AtoZ | `2026-10-28_early_avoid/make_pdf.sh report.md <출력.pdf>` (설계 문서, 자료 = 코드·스펙 인용) |
 
 ## 다시 만들기
 
