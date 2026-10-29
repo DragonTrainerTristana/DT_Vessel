@@ -9,7 +9,7 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 22개 (09-30 – 10-28) |
+| `pdf/` | 결과 보고서 PDF 23개 (09-30 – 10-29) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
@@ -17,6 +17,7 @@
 | `runs/2026-10-26_ref_port/` | 10-26 레퍼런스 포팅 — 논문·코드 원문에서 뽑은 설정과 검증 판정 `references_verified.json`·포팅 명세와 리뷰 `port_spec.json`·보고서 원본 `report.md`(Zotero 컬렉션 MNMHENXE) |
 | `runs/2026-10-28_r0_interp/` | 10-28 R0 해석 — 잡음 격차·trunk 별 평균 행동 하락 모양(직진형·우회형·불안정)·통신 vs OFF 평균 행동, 표 생성기 `r0_interpret.py`(입력 = `runs/2026-10-02_fig1/out/meaneval_*`·`diag_trunk_n`) |
 | `runs/2026-10-28_early_avoid/` | 10-28 미리 피하는 보상 A–Z(설계 분석, 학습 없음) — 시간 척도·조건 5·후보 7(A–G)·연속 위험 예고 PBRS 제안 |
+| `runs/2026-10-29_qd_interp/` | 10-29 qd_ 해석 — 성공 기준 3/3·학습 곡선·PPO 계측·순위 관문 v5 불통과 내용((iii) 여유 부족 · (v) v4 와 같은 값) |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) · qd_ trunk(10-28) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
@@ -48,6 +49,7 @@
 | 2026-10-28_R0_해석_다음단계 | `2026-10-28_r0_interp/make_pdf.sh report.md <출력.pdf>` (표 = `python3 r0_interpret.py runs/2026-10-02_fig1/out`) |
 | 2026-10-28_미리피하기_보상_AtoZ | `2026-10-28_early_avoid/make_pdf.sh report.md <출력.pdf>` (설계 문서, 자료 = 코드·스펙 인용) |
 | 2026-10-28_qd_trunk_위험56m_떨림수정_결과 | `2026-10-02_fig1/report/make_report_qd.py <출력 폴더>` (자료 `out/qd/` · `out/meaneval_qd/` · `out/qd_notes/` · 비교 `out/n_trunk_d6_s43.log` · `out/diag_trunk_n/` · `out/qa/` · `out/qb/` · `out/meaneval_qa/` · `out/meaneval_qb/`) |
+| 2026-10-29_qd_해석_순위관문 | `2026-10-29_qd_interp/make_pdf.sh report.md <출력.pdf>` (자료 = `runs/2026-10-02_fig1/out/qd/`·`meaneval_qd/`) |
 
 ## 다시 만들기
 
