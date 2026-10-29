@@ -1,0 +1,450 @@
+[version] YUGIOH-2026-09-10 - env 로 안 준 키는 config 기본값(YUGIOH)
+[sim] dyn_profile=imo obstacles=none formula=abs rudder_rate=3.0 r_full=28.36632 goal_reached=7.09
+[clip] VESSEL_CLIP_PER_MODULE=1 - msg_actor/ctr_actor/critic/나머지를 각각 0.5 로 자름 (기존은 전체 한 덩어리). 두 팔에 동일 적용할 것.
+[label-fix] intent/state-recon 라벨 정렬 수정본임 (INTENT_COEF=0.0 STATE_RECON_COEF=0.05). 2026-09-05 이전 run 과 직접 비교하지 말 것.
+[comm] ON at dec=0.000M (comm_on_at=0) - 이 rollout 부터 학습형 통신 + 텔레메트리
+[ppo] EVb(lam=0.95)=-0.000 EVb(lam=1)=-0.000 ret_std=4.3 T=32 dec=0.07M
+[grad] upd=0  norm  ctr=0.362  cri=0.103  msg=0.008  comm=0.0000  aux=0.000  total=0.384  | clip=0.9427  → ctr 실효 스텝 = ctr×clip = 0.3416
+C:\work\DT_Vessel_v3\Python\vessel_gym_train.py:1457: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:837.)
+  _ls0 = ' '.join(f"{float(_c.action_logstd.reshape(-1)[0]):.3f}" for _c in _cores)
+[ppo] upd=0 approx_kl=0.00217 clipfrac=0.0100 entropy=-0.0086 logstd0_raw=[-2.016 -2.000 -2.000 -2.000 -2.000] lr=0.0003 dec=0.07M
+[ppo] EVb(lam=0.95)=0.017 EVb(lam=1)=0.010 ret_std=5.0 T=32 dec=0.13M
+[grad] upd=1  norm  ctr=0.370  cri=0.151  msg=0.019  comm=0.0000  aux=0.000  total=0.420  | clip=0.9232  → ctr 실효 스텝 = ctr×clip = 0.3416
+[ppo] upd=1 approx_kl=0.00270 clipfrac=0.0171 entropy=-0.0240 logstd0_raw=[-2.022 -2.000 -2.000 -2.000 -2.000] lr=0.0003 dec=0.13M
+[ppo] EVb(lam=0.95)=0.049 EVb(lam=1)=0.024 ret_std=4.5 T=32 dec=0.20M
+[grad] upd=2  norm  ctr=0.418  cri=0.136  msg=0.014  comm=0.0000  aux=0.000  total=0.458  | clip=0.9008  → ctr 실효 스텝 = ctr×clip = 0.3770
+[ppo] upd=2 approx_kl=0.00271 clipfrac=0.0150 entropy=-0.0485 logstd0_raw=[-2.039 -2.000 -2.000 -2.000 -2.000] lr=0.0003 dec=0.20M
+[ppo] EVb(lam=0.95)=0.036 EVb(lam=1)=0.014 ret_std=4.9 T=32 dec=0.26M
+[grad] upd=3  norm  ctr=0.406  cri=0.131  msg=0.008  comm=0.0000  aux=0.000  total=0.444  | clip=0.9059  → ctr 실효 스텝 = ctr×clip = 0.3681
+[ppo] upd=3 approx_kl=0.00348 clipfrac=0.0244 entropy=-0.0646 logstd0_raw=[-2.053 -2.000 -2.000 -2.000 -2.000] lr=0.0003 dec=0.26M
+[ppo] EVb(lam=0.95)=0.101 EVb(lam=1)=0.054 ret_std=6.3 T=32 dec=0.33M
+[grad] upd=4  norm  ctr=0.406  cri=0.137  msg=0.007  comm=0.0024  aux=0.000  total=0.440  | clip=0.9287  → ctr 실효 스텝 = ctr×clip = 0.3773
+[ppo] upd=4 approx_kl=0.00372 clipfrac=0.0264 entropy=-0.0827 logstd0_raw=[-2.067 -2.000 -1.999 -1.983 -2.000] lr=0.0003 dec=0.33M
+[ON] dec=0.33M | ep=66 len~4965 | goal=0.0% vColl=0.0% oColl=0.0% TO=100.0% | R=0.826 | 2826 dec/s | epRet=-20.696
+[ppo] EVb(lam=0.95)=0.483 EVb(lam=1)=0.326 ret_std=12.4 T=32 dec=0.39M
+[grad] upd=5  norm  ctr=0.444  cri=0.193  msg=0.008  comm=0.0137  aux=0.000  total=0.499  | clip=0.8955  → ctr 실효 스텝 = ctr×clip = 0.3976
+[ppo] upd=5 approx_kl=0.00275 clipfrac=0.0165 entropy=-0.1064 logstd0_raw=[-2.082 -2.000 -1.998 -1.980 -2.004] lr=0.0003 dec=0.39M
+[ppo] EVb(lam=0.95)=0.715 EVb(lam=1)=0.561 ret_std=24.1 T=32 dec=0.46M
+[grad] upd=6  norm  ctr=0.505  cri=0.279  msg=0.089  comm=0.0371  aux=0.000  total=0.579  | clip=0.8538  → ctr 실효 스텝 = ctr×clip = 0.4310
+[ppo] upd=6 approx_kl=0.00267 clipfrac=0.0161 entropy=-0.1226 logstd0_raw=[-2.089 -2.000 -1.988 -1.970 -2.007] lr=0.0003 dec=0.46M
+[ppo] EVb(lam=0.95)=0.805 EVb(lam=1)=0.671 ret_std=40.1 T=32 dec=0.52M
+[grad] upd=7  norm  ctr=0.598  cri=0.394  msg=0.247  comm=0.0540  aux=0.000  total=0.682  | clip=0.7622  → ctr 실효 스텝 = ctr×clip = 0.4559
+[ppo] upd=7 approx_kl=0.00316 clipfrac=0.0232 entropy=-0.1300 logstd0_raw=[-2.093 -2.000 -1.977 -1.953 -2.009] lr=0.0003 dec=0.52M
+[ppo] EVb(lam=0.95)=0.843 EVb(lam=1)=0.725 ret_std=61.9 T=32 dec=0.59M
+[grad] upd=8  norm  ctr=0.774  cri=0.509  msg=0.385  comm=0.0599  aux=0.000  total=0.853  | clip=0.6602  → ctr 실효 스텝 = ctr×clip = 0.5108
+[ppo] upd=8 approx_kl=0.00306 clipfrac=0.0245 entropy=-0.1350 logstd0_raw=[-2.104 -2.000 -1.968 -1.943 -2.009] lr=0.0003 dec=0.59M
+[ppo] EVb(lam=0.95)=0.906 EVb(lam=1)=0.822 ret_std=88.5 T=32 dec=0.66M
+[grad] upd=9  norm  ctr=0.704  cri=0.434  msg=0.327  comm=0.0566  aux=0.000  total=0.768  | clip=0.6941  → ctr 실효 스텝 = ctr×clip = 0.4888
+[ppo] upd=9 approx_kl=0.00352 clipfrac=0.0291 entropy=-0.1356 logstd0_raw=[-2.109 -2.000 -1.945 -1.922 -2.027] lr=0.0003 dec=0.66M
+[ON] dec=0.66M | ep=98 len~3344 | goal=0.0% vColl=20.4% oColl=0.0% TO=79.6% | R=0.086 | 2013 dec/s | epRet=-163.772
+[ppo] EVb(lam=0.95)=0.935 EVb(lam=1)=0.874 ret_std=115.7 T=32 dec=0.72M
+[grad] upd=10  norm  ctr=0.766  cri=0.466  msg=0.391  comm=0.0526  aux=0.000  total=0.811  | clip=0.6707  → ctr 실효 스텝 = ctr×clip = 0.5135
+[ppo] upd=10 approx_kl=0.00370 clipfrac=0.0334 entropy=-0.1401 logstd0_raw=[-2.118 -2.000 -1.918 -1.908 -2.020] lr=0.0003 dec=0.72M
+[ppo] EVb(lam=0.95)=0.950 EVb(lam=1)=0.903 ret_std=131.0 T=32 dec=0.79M
+[grad] upd=11  norm  ctr=0.767  cri=0.394  msg=0.313  comm=0.0462  aux=0.000  total=0.809  | clip=0.6682  → ctr 실효 스텝 = ctr×clip = 0.5122
+[ppo] upd=11 approx_kl=0.00417 clipfrac=0.0360 entropy=-0.1467 logstd0_raw=[-2.128 -2.000 -1.910 -1.888 -2.024] lr=0.0003 dec=0.79M
+[ppo] EVb(lam=0.95)=0.958 EVb(lam=1)=0.915 ret_std=133.2 T=32 dec=0.85M
+[grad] upd=12  norm  ctr=0.710  cri=0.327  msg=0.271  comm=0.0346  aux=0.000  total=0.735  | clip=0.7192  → ctr 실효 스텝 = ctr×clip = 0.5106
+[ppo] upd=12 approx_kl=0.00428 clipfrac=0.0391 entropy=-0.1695 logstd0_raw=[-2.132 -2.000 -1.900 -1.887 -2.017] lr=0.0003 dec=0.85M
+[ppo] EVb(lam=0.95)=0.957 EVb(lam=1)=0.914 ret_std=140.4 T=32 dec=0.92M
+[grad] upd=13  norm  ctr=0.701  cri=0.257  msg=0.208  comm=0.0281  aux=0.000  total=0.719  | clip=0.7419  → ctr 실효 스텝 = ctr×clip = 0.5198
+[ppo] upd=13 approx_kl=0.00437 clipfrac=0.0452 entropy=-0.1714 logstd0_raw=[-2.132 -2.000 -1.895 -1.871 -2.010] lr=0.0003 dec=0.92M
+[ppo] EVb(lam=0.95)=0.962 EVb(lam=1)=0.926 ret_std=149.3 T=32 dec=0.98M
+[grad] upd=14  norm  ctr=0.746  cri=0.335  msg=0.281  comm=0.0341  aux=0.000  total=0.771  | clip=0.7032  → ctr 실효 스텝 = ctr×clip = 0.5248
+[ppo] upd=14 approx_kl=0.00352 clipfrac=0.0296 entropy=-0.1925 logstd0_raw=[-2.138 -2.000 -1.898 -1.853 -2.001] lr=0.0003 dec=0.98M
+[ON] dec=0.98M | ep=284 len~1154 | goal=0.0% vColl=77.5% oColl=0.0% TO=22.5% | R=0.038 | 1848 dec/s | epRet=-856.682
+[ppo] EVb(lam=0.95)=0.944 EVb(lam=1)=0.889 ret_std=154.1 T=32 dec=1.05M
+[grad] upd=15  norm  ctr=0.805  cri=0.401  msg=0.342  comm=0.0360  aux=0.000  total=0.832  | clip=0.6716  → ctr 실효 스텝 = ctr×clip = 0.5404
+[ppo] upd=15 approx_kl=0.00446 clipfrac=0.0427 entropy=-0.2151 logstd0_raw=[-2.138 -1.996 -1.891 -1.851 -1.992] lr=0.0003 dec=1.05M
+[ppo] EVb(lam=0.95)=0.942 EVb(lam=1)=0.884 ret_std=158.8 T=32 dec=1.11M
+[grad] upd=16  norm  ctr=0.845  cri=0.407  msg=0.346  comm=0.0365  aux=0.000  total=0.872  | clip=0.6363  → ctr 실효 스텝 = ctr×clip = 0.5379
+[ppo] upd=16 approx_kl=0.00421 clipfrac=0.0422 entropy=-0.2243 logstd0_raw=[-2.151 -1.989 -1.893 -1.862 -1.986] lr=0.0003 dec=1.11M
+[ppo] EVb(lam=0.95)=0.947 EVb(lam=1)=0.897 ret_std=163.1 T=32 dec=1.18M
+[grad] upd=17  norm  ctr=0.913  cri=0.452  msg=0.410  comm=0.0282  aux=0.000  total=0.929  | clip=0.6177  → ctr 실효 스텝 = ctr×clip = 0.5641
+[ppo] upd=17 approx_kl=0.00466 clipfrac=0.0476 entropy=-0.2404 logstd0_raw=[-2.151 -1.987 -1.903 -1.858 -1.973] lr=0.0003 dec=1.18M
+[ppo] EVb(lam=0.95)=0.949 EVb(lam=1)=0.900 ret_std=169.1 T=32 dec=1.25M
+[grad] upd=18  norm  ctr=0.882  cri=0.390  msg=0.345  comm=0.0348  aux=0.000  total=0.900  | clip=0.6289  → ctr 실효 스텝 = ctr×clip = 0.5548
+[ppo] upd=18 approx_kl=0.00462 clipfrac=0.0477 entropy=-0.2464 logstd0_raw=[-2.160 -1.984 -1.904 -1.855 -1.966] lr=0.0003 dec=1.25M
+[ppo] EVb(lam=0.95)=0.932 EVb(lam=1)=0.868 ret_std=164.1 T=32 dec=1.31M
+[grad] upd=19  norm  ctr=1.051  cri=0.617  msg=0.569  comm=0.0395  aux=0.000  total=1.072  | clip=0.5663  → ctr 실효 스텝 = ctr×clip = 0.5953
+[ppo] upd=19 approx_kl=0.00476 clipfrac=0.0480 entropy=-0.2497 logstd0_raw=[-2.162 -1.984 -1.906 -1.855 -1.965] lr=0.0003 dec=1.31M
+[ON] dec=1.31M | ep=247 len~1327 | goal=0.0% vColl=74.5% oColl=0.0% TO=25.5% | R=0.046 | 1738 dec/s | epRet=-682.361
+[ppo] EVb(lam=0.95)=0.923 EVb(lam=1)=0.847 ret_std=159.2 T=32 dec=1.38M
+[grad] upd=20  norm  ctr=1.079  cri=0.582  msg=0.537  comm=0.0322  aux=0.000  total=1.095  | clip=0.5846  → ctr 실효 스텝 = ctr×clip = 0.6309
+[ppo] upd=20 approx_kl=0.00456 clipfrac=0.0483 entropy=-0.2567 logstd0_raw=[-2.159 -1.977 -1.908 -1.863 -1.964] lr=0.0003 dec=1.38M
+[ppo] EVb(lam=0.95)=0.919 EVb(lam=1)=0.848 ret_std=152.0 T=32 dec=1.44M
+[grad] upd=21  norm  ctr=1.053  cri=0.584  msg=0.547  comm=0.0319  aux=0.000  total=1.067  | clip=0.5695  → ctr 실효 스텝 = ctr×clip = 0.5999
+[ppo] upd=21 approx_kl=0.00383 clipfrac=0.0377 entropy=-0.2564 logstd0_raw=[-2.160 -1.973 -1.910 -1.867 -1.974] lr=0.0003 dec=1.44M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.848 ret_std=155.4 T=32 dec=1.51M
+[grad] upd=22  norm  ctr=1.169  cri=0.749  msg=0.712  comm=0.0315  aux=0.000  total=1.184  | clip=0.5646  → ctr 실효 스텝 = ctr×clip = 0.6598
+[ppo] upd=22 approx_kl=0.00557 clipfrac=0.0617 entropy=-0.2603 logstd0_raw=[-2.165 -1.970 -1.908 -1.870 -1.977] lr=0.0003 dec=1.51M
+[ppo] EVb(lam=0.95)=0.920 EVb(lam=1)=0.844 ret_std=153.3 T=32 dec=1.57M
+[grad] upd=23  norm  ctr=1.175  cri=0.754  msg=0.711  comm=0.0328  aux=0.000  total=1.192  | clip=0.5442  → ctr 실효 스텝 = ctr×clip = 0.6391
+[ppo] upd=23 approx_kl=0.00366 clipfrac=0.0319 entropy=-0.2826 logstd0_raw=[-2.164 -1.975 -1.908 -1.868 -1.984] lr=0.0003 dec=1.57M
+[ppo] EVb(lam=0.95)=0.896 EVb(lam=1)=0.805 ret_std=159.7 T=32 dec=1.64M
+[grad] upd=24  norm  ctr=1.751  cri=1.402  msg=1.374  comm=0.0327  aux=0.000  total=1.765  | clip=0.4374  → ctr 실효 스텝 = ctr×clip = 0.7658
+[ppo] upd=24 approx_kl=0.00433 clipfrac=0.0463 entropy=-0.2900 logstd0_raw=[-2.165 -1.964 -1.910 -1.861 -1.979] lr=0.0003 dec=1.64M
+[ON] dec=1.64M | ep=222 len~1476 | goal=0.0% vColl=73.0% oColl=0.0% TO=27.0% | R=0.131 | 1653 dec/s | epRet=-387.527
+[ppo] EVb(lam=0.95)=0.921 EVb(lam=1)=0.842 ret_std=161.3 T=32 dec=1.70M
+[grad] upd=25  norm  ctr=1.965  cri=1.611  msg=1.581  comm=0.0313  aux=0.000  total=1.979  | clip=0.4350  → ctr 실효 스텝 = ctr×clip = 0.8550
+[ppo] upd=25 approx_kl=0.00381 clipfrac=0.0389 entropy=-0.2938 logstd0_raw=[-2.172 -1.969 -1.920 -1.862 -1.982] lr=0.0003 dec=1.70M
+[ppo] EVb(lam=0.95)=0.903 EVb(lam=1)=0.812 ret_std=148.7 T=32 dec=1.77M
+[grad] upd=26  norm  ctr=2.104  cri=1.775  msg=1.747  comm=0.0331  aux=0.000  total=2.119  | clip=0.4139  → ctr 실효 스텝 = ctr×clip = 0.8709
+[ppo] upd=26 approx_kl=0.00433 clipfrac=0.0451 entropy=-0.3173 logstd0_raw=[-2.171 -1.975 -1.923 -1.867 -1.992] lr=0.0003 dec=1.77M
+[ppo] EVb(lam=0.95)=0.909 EVb(lam=1)=0.830 ret_std=144.6 T=32 dec=1.84M
+[grad] upd=27  norm  ctr=2.311  cri=2.034  msg=2.004  comm=0.0353  aux=0.000  total=2.330  | clip=0.3981  → ctr 실효 스텝 = ctr×clip = 0.9201
+[ppo] upd=27 approx_kl=0.00475 clipfrac=0.0504 entropy=-0.3039 logstd0_raw=[-2.159 -1.982 -1.927 -1.867 -1.984] lr=0.0003 dec=1.84M
+[ppo] EVb(lam=0.95)=0.924 EVb(lam=1)=0.855 ret_std=146.7 T=32 dec=1.90M
+[grad] upd=28  norm  ctr=2.217  cri=1.915  msg=1.886  comm=0.0280  aux=0.000  total=2.233  | clip=0.3921  → ctr 실효 스텝 = ctr×clip = 0.8691
+[ppo] upd=28 approx_kl=0.00562 clipfrac=0.0643 entropy=-0.3117 logstd0_raw=[-2.158 -1.973 -1.919 -1.871 -1.977] lr=0.0003 dec=1.90M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.854 ret_std=140.6 T=32 dec=1.97M
+[grad] upd=29  norm  ctr=2.240  cri=1.839  msg=1.782  comm=0.0331  aux=0.000  total=2.272  | clip=0.3816  → ctr 실효 스텝 = ctr×clip = 0.8550
+[ppo] upd=29 approx_kl=0.00515 clipfrac=0.0578 entropy=-0.3342 logstd0_raw=[-2.168 -1.969 -1.918 -1.868 -1.983] lr=0.0003 dec=1.97M
+[ON] dec=1.97M | ep=243 len~1348 | goal=0.0% vColl=76.5% oColl=0.0% TO=23.5% | R=0.094 | 1601 dec/s | epRet=-233.200
+[ppo] EVb(lam=0.95)=0.911 EVb(lam=1)=0.830 ret_std=136.2 T=32 dec=2.03M
+[grad] upd=30  norm  ctr=3.159  cri=2.820  msg=2.724  comm=0.0374  aux=0.000  total=3.218  | clip=0.3375  → ctr 실효 스텝 = ctr×clip = 1.0662
+[ppo] upd=30 approx_kl=0.00622 clipfrac=0.0749 entropy=-0.3444 logstd0_raw=[-2.164 -1.967 -1.919 -1.865 -1.978] lr=0.0003 dec=2.03M
+[ppo] EVb(lam=0.95)=0.900 EVb(lam=1)=0.810 ret_std=140.0 T=32 dec=2.10M
+[grad] upd=31  norm  ctr=1.975  cri=1.575  msg=1.513  comm=0.0312  aux=0.000  total=2.013  | clip=0.3511  → ctr 실효 스텝 = ctr×clip = 0.6936
+[ppo] upd=31 approx_kl=0.00647 clipfrac=0.0804 entropy=-0.3478 logstd0_raw=[-2.170 -1.961 -1.924 -1.867 -1.979] lr=0.0003 dec=2.10M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.847 ret_std=140.8 T=32 dec=2.16M
+[grad] upd=32  norm  ctr=1.902  cri=1.497  msg=1.439  comm=0.0322  aux=0.000  total=1.933  | clip=0.4208  → ctr 실효 스텝 = ctr×clip = 0.8001
+[ppo] upd=32 approx_kl=0.00669 clipfrac=0.0809 entropy=-0.3555 logstd0_raw=[-2.172 -1.953 -1.933 -1.871 -1.982] lr=0.0003 dec=2.16M
+[ppo] EVb(lam=0.95)=0.901 EVb(lam=1)=0.803 ret_std=137.6 T=32 dec=2.23M
+[grad] upd=33  norm  ctr=3.872  cri=3.581  msg=3.487  comm=0.0379  aux=0.000  total=3.932  | clip=0.3020  → ctr 실효 스텝 = ctr×clip = 1.1693
+[ppo] upd=33 approx_kl=0.00577 clipfrac=0.0687 entropy=-0.3722 logstd0_raw=[-2.172 -1.955 -1.942 -1.876 -1.987] lr=0.0003 dec=2.23M
+[ppo] EVb(lam=0.95)=0.918 EVb(lam=1)=0.848 ret_std=136.0 T=32 dec=2.29M
+[grad] upd=34  norm  ctr=2.311  cri=1.951  msg=1.825  comm=0.0326  aux=0.000  total=2.387  | clip=0.3435  → ctr 실효 스텝 = ctr×clip = 0.7940
+[ppo] upd=34 approx_kl=0.00498 clipfrac=0.0537 entropy=-0.4225 logstd0_raw=[-2.172 -1.960 -1.946 -1.887 -1.985] lr=0.0003 dec=2.29M
+[ON] dec=2.29M | ep=302 len~1085 | goal=41.1% vColl=44.4% oColl=0.0% TO=14.6% | R=0.544 | 1564 dec/s | epRet=347.672
+[ppo] EVb(lam=0.95)=0.907 EVb(lam=1)=0.821 ret_std=131.6 T=32 dec=2.36M
+[grad] upd=35  norm  ctr=2.273  cri=1.911  msg=1.757  comm=0.0339  aux=0.000  total=2.363  | clip=0.3306  → ctr 실효 스텝 = ctr×clip = 0.7513
+[ppo] upd=35 approx_kl=0.00529 clipfrac=0.0606 entropy=-0.4281 logstd0_raw=[-2.171 -1.976 -1.953 -1.889 -1.981] lr=0.0003 dec=2.36M
+[ppo] EVb(lam=0.95)=0.905 EVb(lam=1)=0.817 ret_std=133.5 T=32 dec=2.42M
+[grad] upd=36  norm  ctr=2.874  cri=2.590  msg=2.373  comm=0.0362  aux=0.000  total=3.014  | clip=0.2925  → ctr 실효 스텝 = ctr×clip = 0.8407
+[ppo] upd=36 approx_kl=0.00498 clipfrac=0.0552 entropy=-0.4313 logstd0_raw=[-2.166 -1.977 -1.958 -1.897 -1.977] lr=0.0003 dec=2.42M
+[ppo] EVb(lam=0.95)=0.907 EVb(lam=1)=0.821 ret_std=124.5 T=32 dec=2.49M
+[grad] upd=37  norm  ctr=2.828  cri=2.527  msg=2.315  comm=0.0352  aux=0.000  total=2.962  | clip=0.2737  → ctr 실효 스텝 = ctr×clip = 0.7738
+[ppo] upd=37 approx_kl=0.00478 clipfrac=0.0514 entropy=-0.4844 logstd0_raw=[-2.162 -1.977 -1.962 -1.902 -1.985] lr=0.0003 dec=2.49M
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.839 ret_std=113.0 T=32 dec=2.56M
+[grad] upd=38  norm  ctr=2.321  cri=1.965  msg=1.773  comm=0.0293  aux=0.000  total=2.433  | clip=0.3307  → ctr 실효 스텝 = ctr×clip = 0.7673
+[ppo] upd=38 approx_kl=0.00470 clipfrac=0.0495 entropy=-0.5090 logstd0_raw=[-2.165 -1.958 -1.962 -1.901 -1.988] lr=0.0003 dec=2.56M
+[ppo] EVb(lam=0.95)=0.902 EVb(lam=1)=0.818 ret_std=116.6 T=32 dec=2.62M
+[grad] upd=39  norm  ctr=3.161  cri=2.827  msg=2.612  comm=0.0285  aux=0.000  total=3.303  | clip=0.2757  → ctr 실효 스텝 = ctr×clip = 0.8714
+[ppo] upd=39 approx_kl=0.00535 clipfrac=0.0609 entropy=-0.4811 logstd0_raw=[-2.168 -1.947 -1.962 -1.901 -1.984] lr=0.0003 dec=2.62M
+[ON] dec=2.62M | ep=340 len~964 | goal=60.9% vColl=30.0% oColl=0.0% TO=9.1% | R=0.769 | 1541 dec/s | epRet=774.729
+[ppo] EVb(lam=0.95)=0.899 EVb(lam=1)=0.809 ret_std=111.2 T=32 dec=2.69M
+[grad] upd=40  norm  ctr=3.143  cri=2.877  msg=2.635  comm=0.0349  aux=0.000  total=3.300  | clip=0.2652  → ctr 실효 스텝 = ctr×clip = 0.8337
+[ppo] upd=40 approx_kl=0.00562 clipfrac=0.0648 entropy=-0.4674 logstd0_raw=[-2.172 -1.952 -1.963 -1.899 -1.980] lr=0.0003 dec=2.69M
+[ppo] EVb(lam=0.95)=0.894 EVb(lam=1)=0.795 ret_std=100.8 T=32 dec=2.75M
+[grad] upd=41  norm  ctr=3.601  cri=3.353  msg=3.143  comm=0.0332  aux=0.000  total=3.748  | clip=0.2756  → ctr 실효 스텝 = ctr×clip = 0.9925
+[ppo] upd=41 approx_kl=0.00622 clipfrac=0.0701 entropy=-0.4442 logstd0_raw=[-2.171 -1.962 -1.973 -1.901 -1.984] lr=0.0003 dec=2.75M
+[ppo] EVb(lam=0.95)=0.900 EVb(lam=1)=0.816 ret_std=100.2 T=32 dec=2.82M
+[grad] upd=42  norm  ctr=3.654  cri=3.345  msg=3.133  comm=0.0304  aux=0.000  total=3.795  | clip=0.2444  → ctr 실효 스텝 = ctr×clip = 0.8928
+[ppo] upd=42 approx_kl=0.00537 clipfrac=0.0598 entropy=-0.4545 logstd0_raw=[-2.179 -1.959 -1.971 -1.891 -1.974] lr=0.0003 dec=2.82M
+[ppo] EVb(lam=0.95)=0.902 EVb(lam=1)=0.817 ret_std=92.5 T=32 dec=2.88M
+[grad] upd=43  norm  ctr=1.707  cri=1.253  msg=1.043  comm=0.0257  aux=0.000  total=1.822  | clip=0.3649  → ctr 실효 스텝 = ctr×clip = 0.6230
+[ppo] upd=43 approx_kl=0.00494 clipfrac=0.0516 entropy=-0.4712 logstd0_raw=[-2.184 -1.945 -1.966 -1.890 -1.981] lr=0.0003 dec=2.88M
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.834 ret_std=102.2 T=32 dec=2.95M
+[grad] upd=44  norm  ctr=2.671  cri=2.275  msg=2.072  comm=0.0291  aux=0.000  total=2.791  | clip=0.3144  → ctr 실효 스텝 = ctr×clip = 0.8398
+[ppo] upd=44 approx_kl=0.00506 clipfrac=0.0523 entropy=-0.5161 logstd0_raw=[-2.188 -1.933 -1.959 -1.880 -1.975] lr=0.0003 dec=2.95M
+[ON] dec=2.95M | ep=290 len~1130 | goal=65.5% vColl=23.8% oColl=0.0% TO=10.7% | R=0.832 | 1524 dec/s | epRet=885.029
+[ppo] EVb(lam=0.95)=0.916 EVb(lam=1)=0.834 ret_std=108.2 T=32 dec=3.01M
+[grad] upd=45  norm  ctr=2.615  cri=2.203  msg=2.036  comm=0.0325  aux=0.000  total=2.712  | clip=0.3018  → ctr 실효 스텝 = ctr×clip = 0.7892
+[ppo] upd=45 approx_kl=0.00497 clipfrac=0.0528 entropy=-0.5330 logstd0_raw=[-2.185 -1.946 -1.958 -1.868 -1.970] lr=0.0003 dec=3.01M
+[ppo] EVb(lam=0.95)=0.919 EVb(lam=1)=0.842 ret_std=112.9 T=32 dec=3.08M
+[grad] upd=46  norm  ctr=2.360  cri=1.978  msg=1.729  comm=0.0412  aux=0.000  total=2.510  | clip=0.3201  → ctr 실효 스텝 = ctr×clip = 0.7554
+[ppo] upd=46 approx_kl=0.00554 clipfrac=0.0563 entropy=-0.5492 logstd0_raw=[-2.192 -1.943 -1.967 -1.857 -1.977] lr=0.0003 dec=3.08M
+[ppo] EVb(lam=0.95)=0.916 EVb(lam=1)=0.843 ret_std=112.4 T=32 dec=3.15M
+[grad] upd=47  norm  ctr=2.106  cri=1.609  msg=1.458  comm=0.0350  aux=0.000  total=2.185  | clip=0.3311  → ctr 실효 스텝 = ctr×clip = 0.6973
+[ppo] upd=47 approx_kl=0.00454 clipfrac=0.0482 entropy=-0.5466 logstd0_raw=[-2.193 -1.946 -1.964 -1.859 -1.983] lr=0.0003 dec=3.15M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.846 ret_std=112.4 T=32 dec=3.21M
+[grad] upd=48  norm  ctr=2.798  cri=2.265  msg=2.131  comm=0.0356  aux=0.000  total=2.870  | clip=0.2856  → ctr 실효 스텝 = ctr×clip = 0.7990
+[ppo] upd=48 approx_kl=0.00580 clipfrac=0.0681 entropy=-0.5912 logstd0_raw=[-2.192 -1.950 -1.968 -1.867 -1.988] lr=0.0003 dec=3.21M
+[ppo] EVb(lam=0.95)=0.918 EVb(lam=1)=0.847 ret_std=113.9 T=32 dec=3.28M
+[grad] upd=49  norm  ctr=3.549  cri=3.090  msg=2.911  comm=0.0403  aux=0.000  total=3.660  | clip=0.2921  → ctr 실효 스텝 = ctr×clip = 1.0366
+[ppo] upd=49 approx_kl=0.00602 clipfrac=0.0670 entropy=-0.6093 logstd0_raw=[-2.199 -1.943 -1.972 -1.867 -1.984] lr=0.0003 dec=3.28M
+[ON] dec=3.28M | ep=273 len~1200 | goal=61.5% vColl=32.2% oColl=0.0% TO=6.2% | R=0.820 | 1510 dec/s | epRet=751.575
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.831 ret_std=120.3 T=32 dec=3.34M
+[grad] upd=50  norm  ctr=3.155  cri=2.636  msg=2.509  comm=0.0369  aux=0.000  total=3.227  | clip=0.2994  → ctr 실효 스텝 = ctr×clip = 0.9446
+[ppo] upd=50 approx_kl=0.00539 clipfrac=0.0613 entropy=-0.6337 logstd0_raw=[-2.203 -1.939 -1.968 -1.878 -1.977] lr=0.0003 dec=3.34M
+[ppo] EVb(lam=0.95)=0.908 EVb(lam=1)=0.823 ret_std=121.6 T=32 dec=3.41M
+[grad] upd=51  norm  ctr=2.990  cri=2.533  msg=2.356  comm=0.0442  aux=0.000  total=3.102  | clip=0.2889  → ctr 실효 스텝 = ctr×clip = 0.8639
+[ppo] upd=51 approx_kl=0.00625 clipfrac=0.0678 entropy=-0.6668 logstd0_raw=[-2.207 -1.937 -1.973 -1.870 -1.969] lr=0.0003 dec=3.41M
+[ppo] EVb(lam=0.95)=0.898 EVb(lam=1)=0.805 ret_std=115.3 T=32 dec=3.47M
+[grad] upd=52  norm  ctr=3.209  cri=2.816  msg=2.668  comm=0.0437  aux=0.000  total=3.301  | clip=0.2627  → ctr 실효 스텝 = ctr×clip = 0.8428
+[ppo] upd=52 approx_kl=0.00666 clipfrac=0.0813 entropy=-0.6492 logstd0_raw=[-2.213 -1.934 -1.966 -1.860 -1.965] lr=0.0003 dec=3.47M
+[ppo] EVb(lam=0.95)=0.893 EVb(lam=1)=0.798 ret_std=119.1 T=32 dec=3.54M
+[grad] upd=53  norm  ctr=2.241  cri=1.857  msg=1.696  comm=0.0446  aux=0.000  total=2.347  | clip=0.3007  → ctr 실효 스텝 = ctr×clip = 0.6740
+[ppo] upd=53 approx_kl=0.00654 clipfrac=0.0748 entropy=-0.6618 logstd0_raw=[-2.212 -1.934 -1.954 -1.862 -1.966] lr=0.0003 dec=3.54M
+[ppo] EVb(lam=0.95)=0.896 EVb(lam=1)=0.808 ret_std=117.5 T=32 dec=3.60M
+[grad] upd=54  norm  ctr=2.130  cri=1.572  msg=1.455  comm=0.0390  aux=0.000  total=2.194  | clip=0.3165  → ctr 실효 스텝 = ctr×clip = 0.6741
+[ppo] upd=54 approx_kl=0.00501 clipfrac=0.0537 entropy=-0.6912 logstd0_raw=[-2.209 -1.933 -1.953 -1.872 -1.959] lr=0.0003 dec=3.60M
+[ON] dec=3.60M | ep=288 len~1138 | goal=68.8% vColl=29.2% oColl=0.0% TO=2.1% | R=0.710 | 1497 dec/s | epRet=824.474
+[ppo] EVb(lam=0.95)=0.888 EVb(lam=1)=0.788 ret_std=111.2 T=32 dec=3.67M
+[grad] upd=55  norm  ctr=3.644  cri=3.279  msg=3.133  comm=0.0475  aux=0.000  total=3.744  | clip=0.2514  → ctr 실효 스텝 = ctr×clip = 0.9163
+[ppo] upd=55 approx_kl=0.00533 clipfrac=0.0570 entropy=-0.6629 logstd0_raw=[-2.211 -1.937 -1.947 -1.867 -1.960] lr=0.0003 dec=3.67M
+[ppo] EVb(lam=0.95)=0.911 EVb(lam=1)=0.833 ret_std=119.2 T=32 dec=3.74M
+[grad] upd=56  norm  ctr=3.386  cri=3.021  msg=2.899  comm=0.0460  aux=0.000  total=3.471  | clip=0.2498  → ctr 실효 스텝 = ctr×clip = 0.8460
+[ppo] upd=56 approx_kl=0.00468 clipfrac=0.0486 entropy=-0.6773 logstd0_raw=[-2.215 -1.943 -1.949 -1.871 -1.949] lr=0.0003 dec=3.74M
+[ppo] EVb(lam=0.95)=0.891 EVb(lam=1)=0.795 ret_std=112.8 T=32 dec=3.80M
+[grad] upd=57  norm  ctr=3.739  cri=3.341  msg=3.219  comm=0.0523  aux=0.000  total=3.826  | clip=0.2415  → ctr 실효 스텝 = ctr×clip = 0.9032
+[ppo] upd=57 approx_kl=0.00604 clipfrac=0.0709 entropy=-0.6443 logstd0_raw=[-2.211 -1.937 -1.952 -1.880 -1.951] lr=0.0003 dec=3.80M
+[ppo] EVb(lam=0.95)=0.910 EVb(lam=1)=0.832 ret_std=115.3 T=32 dec=3.87M
+[grad] upd=58  norm  ctr=3.350  cri=2.867  msg=2.786  comm=0.0503  aux=0.000  total=3.397  | clip=0.2657  → ctr 실효 스텝 = ctr×clip = 0.8903
+[ppo] upd=58 approx_kl=0.00554 clipfrac=0.0621 entropy=-0.6285 logstd0_raw=[-2.212 -1.931 -1.941 -1.876 -1.952] lr=0.0003 dec=3.87M
+[ppo] EVb(lam=0.95)=0.905 EVb(lam=1)=0.824 ret_std=109.8 T=32 dec=3.93M
+[grad] upd=59  norm  ctr=3.200  cri=2.614  msg=2.515  comm=0.0411  aux=0.000  total=3.253  | clip=0.2889  → ctr 실효 스텝 = ctr×clip = 0.9246
+[ppo] upd=59 approx_kl=0.00569 clipfrac=0.0641 entropy=-0.6462 logstd0_raw=[-2.227 -1.936 -1.927 -1.865 -1.941] lr=0.0003 dec=3.93M
+[ON] dec=3.93M | ep=302 len~1085 | goal=68.5% vColl=29.8% oColl=0.0% TO=1.7% | R=0.715 | 1486 dec/s | epRet=825.913
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.839 ret_std=106.1 T=32 dec=4.00M
+[grad] upd=60  norm  ctr=2.219  cri=1.624  msg=1.523  comm=0.0434  aux=0.000  total=2.273  | clip=0.3296  → ctr 실효 스텝 = ctr×clip = 0.7314
+[ppo] upd=60 approx_kl=0.00507 clipfrac=0.0568 entropy=-0.6542 logstd0_raw=[-2.242 -1.941 -1.937 -1.857 -1.932] lr=0.0003 dec=4.00M
+[ppo] EVb(lam=0.95)=0.904 EVb(lam=1)=0.819 ret_std=101.0 T=32 dec=4.06M
+[grad] upd=61  norm  ctr=2.199  cri=1.536  msg=1.462  comm=0.0342  aux=0.000  total=2.233  | clip=0.3324  → ctr 실효 스텝 = ctr×clip = 0.7309
+[ppo] upd=61 approx_kl=0.00554 clipfrac=0.0629 entropy=-0.6529 logstd0_raw=[-2.247 -1.950 -1.938 -1.856 -1.919] lr=0.0003 dec=4.06M
+[ppo] EVb(lam=0.95)=0.887 EVb(lam=1)=0.784 ret_std=106.2 T=32 dec=4.13M
+[grad] upd=62  norm  ctr=3.200  cri=2.759  msg=2.665  comm=0.0397  aux=0.000  total=3.260  | clip=0.2592  → ctr 실효 스텝 = ctr×clip = 0.8294
+[ppo] upd=62 approx_kl=0.00592 clipfrac=0.0666 entropy=-0.6561 logstd0_raw=[-2.252 -1.951 -1.931 -1.856 -1.917] lr=0.0003 dec=4.13M
+[ppo] EVb(lam=0.95)=0.916 EVb(lam=1)=0.842 ret_std=114.9 T=32 dec=4.19M
+[grad] upd=63  norm  ctr=2.428  cri=1.816  msg=1.743  comm=0.0415  aux=0.000  total=2.466  | clip=0.3088  → ctr 실효 스텝 = ctr×clip = 0.7499
+[ppo] upd=63 approx_kl=0.00605 clipfrac=0.0717 entropy=-0.6597 logstd0_raw=[-2.255 -1.949 -1.930 -1.853 -1.912] lr=0.0003 dec=4.19M
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.827 ret_std=121.6 T=32 dec=4.26M
+[grad] upd=64  norm  ctr=5.270  cri=4.833  msg=4.737  comm=0.0497  aux=0.000  total=5.337  | clip=0.2435  → ctr 실효 스텝 = ctr×clip = 1.2832
+[ppo] upd=64 approx_kl=0.00612 clipfrac=0.0730 entropy=-0.6377 logstd0_raw=[-2.264 -1.951 -1.920 -1.853 -1.910] lr=0.0003 dec=4.26M
+[ON] dec=4.26M | ep=277 len~1183 | goal=62.8% vColl=36.1% oColl=0.0% TO=1.1% | R=0.729 | 1477 dec/s | epRet=715.976
+[ppo] EVb(lam=0.95)=0.925 EVb(lam=1)=0.857 ret_std=125.0 T=32 dec=4.33M
+[grad] upd=65  norm  ctr=3.714  cri=3.265  msg=3.182  comm=0.0549  aux=0.000  total=3.769  | clip=0.2507  → ctr 실효 스텝 = ctr×clip = 0.9310
+[ppo] upd=65 approx_kl=0.00611 clipfrac=0.0714 entropy=-0.6928 logstd0_raw=[-2.273 -1.939 -1.915 -1.850 -1.908] lr=0.0003 dec=4.33M
+[ppo] EVb(lam=0.95)=0.912 EVb(lam=1)=0.834 ret_std=120.0 T=32 dec=4.39M
+[grad] upd=66  norm  ctr=3.324  cri=2.855  msg=2.788  comm=0.0572  aux=0.000  total=3.364  | clip=0.2493  → ctr 실효 스텝 = ctr×clip = 0.8285
+[ppo] upd=66 approx_kl=0.00488 clipfrac=0.0515 entropy=-0.7168 logstd0_raw=[-2.271 -1.933 -1.910 -1.851 -1.919] lr=0.0003 dec=4.39M
+[ppo] EVb(lam=0.95)=0.910 EVb(lam=1)=0.830 ret_std=115.1 T=32 dec=4.46M
+[grad] upd=67  norm  ctr=3.268  cri=2.791  msg=2.703  comm=0.0558  aux=0.000  total=3.324  | clip=0.2793  → ctr 실효 스텝 = ctr×clip = 0.9129
+[ppo] upd=67 approx_kl=0.00623 clipfrac=0.0652 entropy=-0.7181 logstd0_raw=[-2.269 -1.947 -1.916 -1.859 -1.900] lr=0.0003 dec=4.46M
+[ppo] EVb(lam=0.95)=0.925 EVb(lam=1)=0.857 ret_std=109.3 T=32 dec=4.52M
+[grad] upd=68  norm  ctr=2.985  cri=2.414  msg=2.323  comm=0.0490  aux=0.000  total=3.033  | clip=0.3007  → ctr 실효 스텝 = ctr×clip = 0.8975
+[ppo] upd=68 approx_kl=0.00550 clipfrac=0.0606 entropy=-0.7595 logstd0_raw=[-2.280 -1.942 -1.923 -1.852 -1.880] lr=0.0003 dec=4.52M
+[ppo] EVb(lam=0.95)=0.905 EVb(lam=1)=0.819 ret_std=110.1 T=32 dec=4.59M
+[grad] upd=69  norm  ctr=2.484  cri=1.802  msg=1.741  comm=0.0436  aux=0.000  total=2.517  | clip=0.3004  → ctr 실효 스텝 = ctr×clip = 0.7463
+[ppo] upd=69 approx_kl=0.00529 clipfrac=0.0565 entropy=-0.7472 logstd0_raw=[-2.285 -1.930 -1.918 -1.848 -1.882] lr=0.0003 dec=4.59M
+[ON] dec=4.59M | ep=335 len~978 | goal=62.1% vColl=37.6% oColl=0.0% TO=0.3% | R=0.781 | 1470 dec/s | epRet=790.748
+[ppo] EVb(lam=0.95)=0.904 EVb(lam=1)=0.815 ret_std=110.1 T=32 dec=4.65M
+[grad] upd=70  norm  ctr=2.331  cri=1.777  msg=1.701  comm=0.0576  aux=0.000  total=2.373  | clip=0.3006  → ctr 실효 스텝 = ctr×clip = 0.7008
+[ppo] upd=70 approx_kl=0.00507 clipfrac=0.0571 entropy=-0.7908 logstd0_raw=[-2.293 -1.928 -1.916 -1.849 -1.867] lr=0.0003 dec=4.65M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.849 ret_std=113.1 T=32 dec=4.72M
+[grad] upd=71  norm  ctr=3.350  cri=2.747  msg=2.668  comm=0.0493  aux=0.000  total=3.395  | clip=0.2827  → ctr 실효 스텝 = ctr×clip = 0.9472
+[ppo] upd=71 approx_kl=0.00618 clipfrac=0.0737 entropy=-0.8096 logstd0_raw=[-2.294 -1.924 -1.913 -1.857 -1.863] lr=0.0003 dec=4.72M
+[ppo] EVb(lam=0.95)=0.915 EVb(lam=1)=0.835 ret_std=113.5 T=32 dec=4.78M
+[grad] upd=72  norm  ctr=2.634  cri=1.989  msg=1.918  comm=0.0535  aux=0.000  total=2.669  | clip=0.3210  → ctr 실효 스텝 = ctr×clip = 0.8456
+[ppo] upd=72 approx_kl=0.00526 clipfrac=0.0577 entropy=-0.8636 logstd0_raw=[-2.297 -1.923 -1.921 -1.853 -1.870] lr=0.0003 dec=4.78M
+[ppo] EVb(lam=0.95)=0.911 EVb(lam=1)=0.831 ret_std=115.8 T=32 dec=4.85M
+[grad] upd=73  norm  ctr=2.463  cri=1.909  msg=1.824  comm=0.0601  aux=0.000  total=2.511  | clip=0.2928  → ctr 실효 스텝 = ctr×clip = 0.7213
+[ppo] upd=73 approx_kl=0.00465 clipfrac=0.0459 entropy=-0.8927 logstd0_raw=[-2.301 -1.929 -1.908 -1.854 -1.867] lr=0.0003 dec=4.85M
+[ppo] EVb(lam=0.95)=0.909 EVb(lam=1)=0.824 ret_std=117.3 T=32 dec=4.92M
+[grad] upd=74  norm  ctr=3.429  cri=2.947  msg=2.889  comm=0.0562  aux=0.000  total=3.463  | clip=0.2474  → ctr 실효 스텝 = ctr×clip = 0.8484
+[ppo] upd=74 approx_kl=0.00511 clipfrac=0.0545 entropy=-0.9414 logstd0_raw=[-2.303 -1.926 -1.908 -1.855 -1.855] lr=0.0003 dec=4.92M
+[ON] dec=4.92M | ep=294 len~1115 | goal=66.0% vColl=34.0% oColl=0.0% TO=0.0% | R=0.787 | 1463 dec/s | epRet=894.552
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.845 ret_std=119.3 T=32 dec=4.98M
+[grad] upd=75  norm  ctr=2.463  cri=1.863  msg=1.791  comm=0.0612  aux=0.000  total=2.507  | clip=0.2892  → ctr 실효 스텝 = ctr×clip = 0.7124
+[ppo] upd=75 approx_kl=0.00488 clipfrac=0.0497 entropy=-0.9794 logstd0_raw=[-2.305 -1.921 -1.902 -1.860 -1.857] lr=0.0003 dec=4.98M
+[ppo] EVb(lam=0.95)=0.910 EVb(lam=1)=0.828 ret_std=123.2 T=32 dec=5.05M
+[grad] upd=76  norm  ctr=4.041  cri=3.485  msg=3.407  comm=0.0652  aux=0.000  total=4.088  | clip=0.2592  → ctr 실효 스텝 = ctr×clip = 1.0476
+[ppo] upd=76 approx_kl=0.00575 clipfrac=0.0624 entropy=-0.9640 logstd0_raw=[-2.300 -1.914 -1.911 -1.847 -1.855] lr=0.0003 dec=5.05M
+[ppo] EVb(lam=0.95)=0.894 EVb(lam=1)=0.801 ret_std=117.6 T=32 dec=5.11M
+[grad] upd=77  norm  ctr=3.508  cri=3.073  msg=3.018  comm=0.0613  aux=0.000  total=3.547  | clip=0.2271  → ctr 실효 스텝 = ctr×clip = 0.7967
+[ppo] upd=77 approx_kl=0.00435 clipfrac=0.0452 entropy=-0.9165 logstd0_raw=[-2.304 -1.930 -1.912 -1.844 -1.856] lr=0.0003 dec=5.11M
+[ppo] EVb(lam=0.95)=0.908 EVb(lam=1)=0.834 ret_std=114.6 T=32 dec=5.18M
+[grad] upd=78  norm  ctr=3.352  cri=2.886  msg=2.826  comm=0.0699  aux=0.000  total=3.391  | clip=0.2640  → ctr 실효 스텝 = ctr×clip = 0.8851
+[ppo] upd=78 approx_kl=0.00478 clipfrac=0.0524 entropy=-0.9022 logstd0_raw=[-2.303 -1.931 -1.911 -1.844 -1.857] lr=0.0003 dec=5.18M
+[ppo] EVb(lam=0.95)=0.902 EVb(lam=1)=0.820 ret_std=117.1 T=32 dec=5.24M
+[grad] upd=79  norm  ctr=4.241  cri=3.708  msg=3.622  comm=0.0710  aux=0.000  total=4.293  | clip=0.2544  → ctr 실효 스텝 = ctr×clip = 1.0788
+[ppo] upd=79 approx_kl=0.00558 clipfrac=0.0568 entropy=-0.9222 logstd0_raw=[-2.301 -1.933 -1.911 -1.844 -1.852] lr=0.0003 dec=5.24M
+[ON] dec=5.24M | ep=269 len~1218 | goal=60.2% vColl=39.4% oColl=0.0% TO=0.4% | R=0.688 | 1461 dec/s | epRet=746.649
+[ppo] EVb(lam=0.95)=0.911 EVb(lam=1)=0.831 ret_std=117.7 T=32 dec=5.31M
+[grad] upd=80  norm  ctr=2.046  cri=1.481  msg=1.424  comm=0.0662  aux=0.000  total=2.078  | clip=0.3279  → ctr 실효 스텝 = ctr×clip = 0.6709
+[ppo] upd=80 approx_kl=0.00497 clipfrac=0.0556 entropy=-0.9418 logstd0_raw=[-2.301 -1.934 -1.915 -1.847 -1.843] lr=0.0003 dec=5.31M
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.835 ret_std=113.4 T=32 dec=5.37M
+[grad] upd=81  norm  ctr=2.494  cri=1.879  msg=1.834  comm=0.0556  aux=0.000  total=2.518  | clip=0.3042  → ctr 실효 스텝 = ctr×clip = 0.7586
+[ppo] upd=81 approx_kl=0.00435 clipfrac=0.0435 entropy=-0.9449 logstd0_raw=[-2.301 -1.933 -1.913 -1.846 -1.837] lr=0.0003 dec=5.37M
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.833 ret_std=116.5 T=32 dec=5.44M
+[grad] upd=82  norm  ctr=2.824  cri=2.197  msg=2.145  comm=0.0577  aux=0.000  total=2.851  | clip=0.2648  → ctr 실효 스텝 = ctr×clip = 0.7475
+[ppo] upd=82 approx_kl=0.00485 clipfrac=0.0523 entropy=-0.9498 logstd0_raw=[-2.306 -1.936 -1.901 -1.859 -1.830] lr=0.0003 dec=5.44M
+[ppo] EVb(lam=0.95)=0.922 EVb(lam=1)=0.846 ret_std=123.6 T=32 dec=5.51M
+[grad] upd=83  norm  ctr=3.314  cri=2.792  msg=2.743  comm=0.0695  aux=0.000  total=3.344  | clip=0.2525  → ctr 실효 스텝 = ctr×clip = 0.8368
+[ppo] upd=83 approx_kl=0.00509 clipfrac=0.0525 entropy=-0.9791 logstd0_raw=[-2.310 -1.936 -1.896 -1.860 -1.834] lr=0.0003 dec=5.51M
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.834 ret_std=116.4 T=32 dec=5.57M
+[grad] upd=84  norm  ctr=2.215  cri=1.590  msg=1.540  comm=0.0647  aux=0.000  total=2.242  | clip=0.3051  → ctr 실효 스텝 = ctr×clip = 0.6759
+[ppo] upd=84 approx_kl=0.00503 clipfrac=0.0494 entropy=-0.9596 logstd0_raw=[-2.319 -1.931 -1.894 -1.847 -1.821] lr=0.0003 dec=5.57M
+[ON] dec=5.57M | ep=282 len~1162 | goal=53.9% vColl=46.1% oColl=0.0% TO=0.0% | R=0.601 | 1461 dec/s | epRet=676.454
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.837 ret_std=118.8 T=32 dec=5.64M
+[grad] upd=85  norm  ctr=3.040  cri=2.492  msg=2.444  comm=0.0742  aux=0.000  total=3.069  | clip=0.2619  → ctr 실효 스텝 = ctr×clip = 0.7962
+[ppo] upd=85 approx_kl=0.00498 clipfrac=0.0522 entropy=-0.9717 logstd0_raw=[-2.319 -1.936 -1.893 -1.834 -1.817] lr=0.0003 dec=5.64M
+[ppo] EVb(lam=0.95)=0.927 EVb(lam=1)=0.856 ret_std=126.2 T=32 dec=5.70M
+[grad] upd=86  norm  ctr=3.106  cri=2.595  msg=2.536  comm=0.0834  aux=0.000  total=3.143  | clip=0.2932  → ctr 실효 스텝 = ctr×clip = 0.9107
+[ppo] upd=86 approx_kl=0.00586 clipfrac=0.0564 entropy=-0.9747 logstd0_raw=[-2.329 -1.933 -1.883 -1.825 -1.814] lr=0.0003 dec=5.70M
+[ppo] EVb(lam=0.95)=0.927 EVb(lam=1)=0.855 ret_std=122.1 T=32 dec=5.77M
+[grad] upd=87  norm  ctr=2.887  cri=2.315  msg=2.259  comm=0.0674  aux=0.000  total=2.920  | clip=0.2786  → ctr 실효 스텝 = ctr×clip = 0.8042
+[ppo] upd=87 approx_kl=0.00646 clipfrac=0.0690 entropy=-1.0377 logstd0_raw=[-2.328 -1.934 -1.888 -1.831 -1.808] lr=0.0003 dec=5.77M
+[ppo] EVb(lam=0.95)=0.900 EVb(lam=1)=0.817 ret_std=112.9 T=32 dec=5.83M
+[grad] upd=88  norm  ctr=3.786  cri=3.188  msg=3.129  comm=0.0798  aux=0.000  total=3.819  | clip=0.2853  → ctr 실효 스텝 = ctr×clip = 1.0799
+[ppo] upd=88 approx_kl=0.00571 clipfrac=0.0533 entropy=-1.0828 logstd0_raw=[-2.330 -1.934 -1.895 -1.828 -1.801] lr=0.0003 dec=5.83M
+[ppo] EVb(lam=0.95)=0.915 EVb(lam=1)=0.832 ret_std=105.2 T=32 dec=5.90M
+[grad] upd=89  norm  ctr=2.165  cri=1.449  msg=1.403  comm=0.0528  aux=0.000  total=2.187  | clip=0.3245  → ctr 실효 스텝 = ctr×clip = 0.7025
+[ppo] upd=89 approx_kl=0.00663 clipfrac=0.0712 entropy=-1.0962 logstd0_raw=[-2.334 -1.930 -1.884 -1.828 -1.799] lr=0.0003 dec=5.90M
+[ON] dec=5.90M | ep=255 len~1285 | goal=60.4% vColl=39.2% oColl=0.0% TO=0.4% | R=0.817 | 1461 dec/s | epRet=719.075
+[ppo] EVb(lam=0.95)=0.923 EVb(lam=1)=0.852 ret_std=107.7 T=32 dec=5.96M
+[grad] upd=90  norm  ctr=2.728  cri=2.135  msg=2.076  comm=0.0610  aux=0.000  total=2.763  | clip=0.2959  → ctr 실효 스텝 = ctr×clip = 0.8073
+[ppo] upd=90 approx_kl=0.00487 clipfrac=0.0470 entropy=-1.0819 logstd0_raw=[-2.335 -1.927 -1.879 -1.821 -1.794] lr=0.0003 dec=5.96M
+[ppo] EVb(lam=0.95)=0.927 EVb(lam=1)=0.857 ret_std=117.7 T=32 dec=6.03M
+[grad] upd=91  norm  ctr=2.719  cri=2.046  msg=2.003  comm=0.0699  aux=0.000  total=2.743  | clip=0.2692  → ctr 실효 스텝 = ctr×clip = 0.7320
+[ppo] upd=91 approx_kl=0.00515 clipfrac=0.0491 entropy=-1.0560 logstd0_raw=[-2.335 -1.928 -1.880 -1.819 -1.796] lr=0.0003 dec=6.03M
+[ppo] EVb(lam=0.95)=0.911 EVb(lam=1)=0.825 ret_std=122.7 T=32 dec=6.09M
+[grad] upd=92  norm  ctr=3.444  cri=2.851  msg=2.795  comm=0.0711  aux=0.000  total=3.479  | clip=0.2450  → ctr 실효 스텝 = ctr×clip = 0.8437
+[ppo] upd=92 approx_kl=0.00538 clipfrac=0.0596 entropy=-1.0667 logstd0_raw=[-2.340 -1.926 -1.884 -1.813 -1.791] lr=0.0003 dec=6.09M
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.833 ret_std=131.3 T=32 dec=6.16M
+[grad] upd=93  norm  ctr=4.398  cri=3.980  msg=3.919  comm=0.0893  aux=0.000  total=4.442  | clip=0.2336  → ctr 실효 스텝 = ctr×clip = 1.0274
+[ppo] upd=93 approx_kl=0.00484 clipfrac=0.0481 entropy=-1.0476 logstd0_raw=[-2.348 -1.918 -1.882 -1.815 -1.782] lr=0.0003 dec=6.16M
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.838 ret_std=130.5 T=32 dec=6.23M
+[grad] upd=94  norm  ctr=3.085  cri=2.527  msg=2.466  comm=0.1047  aux=0.000  total=3.123  | clip=0.2721  → ctr 실효 스텝 = ctr×clip = 0.8396
+[ppo] upd=94 approx_kl=0.00573 clipfrac=0.0620 entropy=-1.0672 logstd0_raw=[-2.342 -1.926 -1.883 -1.814 -1.780] lr=0.0003 dec=6.23M
+[ON] dec=6.23M | ep=257 len~1275 | goal=65.8% vColl=34.2% oColl=0.0% TO=0.0% | R=0.570 | 1460 dec/s | epRet=899.575
+[ppo] EVb(lam=0.95)=0.919 EVb(lam=1)=0.849 ret_std=135.8 T=32 dec=6.29M
+[grad] upd=95  norm  ctr=3.840  cri=3.390  msg=3.325  comm=0.1064  aux=0.000  total=3.883  | clip=0.2472  → ctr 실효 스텝 = ctr×clip = 0.9492
+[ppo] upd=95 approx_kl=0.00526 clipfrac=0.0523 entropy=-1.0982 logstd0_raw=[-2.347 -1.932 -1.886 -1.813 -1.773] lr=0.0003 dec=6.29M
+[ppo] EVb(lam=0.95)=0.919 EVb(lam=1)=0.838 ret_std=141.3 T=32 dec=6.36M
+[grad] upd=96  norm  ctr=4.180  cri=3.750  msg=3.687  comm=0.0925  aux=0.000  total=4.226  | clip=0.2280  → ctr 실효 스텝 = ctr×clip = 0.9531
+[ppo] upd=96 approx_kl=0.00474 clipfrac=0.0476 entropy=-1.1097 logstd0_raw=[-2.342 -1.928 -1.888 -1.817 -1.776] lr=0.0003 dec=6.36M
+[ppo] EVb(lam=0.95)=0.923 EVb(lam=1)=0.847 ret_std=131.7 T=32 dec=6.42M
+[grad] upd=97  norm  ctr=3.157  cri=2.584  msg=2.535  comm=0.0803  aux=0.000  total=3.187  | clip=0.2533  → ctr 실효 스텝 = ctr×clip = 0.7997
+[ppo] upd=97 approx_kl=0.00556 clipfrac=0.0526 entropy=-1.1595 logstd0_raw=[-2.347 -1.922 -1.881 -1.814 -1.778] lr=0.0003 dec=6.42M
+[ppo] EVb(lam=0.95)=0.912 EVb(lam=1)=0.839 ret_std=130.9 T=32 dec=6.49M
+[grad] upd=98  norm  ctr=5.358  cri=4.945  msg=4.880  comm=0.0962  aux=0.000  total=5.406  | clip=0.1994  → ctr 실효 스텝 = ctr×clip = 1.0686
+[ppo] upd=98 approx_kl=0.00433 clipfrac=0.0412 entropy=-1.1812 logstd0_raw=[-2.348 -1.922 -1.887 -1.818 -1.785] lr=0.0003 dec=6.49M
+[ppo] EVb(lam=0.95)=0.914 EVb(lam=1)=0.833 ret_std=128.7 T=32 dec=6.55M
+[grad] upd=99  norm  ctr=3.893  cri=3.486  msg=3.378  comm=0.1384  aux=0.000  total=3.971  | clip=0.2464  → ctr 실효 스텝 = ctr×clip = 0.9592
+[ppo] upd=99 approx_kl=0.00516 clipfrac=0.0504 entropy=-1.1776 logstd0_raw=[-2.348 -1.916 -1.895 -1.815 -1.784] lr=0.0003 dec=6.55M
+[ON] dec=6.55M | ep=283 len~1158 | goal=62.2% vColl=37.5% oColl=0.0% TO=0.4% | R=0.587 | 1452 dec/s | epRet=814.155
+[ppo] EVb(lam=0.95)=0.918 EVb(lam=1)=0.844 ret_std=129.8 T=32 dec=6.62M
+[grad] upd=100  norm  ctr=2.742  cri=2.263  msg=2.177  comm=0.0931  aux=0.000  total=2.795  | clip=0.2989  → ctr 실효 스텝 = ctr×clip = 0.8196
+[ppo] upd=100 approx_kl=0.00418 clipfrac=0.0376 entropy=-1.2286 logstd0_raw=[-2.351 -1.914 -1.907 -1.808 -1.771] lr=0.0003 dec=6.62M
+[ppo] EVb(lam=0.95)=0.931 EVb(lam=1)=0.865 ret_std=129.6 T=32 dec=6.68M
+[grad] upd=101  norm  ctr=2.291  cri=1.563  msg=1.486  comm=0.0902  aux=0.000  total=2.332  | clip=0.3447  → ctr 실효 스텝 = ctr×clip = 0.7895
+[ppo] upd=101 approx_kl=0.00570 clipfrac=0.0556 entropy=-1.2610 logstd0_raw=[-2.360 -1.919 -1.906 -1.811 -1.766] lr=0.0003 dec=6.68M
+[ppo] EVb(lam=0.95)=0.926 EVb(lam=1)=0.858 ret_std=123.0 T=32 dec=6.75M
+[grad] upd=102  norm  ctr=3.450  cri=2.886  msg=2.839  comm=0.0736  aux=0.000  total=3.477  | clip=0.2755  → ctr 실효 스텝 = ctr×clip = 0.9504
+[ppo] upd=102 approx_kl=0.00517 clipfrac=0.0517 entropy=-1.3373 logstd0_raw=[-2.366 -1.927 -1.906 -1.807 -1.754] lr=0.0003 dec=6.75M
+[ppo] EVb(lam=0.95)=0.920 EVb(lam=1)=0.843 ret_std=116.0 T=32 dec=6.82M
+[grad] upd=103  norm  ctr=3.500  cri=2.893  msg=2.845  comm=0.0741  aux=0.000  total=3.527  | clip=0.2810  → ctr 실효 스텝 = ctr×clip = 0.9833
+[ppo] upd=103 approx_kl=0.00596 clipfrac=0.0609 entropy=-1.3041 logstd0_raw=[-2.361 -1.928 -1.914 -1.808 -1.741] lr=0.0003 dec=6.82M
+[ppo] EVb(lam=0.95)=0.909 EVb(lam=1)=0.822 ret_std=116.9 T=32 dec=6.88M
+[grad] upd=104  norm  ctr=4.025  cri=3.475  msg=3.436  comm=0.0740  aux=0.000  total=4.051  | clip=0.2233  → ctr 실효 스텝 = ctr×clip = 0.8985
+[ppo] upd=104 approx_kl=0.00527 clipfrac=0.0570 entropy=-1.2925 logstd0_raw=[-2.362 -1.921 -1.916 -1.809 -1.729] lr=0.0003 dec=6.88M
+[ON] dec=6.88M | ep=273 len~1200 | goal=65.6% vColl=34.4% oColl=0.0% TO=0.0% | R=0.772 | 1446 dec/s | epRet=904.313
+[ppo] EVb(lam=0.95)=0.908 EVb(lam=1)=0.831 ret_std=125.2 T=32 dec=6.95M
+[grad] upd=105  norm  ctr=4.582  cri=4.077  msg=4.019  comm=0.0929  aux=0.000  total=4.621  | clip=0.2600  → ctr 실효 스텝 = ctr×clip = 1.1913
+[ppo] upd=105 approx_kl=0.00779 clipfrac=0.0781 entropy=-1.2970 logstd0_raw=[-2.361 -1.928 -1.927 -1.807 -1.728] lr=0.0003 dec=6.95M
+[ppo] EVb(lam=0.95)=0.915 EVb(lam=1)=0.836 ret_std=117.7 T=32 dec=7.01M
+[grad] upd=106  norm  ctr=3.394  cri=2.847  msg=2.818  comm=0.0748  aux=0.000  total=3.412  | clip=0.2533  → ctr 실효 스텝 = ctr×clip = 0.8595
+[ppo] upd=106 approx_kl=0.00527 clipfrac=0.0525 entropy=-1.3319 logstd0_raw=[-2.371 -1.918 -1.932 -1.807 -1.722] lr=0.0003 dec=7.01M
+[ppo] EVb(lam=0.95)=0.918 EVb(lam=1)=0.846 ret_std=119.0 T=32 dec=7.08M
+[grad] upd=107  norm  ctr=3.341  cri=2.736  msg=2.707  comm=0.0832  aux=0.000  total=3.360  | clip=0.2454  → ctr 실효 스텝 = ctr×clip = 0.8199
+[ppo] upd=107 approx_kl=0.00705 clipfrac=0.0613 entropy=-1.3634 logstd0_raw=[-2.370 -1.924 -1.934 -1.804 -1.724] lr=0.0003 dec=7.08M
+[ppo] EVb(lam=0.95)=0.907 EVb(lam=1)=0.820 ret_std=121.9 T=32 dec=7.14M
+[grad] upd=108  norm  ctr=3.785  cri=3.307  msg=3.266  comm=0.0817  aux=0.000  total=3.813  | clip=0.2312  → ctr 실효 스텝 = ctr×clip = 0.8750
+[ppo] upd=108 approx_kl=0.00711 clipfrac=0.0654 entropy=-1.3312 logstd0_raw=[-2.373 -1.917 -1.932 -1.808 -1.734] lr=0.0003 dec=7.14M
+[ppo] EVb(lam=0.95)=0.897 EVb(lam=1)=0.808 ret_std=124.2 T=32 dec=7.21M
+[grad] upd=109  norm  ctr=3.604  cri=3.082  msg=3.056  comm=0.0839  aux=0.000  total=3.623  | clip=0.2204  → ctr 실효 스텝 = ctr×clip = 0.7941
+[ppo] upd=109 approx_kl=0.00610 clipfrac=0.0657 entropy=-1.3081 logstd0_raw=[-2.373 -1.914 -1.939 -1.817 -1.736] lr=0.0003 dec=7.21M
+[ON] dec=7.21M | ep=285 len~1150 | goal=67.7% vColl=32.3% oColl=0.0% TO=0.0% | R=0.788 | 1438 dec/s | epRet=1009.044
+[ppo] EVb(lam=0.95)=0.921 EVb(lam=1)=0.850 ret_std=120.7 T=32 dec=7.27M
+[grad] upd=110  norm  ctr=3.108  cri=2.438  msg=2.405  comm=0.0910  aux=0.000  total=3.129  | clip=0.2370  → ctr 실효 스텝 = ctr×clip = 0.7367
+[ppo] upd=110 approx_kl=0.00709 clipfrac=0.0749 entropy=-1.3117 logstd0_raw=[-2.371 -1.922 -1.924 -1.822 -1.744] lr=0.0003 dec=7.27M
+[ppo] EVb(lam=0.95)=0.916 EVb(lam=1)=0.834 ret_std=125.3 T=32 dec=7.34M
+[grad] upd=111  norm  ctr=3.201  cri=2.488  msg=2.455  comm=0.0811  aux=0.000  total=3.219  | clip=0.2600  → ctr 실효 스텝 = ctr×clip = 0.8324
+[ppo] upd=111 approx_kl=0.00585 clipfrac=0.0576 entropy=-1.3138 logstd0_raw=[-2.375 -1.921 -1.923 -1.823 -1.737] lr=0.0003 dec=7.34M
+[ppo] EVb(lam=0.95)=0.915 EVb(lam=1)=0.830 ret_std=129.2 T=32 dec=7.41M
+[grad] upd=112  norm  ctr=3.302  cri=2.629  msg=2.590  comm=0.0936  aux=0.000  total=3.325  | clip=0.2523  → ctr 실효 스텝 = ctr×clip = 0.8333
+[ppo] upd=112 approx_kl=0.00615 clipfrac=0.0628 entropy=-1.3118 logstd0_raw=[-2.373 -1.923 -1.932 -1.831 -1.736] lr=0.0003 dec=7.41M
+[ppo] EVb(lam=0.95)=0.924 EVb(lam=1)=0.851 ret_std=127.8 T=32 dec=7.47M
+[grad] upd=113  norm  ctr=2.852  cri=2.265  msg=2.206  comm=0.0893  aux=0.000  total=2.889  | clip=0.2868  → ctr 실효 스텝 = ctr×clip = 0.8180
+[ppo] upd=113 approx_kl=0.00601 clipfrac=0.0631 entropy=-1.3288 logstd0_raw=[-2.366 -1.932 -1.916 -1.840 -1.743] lr=0.0003 dec=7.47M
+[ppo] EVb(lam=0.95)=0.936 EVb(lam=1)=0.877 ret_std=126.9 T=32 dec=7.54M
+[grad] upd=114  norm  ctr=2.715  cri=2.184  msg=2.125  comm=0.0705  aux=0.000  total=2.755  | clip=0.2827  → ctr 실효 스텝 = ctr×clip = 0.7677
+[ppo] upd=114 approx_kl=0.00532 clipfrac=0.0473 entropy=-1.2998 logstd0_raw=[-2.363 -1.935 -1.921 -1.835 -1.740] lr=0.0003 dec=7.54M
+[ON] dec=7.54M | ep=261 len~1255 | goal=64.0% vColl=36.0% oColl=0.0% TO=0.0% | R=0.729 | 1432 dec/s | epRet=984.268
+[ppo] EVb(lam=0.95)=0.926 EVb(lam=1)=0.858 ret_std=127.6 T=32 dec=7.60M
+[grad] upd=115  norm  ctr=3.930  cri=3.303  msg=3.262  comm=0.0867  aux=0.000  total=3.956  | clip=0.2469  → ctr 실효 스텝 = ctr×clip = 0.9705
+[ppo] upd=115 approx_kl=0.00567 clipfrac=0.0600 entropy=-1.2929 logstd0_raw=[-2.372 -1.939 -1.917 -1.828 -1.743] lr=0.0003 dec=7.60M
+[ppo] EVb(lam=0.95)=0.920 EVb(lam=1)=0.855 ret_std=127.7 T=32 dec=7.67M
+[grad] upd=116  norm  ctr=3.524  cri=2.923  msg=2.878  comm=0.0989  aux=0.000  total=3.554  | clip=0.2585  → ctr 실효 스텝 = ctr×clip = 0.9111
+[ppo] upd=116 approx_kl=0.00971 clipfrac=0.0962 entropy=-1.2292 logstd0_raw=[-2.376 -1.942 -1.921 -1.817 -1.741] lr=0.0003 dec=7.67M
+[ppo] EVb(lam=0.95)=0.927 EVb(lam=1)=0.855 ret_std=116.2 T=32 dec=7.73M
+[grad] upd=117  norm  ctr=4.170  cri=3.694  msg=3.640  comm=0.0849  aux=0.000  total=4.208  | clip=0.2174  → ctr 실효 스텝 = ctr×clip = 0.9064
+[ppo] upd=117 approx_kl=0.00974 clipfrac=0.0936 entropy=-1.1691 logstd0_raw=[-2.385 -1.936 -1.916 -1.813 -1.733] lr=0.0003 dec=7.73M
+[ppo] EVb(lam=0.95)=0.913 EVb(lam=1)=0.830 ret_std=117.9 T=32 dec=7.80M
+[grad] upd=118  norm  ctr=2.887  cri=2.310  msg=2.275  comm=0.0810  aux=0.000  total=2.910  | clip=0.2793  → ctr 실효 스텝 = ctr×clip = 0.8064
+[ppo] upd=118 approx_kl=0.00568 clipfrac=0.0576 entropy=-1.1945 logstd0_raw=[-2.390 -1.936 -1.915 -1.814 -1.731] lr=0.0003 dec=7.80M
+[ppo] EVb(lam=0.95)=0.923 EVb(lam=1)=0.856 ret_std=124.3 T=32 dec=7.86M
+[grad] upd=119  norm  ctr=3.173  cri=2.521  msg=2.472  comm=0.0913  aux=0.000  total=3.202  | clip=0.2856  → ctr 실효 스텝 = ctr×clip = 0.9063
+[ppo] upd=119 approx_kl=0.00502 clipfrac=0.0495 entropy=-1.2242 logstd0_raw=[-2.402 -1.945 -1.918 -1.821 -1.726] lr=0.0003 dec=7.86M
+[ON] dec=7.86M | ep=259 len~1265 | goal=63.7% vColl=36.3% oColl=0.0% TO=0.0% | R=0.692 | 1425 dec/s | epRet=938.255
+[ppo] EVb(lam=0.95)=0.925 EVb(lam=1)=0.855 ret_std=124.1 T=32 dec=7.93M
+[grad] upd=120  norm  ctr=2.363  cri=1.652  msg=1.620  comm=0.0919  aux=0.000  total=2.382  | clip=0.3209  → ctr 실효 스텝 = ctr×clip = 0.7582
+[ppo] upd=120 approx_kl=0.00438 clipfrac=0.0435 entropy=-1.2632 logstd0_raw=[-2.398 -1.934 -1.924 -1.820 -1.727] lr=0.0003 dec=7.93M
+[ppo] EVb(lam=0.95)=0.915 EVb(lam=1)=0.836 ret_std=122.1 T=32 dec=8.00M
+[grad] upd=121  norm  ctr=3.224  cri=2.702  msg=2.676  comm=0.1071  aux=0.000  total=3.245  | clip=0.2419  → ctr 실효 스텝 = ctr×clip = 0.7801
+[ppo] upd=121 approx_kl=0.00547 clipfrac=0.0571 entropy=-1.2742 logstd0_raw=[-2.395 -1.936 -1.925 -1.825 -1.736] lr=0.0003 dec=8.00M
+[ppo] EVb(lam=0.95)=0.924 EVb(lam=1)=0.847 ret_std=124.3 T=32 dec=8.06M
+[grad] upd=122  norm  ctr=3.804  cri=3.277  msg=3.249  comm=0.0935  aux=0.000  total=3.823  | clip=0.2245  → ctr 실효 스텝 = ctr×clip = 0.8541
+[ppo] upd=122 approx_kl=0.00579 clipfrac=0.0649 entropy=-1.2459 logstd0_raw=[-2.393 -1.933 -1.925 -1.826 -1.745] lr=0.0003 dec=8.06M
+[ppo] EVb(lam=0.95)=0.931 EVb(lam=1)=0.868 ret_std=130.4 T=32 dec=8.13M
+[grad] upd=123  norm  ctr=2.689  cri=2.047  msg=2.002  comm=0.1027  aux=0.000  total=2.716  | clip=0.2829  → ctr 실효 스텝 = ctr×clip = 0.7609
+[ppo] upd=123 approx_kl=0.00457 clipfrac=0.0454 entropy=-1.2280 logstd0_raw=[-2.391 -1.931 -1.923 -1.820 -1.761] lr=0.0003 dec=8.13M
+[ppo] EVb(lam=0.95)=0.936 EVb(lam=1)=0.874 ret_std=128.5 T=32 dec=8.19M
+[grad] upd=124  norm  ctr=2.369  cri=1.719  msg=1.691  comm=0.0993  aux=0.000  total=2.387  | clip=0.3017  → ctr 실효 스텝 = ctr×clip = 0.7147
+[ppo] upd=124 approx_kl=0.00498 clipfrac=0.0516 entropy=-1.2344 logstd0_raw=[-2.395 -1.931 -1.917 -1.825 -1.766] lr=0.0003 dec=8.19M
+[ON] dec=8.19M | ep=284 len~1154 | goal=68.3% vColl=31.7% oColl=0.0% TO=0.0% | R=0.697 | 1419 dec/s | epRet=1036.274
+[ppo] EVb(lam=0.95)=0.927 EVb(lam=1)=0.856 ret_std=127.3 T=32 dec=8.26M
+[grad] upd=125  norm  ctr=2.661  cri=1.921  msg=1.881  comm=0.1077  aux=0.000  total=2.685  | clip=0.3040  → ctr 실효 스텝 = ctr×clip = 0.8089
+[ppo] upd=125 approx_kl=0.00458 clipfrac=0.0446 entropy=-1.2702 logstd0_raw=[-2.402 -1.936 -1.920 -1.819 -1.763] lr=0.0003 dec=8.26M
+[ppo] EVb(lam=0.95)=0.925 EVb(lam=1)=0.851 ret_std=123.4 T=32 dec=8.32M
+[grad] upd=126  norm  ctr=4.218  cri=3.605  msg=3.556  comm=0.1057  aux=0.000  total=4.248  | clip=0.2736  → ctr 실효 스텝 = ctr×clip = 1.1539
+[ppo] upd=126 approx_kl=0.00503 clipfrac=0.0534 entropy=-1.2817 logstd0_raw=[-2.405 -1.930 -1.923 -1.817 -1.756] lr=0.0003 dec=8.32M
+[ppo] EVb(lam=0.95)=0.938 EVb(lam=1)=0.882 ret_std=123.1 T=32 dec=8.39M
+[grad] upd=127  norm  ctr=3.423  cri=2.754  msg=2.705  comm=0.1054  aux=0.000  total=3.453  | clip=0.2954  → ctr 실효 스텝 = ctr×clip = 1.0111
+[ppo] upd=127 approx_kl=0.00531 clipfrac=0.0517 entropy=-1.3359 logstd0_raw=[-2.405 -1.933 -1.919 -1.818 -1.760] lr=0.0003 dec=8.39M
+[ppo] EVb(lam=0.95)=0.937 EVb(lam=1)=0.873 ret_std=122.6 T=32 dec=8.45M
+[grad] upd=128  norm  ctr=2.697  cri=1.944  msg=1.886  comm=0.0768  aux=0.000  total=2.725  | clip=0.3021  → ctr 실효 스텝 = ctr×clip = 0.8149
+[ppo] upd=128 approx_kl=0.00551 clipfrac=0.0563 entropy=-1.3166 logstd0_raw=[-2.408 -1.916 -1.914 -1.810 -1.763] lr=0.0003 dec=8.45M
+[ppo] EVb(lam=0.95)=0.934 EVb(lam=1)=0.871 ret_std=121.7 T=32 dec=8.52M
+[grad] upd=129  norm  ctr=2.701  cri=2.020  msg=1.981  comm=0.0800  aux=0.000  total=2.722  | clip=0.3107  → ctr 실효 스텝 = ctr×clip = 0.8391
+[ppo] upd=129 approx_kl=0.00515 clipfrac=0.0523 entropy=-1.3676 logstd0_raw=[-2.411 -1.924 -1.914 -1.802 -1.757] lr=0.0003 dec=8.52M
+[ON] dec=8.52M | ep=284 len~1154 | goal=67.6% vColl=31.7% oColl=0.0% TO=0.7% | R=0.761 | 1415 dec/s | epRet=933.197
+[ppo] EVb(lam=0.95)=0.923 EVb(lam=1)=0.845 ret_std=124.1 T=32 dec=8.59M
+[grad] upd=130  norm  ctr=3.101  cri=2.537  msg=2.494  comm=0.0837  aux=0.000  total=3.128  | clip=0.2771  → ctr 실효 스텝 = ctr×clip = 0.8592
+[ppo] upd=130 approx_kl=0.00458 clipfrac=0.0465 entropy=-1.4406 logstd0_raw=[-2.408 -1.927 -1.911 -1.805 -1.758] lr=0.0003 dec=8.59M
+[ppo] EVb(lam=0.95)=0.930 EVb(lam=1)=0.863 ret_std=127.5 T=32 dec=8.65M
+[grad] upd=131  norm  ctr=3.024  cri=2.363  msg=2.325  comm=0.0853  aux=0.000  total=3.045  | clip=0.2949  → ctr 실효 스텝 = ctr×clip = 0.8916
+[ppo] upd=131 approx_kl=0.00504 clipfrac=0.0506 entropy=-1.4541 logstd0_raw=[-2.411 -1.926 -1.911 -1.800 -1.762] lr=0.0003 dec=8.65M
+[ppo] EVb(lam=0.95)=0.928 EVb(lam=1)=0.857 ret_std=127.5 T=32 dec=8.72M
+[grad] upd=132  norm  ctr=2.638  cri=1.858  msg=1.827  comm=0.0799  aux=0.000  total=2.655  | clip=0.2775  → ctr 실효 스텝 = ctr×clip = 0.7321
+[ppo] upd=132 approx_kl=0.00497 clipfrac=0.0543 entropy=-1.4968 logstd0_raw=[-2.419 -1.926 -1.911 -1.800 -1.761] lr=0.0003 dec=8.72M
+[ppo] EVb(lam=0.95)=0.926 EVb(lam=1)=0.858 ret_std=133.8 T=32 dec=8.78M
+[grad] upd=133  norm  ctr=3.780  cri=3.119  msg=3.093  comm=0.0951  aux=0.000  total=3.796  | clip=0.2551  → ctr 실효 스텝 = ctr×clip = 0.9641
+[ppo] upd=133 approx_kl=0.00493 clipfrac=0.0486 entropy=-1.5339 logstd0_raw=[-2.429 -1.927 -1.911 -1.800 -1.765] lr=0.0003 dec=8.78M
+[ppo] EVb(lam=0.95)=0.931 EVb(lam=1)=0.870 ret_std=131.1 T=32 dec=8.85M
+[grad] upd=134  norm  ctr=4.318  cri=3.672  msg=3.638  comm=0.0976  aux=0.000  total=4.339  | clip=0.2373  → ctr 실효 스텝 = ctr×clip = 1.0245
+[ppo] upd=134 approx_kl=0.00533 clipfrac=0.0555 entropy=-1.5375 logstd0_raw=[-2.433 -1.937 -1.919 -1.788 -1.773] lr=0.0003 dec=8.85M
+[ON] dec=8.85M | ep=281 len~1166 | goal=66.5% vColl=33.5% oColl=0.0% TO=0.0% | R=0.588 | 1410 dec/s | epRet=855.105
+[ppo] EVb(lam=0.95)=0.930 EVb(lam=1)=0.855 ret_std=128.9 T=32 dec=8.91M
+[grad] upd=135  norm  ctr=3.344  cri=2.731  msg=2.697  comm=0.0932  aux=0.000  total=3.365  | clip=0.2915  → ctr 실효 스텝 = ctr×clip = 0.9748
+[ppo] upd=135 approx_kl=0.00552 clipfrac=0.0564 entropy=-1.5784 logstd0_raw=[-2.434 -1.931 -1.921 -1.792 -1.758] lr=0.0003 dec=8.91M
+[ppo] EVb(lam=0.95)=0.939 EVb(lam=1)=0.878 ret_std=129.7 T=32 dec=8.98M
+[grad] upd=136  norm  ctr=2.239  cri=1.422  msg=1.380  comm=0.0926  aux=0.000  total=2.260  | clip=0.3144  → ctr 실효 스텝 = ctr×clip = 0.7039
+[ppo] upd=136 approx_kl=0.00462 clipfrac=0.0456 entropy=-1.5843 logstd0_raw=[-2.437 -1.919 -1.923 -1.791 -1.766] lr=0.0003 dec=8.98M
+[ppo] EVb(lam=0.95)=0.933 EVb(lam=1)=0.871 ret_std=131.6 T=32 dec=9.04M
+[grad] upd=137  norm  ctr=4.253  cri=3.603  msg=3.543  comm=0.0967  aux=0.000  total=4.290  | clip=0.2312  → ctr 실효 스텝 = ctr×clip = 0.9832
+[ppo] upd=137 approx_kl=0.00696 clipfrac=0.0741 entropy=-1.5839 logstd0_raw=[-2.436 -1.917 -1.930 -1.781 -1.758] lr=0.0003 dec=9.04M
+saved -> C:/Users/OSH/VESSEL_checkpoints/comm_intent/qd2_trunk_d6_s44.pt (9.04M decisions, 107.0min)

@@ -1,0 +1,8 @@
+2026-10-29 15:00:50 meaneval qd2_ [trunk_d6] s44 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval
+2026-10-29 15:00:50 meaneval qd2_ [trunk_d6] s44 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval
+2026-10-29 15:00:50 meaneval qd2_ [trunk_d6] s44 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval
+2026-10-29 15:00:50 meaneval qd2_ [trunk_d6] s44 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval
+2026-10-29 15:29:04 trunk_d6 9.04397M 끝
+2026-10-29 15:30:52 trunk_d6 9.04397M 끝
+2026-10-29 15:30:52 trunk_d6 4M 끝
+2026-10-29 15:30:55 trunk_d6 4M 끝

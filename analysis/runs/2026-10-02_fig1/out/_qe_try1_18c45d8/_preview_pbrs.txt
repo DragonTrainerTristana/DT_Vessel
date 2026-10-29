@@ -1,0 +1,44 @@
+==============================================================================
+연속 위험 예고 PBRS 테스트 (imo·none, CPU)
+==============================================================================
+  PASS  a Φ 56 m 경계 연속  dist 55.9990/56.0010  Φ0 -0.846948/-0.846942  |ΔΦ|=5.65e-06  (대조: risk_rw(반경56) 0.4900/0.0000)
+  PASS  a 두 배 Φ 대칭(같은 g·h·w)  [-0.8469475196669093, -0.8469475196669093]
+  PASS  a Φ 300 m 경계 연속  dist 299.9990/300.0010  Φ0 -0.000003/0.000000  |ΔΦ|=2.79e-06  (대조: risk_rw(반경56) 0.0000/0.0000)
+  PASS  b 충돌로 끝남(같은 결정, c 무관)  t_end=13 outcome=2
+  PASS  b 끝난 결정 F == 0 (두 배, 보상 차 정확히 0)  F=[0.0, 0.0]
+  PASS  b 재출현 첫 결정 F == 0 (두 배, 보상 차 정확히 0)  F=[0.0, 0.0]
+  PASS  b 끝나기 전 F = γΦ′ − Φ (0 아님) = 보상 차  F[0..2]=[0.00587, 0.0059, 0.00593]  max|F−(γΦ′−Φ)|=0.00e+00
+  PASS  c 조우 동안 끝난 배 없음 · 300 m 밖 시작 · 지나감  dist 340.1→min 30.0→119.8
+  PASS  c 300 m 진입 계단 없음(첫 비0 Φ · 240 m 밖 max|F|)  첫 비0 Φ=-1.06e-03 @ dist 299.51  240 m 밖 max|F|=0.00493
+  INFO  c 전체 max|F|=+0.0387 @ 결정 313 (dist 47.5 m, 최근접 결정 282)
+  PASS  c Σγ^tF_t = γ^TΦ_T − Φ_0 (= 0)  Σγ^tF=[1.734723475976807e-18, 1.734723475976807e-18]  |오차|=1.7e-18  minΦ=-0.7496  (할인 없는 ΣF=[1.1980440225530566, 1.1980440225530566])
+  PASS  c 퍼텐셜이 실제로 움직임(minΦ < −0.3)  
+  PASS  d 우현 변침이 dcpa 를 키움  dcpa 직진 30.000 변침 32.106
+  PASS  d 변침 F > 직진 F, 변침 F > 0  F 직진 0.00088  변침 0.03921  Φ0 -0.3333
+  PASS  e 계수 0 이면 쌍 퍼텐셜 키·last_preview_F None(연산 없음)  
+Exception in thread Thread-1 (_readerthread):
+Traceback (most recent call last):
+  File "C:\Users\OSH\anaconda3\envs\mltest\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "C:\Users\OSH\anaconda3\envs\mltest\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\OSH\anaconda3\envs\mltest\lib\subprocess.py", line 1515, in _readerthread
+    buffer.append(fh.read())
+UnicodeDecodeError: 'cp949' codec can't decode byte 0xe2 in position 18: illegal multibyte sequence
+  ★FAIL  e_off_equals_base 예외  TypeError: write() argument must be str, not None
+  PASS  f j·k 충돌(i·m 은 진행 중)  t=4 done=[False, True, True, False] oc=[0, 2, 2, 0]
+  PASS  f i 의 F = 남은 쌍(i,m) 몫만 · (i,j) 몫 0  F_i=-0.00646 (i,m) 몫=-0.00646  직전 φ_ij=-0.4577 @ dist 195.3 m  옛 배당 F_i=0.45129
+  PASS  f 옛 규칙이면 스파이크(|옛 − 새| > 0.1)  
+  PASS  g 300 m 안 위험 코스 재출현 장면 찾음  seed=0
+  PASS  g 재출현 결정·다음 결정 i 의 F = 0 (음의 스파이크 없음)  F_i 0.00000/0.00000  재출현 φ′_ij=-0.1703  옛 배당 F_i=-0.16855
+  PASS  g 옛 규칙이면 음의 스파이크 · 셋째 결정 쌍 재개(|F| < 0.02)  셋째 결정 F_i=-0.00322 @ dist 156.2 m
+  PASS  h 멀어지는 쌍: tcpa = 0 · dcpa == 현재 거리(비트 같음)  
+  PASS  h 충돌 없이 지나감 · 끝 Φ = 0  최근접 3.03 m @ 결정 282 · 끝 dist 116.0 m
+  PASS  h CPA 통과 구간(60 m 안) max|F| < 0.1 (옛 마스크 +0.999)  max|F|=0.0587 @ 결정 304 (dist 26.2 m, CPA 뒤 22 결정) · 전체 max|F|=0.0587
+  PASS  h Σγ^tF_t = γ^TΦ_T − Φ_0 (= 0)  Σγ^tF=-1.11e-17  할인 없는 ΣF=1.7016
+  INFO  위험 정면(간격 3 m, 접근 3 m/s, c=1, T=120s, G=48m, TAPER=60m)
+        Φ 첫 비0 = -2.21e-03 @ dist 299.2 m · Φ @240 m 안쪽 첫 결정 = -0.3355
+        Φ @56 m = -0.8455 · minΦ = -1.0000 · 직진 접근 F @56 m ≈ 0.00516/결정
+        n_ 보상(56 m 안, 게이트 48, ×SUBSTEPS) #6 충돌코스 합 = 345.68 · #7 per-pair 합 = 64.81 · #6+#7 = 410.49 (47 결정, per-pair (-0.15, 3.0))
+
+★FAIL  24/25

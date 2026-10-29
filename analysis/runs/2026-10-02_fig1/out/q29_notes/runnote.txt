@@ -1,0 +1,21 @@
+10-29 병렬 3건 실행 기록 (LICS 서버, 저자 명령 블록 '10-29 병렬 3건' 그대로, 세션이 실행)
+- 준비: C:\work\DT_Vessel_v3 = feat/fig1-latent adcb7f2 · worktree C:\work\DT_Vessel_pbrs = feat/early-pbrs 18c45d8 (둘 다 저자가 적은 해시와 같음). 시작 전 GPU 사용 1.1 · 3.5 · 0.2 · 4.3 GB(다른 계정 작업 GPU 1·3)
+- 12:27:50 1) qd_ phase1 시작 → 12:28:19 순위 관문 v5 override 기록(_rank_override.txt, 근거 _repro_out_qd/_rank.log) · smoke · trunk · gate 는 10-28 기록으로 건너뜀 → 12:28–12:39 코덱(k=8 선택, k4 · k6 불통과) → 12:39:41 갈래 시작(off GPU 2, comm GPU 0)
+- 12:29:00 2) qe_ trunk 첫 시도(18c45d8) → 12:36:53 smoke 의 preflight 1종 ★FAIL(예고 PBRS 24/25): test_preview_pbrs.py 의 e_off_equals_base 가 `git show` 출력을 Windows 기본 cp949 로 읽어 UnicodeDecodeError → stdout None → TypeError. 학습 코드 문제 아님(검사 스크립트 인코딩)
+- 세션이 고침: subprocess.run 에 encoding='utf-8' 한 줄(검사 파일만) → 단독 실행 25/25 통과(e 계수 0 = base 2cd2fbd torch.equal 포함) → 커밋 fa772a3 · origin/feat/early-pbrs 에 push(실행기가 push 안 된 HEAD 를 거부함, fast-forward)
+- 12:40:52 두 번째 시도는 실행기가 멈춤(같은 접두어 qe_ 의 _commit.txt = 18c45d8, verify 변경도 '학습·평가 코드 다름'으로 봄). 학습 · 체크포인트 없음 → n_ 10-07 선례대로 첫 시도 출력을 Python/_repro_out_qe_try1_18c45d8/(드라이버 로그 3개 포함) · Dropbox out/_qe_try1_18c45d8/ 로 옮기고 같은 접두어로 다시
+- 12:42:06 qe_ trunk 세 번째 시도(fa772a3) 시작 → 12:48:38 smoke 통과(예고 PBRS PASS) → 12:48:40 순위 관문 override 기록 → trunk 시작(GPU 1)
+- 12:49 GPU 2 에 qd2_ trunk + qd_ off 갈래 둘(phase1 자동 선택이 qd2_ smoke 중 빈 GPU 2 를 고름) → 전용 메모리 15.7 / 16.3 GB, 공유(넘침) 294 MB = 다른 GPU 와 비슷. 안 죽이고 감시(넘침 · off 로그 정지). off 는 GPU 를 나눠 써서 comm 보다 느림(12:49 기준 off update 2 · comm 6)
+- 12:30:12 3) qd2_ trunk(시드 44, GPU 2) 시작 → 12:39:36 smoke 통과 → 12:39:37 순위 관문 override 기록 → 12:39:38 trunk 시작
+- 13:01 GPU 2 겹침으로 둘 다 느림: qd_ off 485 dec/s(같은 때 GPU 0 의 comm 1307) · qd2_ trunk 855 dec/s(GPU 1 의 qe_ 1772), GPU 3 은 사용률 0 % → 세션 판단으로 qd2_ 를 GPU 3 로 옮김(GPU 번호만 바뀜, 설정 · 시드 같음). qd2_ 는 그때 0.98M · 체크포인트 없음 · 평가 값 없음
+  - 13:02 qd2_ python 종료 → 실행기의 trunk 재시도가 같은 GPU 2 에서 처음부터 다시 띄움(13:02:14) → 13:06 드라이버 · 재시도 python 까지 종료, 프로세스 0 확인
+  - 첫 시도 출력 Python/_repro_out_qd2_try1_gpu2/(드라이버 로그 포함) · Dropbox out/_qd2_try1_gpu2/ 로 옮김
+  - 13:06:35 qd2_ trunk 다시 시작 = 저자 명령에서 VESSEL_F_GPU=2 → 3 만 바꿈 → 13:12:50 smoke 통과 → 13:12:52 trunk 시작(GPU 3)
+- 14:23:12 qd_ 갈래 off · comm 끝(분기 검사 ALL PASS) → 14:23:14 phase1 평가 단계 시작
+- 14:35:06 qe_ trunk 끝 → 14:35:08 관문 통과(마지막 4창 도착 64.5 %) → 14:35:30 저자 명령 4) qe_ 평가 4개(GPU 1) 시작. 헤더 reward_range=56.0 · 체크포인트 이름 확인. 예고 계수는 평가 헤더에 안 찍힘(meaneval_ckpts.sh 37행이 VESSEL_PREVIEW_PBRS_COEF=410 export)
+- 15:00:27 qd2_ trunk 끝 → 15:00:29 관문 통과(시드 44, 마지막 4창 도착 66.5 %) → 15:00:49 저자 명령 4) qd2_ 평가 4개(GPU 2, VESSEL_F_SEED=44) 시작. 헤더 reward_range=56.0 · ckpt qd2_trunk_d6_s44.step4M.pt / .pt 확인
+- 15:07 qe_ 표(--table) · 15:31 qd2_ 표(--table, VESSEL_F_SEED=44)
+- qd_ phase1: 15:09:30 주 평가 끝 → 15:09:31 곡선(체크포인트 15개, 4개씩) 시작
+- 16:02:43 저자 명령 5) 갈래 평균 행동 평가 8개(GPU 0)를 곡선 단계 중에 시작(명령 · 파일 같음, 체크포인트 10 · 12 · 14 · 16M 이미 있음 — 'phase1 완료' 를 기다리지 않은 건 세션 판단, 약 45분 단축). 헤더 ckpt · reward_range=56.0 · off fields=state 56 m · comm fields=intent 300 m 확인
+- ★16:23:15–21 GPU 드라이버 리셋(System 로그 nvlddmkm 153 다수) → 같은 초에 갈래 평균 행동 평가 8개 전부 · 곡선 3개(comm 14M · comm 16M · off 16.0563M) 가 `CUDA error: an illegal memory access` 로 죽음. 그 뒤 nvidia-smi 4장 전부 16165 MiB · 사용률 0 %, 새 python 에서 CUDA 장치 열기가 출력 없이 끝남(10-02 · 09-26 사고와 같은 모양). 그때 GPU 0 = 세션이 일찍 띄운 평가 8개 + 곡선 1개 + 다른 계정 작업. 원인 미확인(평가 프로세스 VRAM 을 미리 안 잼) — 세션이 곡선과 겹치게 평가를 일찍 띄운 것이 원인일 수 있음
+- 12:30 부터 학습 · 평가 python 우선순위 High 감시 스크립트(결과 무관)

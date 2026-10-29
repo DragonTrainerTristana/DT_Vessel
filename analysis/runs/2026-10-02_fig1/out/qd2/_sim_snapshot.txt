@@ -1,0 +1,12 @@
+  PASS test_snapshot_records_all_sim_keys
+  PASS test_env_name_map_is_exact
+  PASS test_mismatch_aborts_and_allow_applies
+  PASS test_legacy_snapshot_without_sim
+  PASS test_partial_sim_snapshot_is_not_a_mismatch
+  PASS test_missing_key_on_current_side_is_a_mismatch
+  PASS test_env_lines_emit_sim
+[t] envs=1 vessels=2 ring=1.0 crossing=2 comm_range=300.0 reward_range=300.0 farfield=0.0 perpair=-0.15^3.0 seed=1 dyn=imo obst=none  default(스냅샷에 없음)=['farfield_coef', 'perpair_coef', 'perpair_exp']
+  PASS test_make_env_applies_sim
+  PASS test_check_branch_rejects_sim_mismatch
+  PASS test_check_branch_accepts_same_sim
+VERDICT: ALL PASS 

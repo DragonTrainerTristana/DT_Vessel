@@ -1,0 +1,8 @@
+2026-10-29 14:35:31 meaneval qe_ [trunk_d6] s43 ARPA=56 fa772a3 fix(verify): read git show output as UTF-8 in the preview PBRS test GPU=1 → /c/work/DT_Vessel_pbrs/Python/_repro_out_qe/meaneval
+2026-10-29 14:35:31 meaneval qe_ [trunk_d6] s43 ARPA=56 fa772a3 fix(verify): read git show output as UTF-8 in the preview PBRS test GPU=1 → /c/work/DT_Vessel_pbrs/Python/_repro_out_qe/meaneval
+2026-10-29 14:35:31 meaneval qe_ [trunk_d6] s43 ARPA=56 fa772a3 fix(verify): read git show output as UTF-8 in the preview PBRS test GPU=1 → /c/work/DT_Vessel_pbrs/Python/_repro_out_qe/meaneval
+2026-10-29 14:35:31 meaneval qe_ [trunk_d6] s43 ARPA=56 fa772a3 fix(verify): read git show output as UTF-8 in the preview PBRS test GPU=1 → /c/work/DT_Vessel_pbrs/Python/_repro_out_qe/meaneval
+2026-10-29 15:05:36 trunk_d6 4M 끝
+2026-10-29 15:05:43 trunk_d6 9.04397M 끝
+2026-10-29 15:07:17 trunk_d6 9.04397M 끝
+2026-10-29 15:07:23 trunk_d6 4M 끝

@@ -9,3 +9,16 @@
 2026-10-28 20:35:31 끝 gate
 2026-10-28 20:35:32 시작 rankchk
 2026-10-28 20:35:33 ★멈춤 rankchk rc=1 — /c/work/DT_Vessel_v3/Python/_repro_out_qd/_rankchk.log 확인
+2026-10-29 12:28:18 배치 qd_ phase1 LICS-SERVER adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qd action_mode=course 흉내=0 시드=[43]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qd
+2026-10-29 12:28:19 건너뜀 smoke (이미 끝남)
+2026-10-29 12:28:19 시작 rankov
+2026-10-29 12:28:19 끝 rankov
+2026-10-29 12:28:20 건너뜀 trunk (이미 끝남)
+2026-10-29 12:28:21 건너뜀 gate (이미 끝남)
+2026-10-29 12:28:21 갈래 시드: 43
+2026-10-29 12:28:21 시작 codec
+2026-10-29 12:39:40 끝 codec
+2026-10-29 12:39:41 시작 branches
+2026-10-29 14:23:12 끝 branches
+2026-10-29 14:23:14 시작 eval
+2026-10-29 15:09:30 끝 eval

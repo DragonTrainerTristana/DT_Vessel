@@ -1,0 +1,41 @@
+[eval_mean] student drives with tanh(mean) — no sampling noise (diagnostic, not the P0 protocol)
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\_utils.py:102: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  untyped_storage = torch.UntypedStorage(self.size(), device=device)
+[eval] ckpt=qd_off_s43.step12M.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=33keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[eval] [!] max_partners 요청 4 ≠ 학습 8 → 학습값으로 맞춤
+[eval] [!] logstd_min 스냅샷 -3.0 적용(현재 env -2.3)
+[eval] envs=256 vessels=16 ring=1.0 crossing=0 comm_range=300.0 reward_range=56.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+  [qd_off_s43.step12M.pt] 11444 dec/s, ETA ~1933s
+  [qd_off_s43.step12M.pt] burn-in 270/5400 결정 (5%) 경과 1.6분 ETA ~31.2분
+  [qd_off_s43.step12M.pt] burn-in 540/5400 결정 (10%) 경과 3.4분 ETA ~30.5분
+  [qd_off_s43.step12M.pt] burn-in 810/5400 결정 (15%) 경과 5.2분 ETA ~29.5분
+  [qd_off_s43.step12M.pt] burn-in 1080/5400 결정 (20%) 경과 7.1분 ETA ~28.4분
+  [qd_off_s43.step12M.pt] burn-in 1350/5400 결정 (25%) 경과 8.9분 ETA ~26.7분
+  [qd_off_s43.step12M.pt] burn-in 1620/5400 결정 (30%) 경과 10.7분 ETA ~25.1분
+  [qd_off_s43.step12M.pt] burn-in 1890/5400 결정 (35%) 경과 12.5분 ETA ~23.3분
+  [qd_off_s43.step12M.pt] burn-in 2160/5400 결정 (40%) 경과 14.4분 ETA ~21.6분
+  [qd_off_s43.step12M.pt] 평가    2430/5400 결정 (45%) 경과 16.3분 ETA ~19.9분
+  [qd_off_s43.step12M.pt] 평가    2700/5400 결정 (50%) 경과 18.7분 ETA ~18.7분
+Traceback (most recent call last):
+  File "C:\work\DT_Vessel_v3\Python\runs_fig1\2026-10-02_fig1\eval_mean.py", line 30, in <module>
+    eval_ckpt.main()
+  File "C:\work/DT_Vessel_v3/Python\eval\eval_ckpt.py", line 579, in main
+    a = act(fs.get(), goal, self_s, sit)
+  File "C:\work/DT_Vessel_v3/Python\eval\eval_ckpt.py", line 163, in act
+    om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners,
+  File "C:\work\DT_Vessel_v3\Python\vessel_gym_train.py", line 441, in comm_gather
+    msg_all = policy.msg_actor(x, goal, self_s, sit) if msg_override is None else msg_override
+  File "C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\nn\modules\module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\work/DT_Vessel_v3/Python\networks.py", line 662, in forward
+    for k, idx in _moe_buckets(sit, self.num_experts):
+  File "C:\work/DT_Vessel_v3/Python\networks.py", line 175, in _moe_buckets
+    counts = torch.bincount(sit, minlength=num_experts).tolist()     # 유일한 동기화
+torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+

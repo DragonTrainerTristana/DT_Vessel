@@ -1,0 +1,49 @@
+=== vessel_gym 충실도 테스트 ===
+
+[1] 배칭 정확성 (배치 텐서 == C# 수식 스칼라 전사)
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:66: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu')
+  action=(+0.5,+0.8) 배치vs스칼라 최대오차 8.62e-07 [pos=(0.001,0.320) hdg=0.28 s=0.0795]
+  action=(-0.7,+1.0) 배치vs스칼라 최대오차 9.81e-07 [pos=(-0.001,0.320) hdg=-0.34 s=0.0795]
+  action=(+1.0,-0.5) 배치vs스칼라 최대오차 4.20e-05 [pos=(0.001,0.320) hdg=0.35 s=0.0795]
+  action=(+0.0,+1.0) 배치vs스칼라 최대오차 8.34e-07 [pos=(0.000,0.320) hdg=0.00 s=0.0795]
+  action=(+0.3,+0.0) 배치vs스칼라 최대오차 7.87e-07 [pos=(0.000,0.320) hdg=0.19 s=0.0795]
+[1] 배칭 정확성 PASS (최대오차 4.20e-05)
+
+[2] 물리 상식
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:92: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu')
+  full-rudder yawRate ≈ 2.020 deg/s (프로필 imo 기대 2.020, drag 로 소폭↓)
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:107: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env2 = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu')
+  직진 첫 서브스텝 속도 0.000400 (기대 0.000400 = ACCEL·DT 후 drag×0.3)
+[2] 물리 상식 PASS
+
+[3] 레이더 기하
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:121: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=1, n_vessels=1, device='cpu')
+  정면 ray0 거리 20.000 (이론 40-20=20)
+  우현 ray90 거리 56.000 (장애물 없음 → 56)
+[3] 레이더 기하 PASS
+
+[4] COLREGs 상황판정
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:139: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=1, n_vessels=2, device='cpu')
+  정면 마주봄 배0→배1 상황 = 1 (1=HeadOn 기대)
+  우현 횡단 배0→배1 상황 = 3 (GiveWay)
+[4] 상황판정 PASS
+
+[5] obs/step
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:163: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=8, n_vessels=16, device='cpu', seed=1)
+  obs shape (8, 16, 369), done 0, radar범위 [0.39,0.50] (이론 [-0.5,0.5])
+[5] obs/step PASS
+
+[6] 처리량
+C:\work\DT_Vessel_pbrs\Python\verify\test_vessel_gym_fidelity.py:184: UserWarning: VesselBatchEnv: crossing(기본 2=대척 편중배정, 학습·평가는 0) / reward_range(기본 56=DETECTION_RANGE, 학습·평가는 COMM_RANGE=300) 를 명시하지 않음 - 기본값이 학습 설정과 달라 기하·보상이 학습 run 과 비교 불가능해질 수 있음.
+  env = vg.VesselBatchEnv(num_envs=E, n_vessels=16, device=dev, seed=2)
+  device=cuda envs=1024 | 9172 env-step/s, 146760 agent-decision/s (Unity ~25×16=400/s 대비)
+  → 가속 배율 ≈ 367× (Unity 초당 ~400 agent-decision 기준)
+[6] 처리량 측정 완료
+
+=== 전체 통과 ===

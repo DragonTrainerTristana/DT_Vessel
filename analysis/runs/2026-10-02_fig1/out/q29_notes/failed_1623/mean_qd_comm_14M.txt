@@ -1,0 +1,34 @@
+[eval_mean] student drives with tanh(mean) — no sampling noise (diagnostic, not the P0 protocol)
+C:\Users\OSH\anaconda3\envs\mltest\lib\site-packages\torch\_utils.py:102: UserWarning: expandable_segments not supported on this platform (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\c10/cuda/CUDAAllocatorConfig.h:39.)
+  untyped_storage = torch.UntypedStorage(self.size(), device=device)
+[eval] ckpt=qd_comm_s43.step14M.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=33keys comm_ext=1 fields=intent groups=state+role+intent latent=0.0 partner_range=300.0 aux=0.0 codec=decode:00f3c0314972 comm_range=300.0 max_partners=8 snapshot=yes
+[eval] [!] max_partners 요청 4 ≠ 학습 8 → 학습값으로 맞춤
+[eval] [!] logstd_min 스냅샷 -3.0 적용(현재 env -2.3)
+[eval] [!] 코덱 복원: C:/work/DT_Vessel_v3/Python/_repro_out_qd/codec/s43/p46_k8_s0.pt sha=00f3c0314972 mode=decode
+[eval] envs=256 vessels=16 ring=1.0 crossing=0 comm_range=300.0 reward_range=56.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+  [qd_comm_s43.step14M.pt] 8435 dec/s, ETA ~2622s
+  [qd_comm_s43.step14M.pt] burn-in 270/5400 결정 (5%) 경과 2.2분 ETA ~41.8분
+  [qd_comm_s43.step14M.pt] burn-in 540/5400 결정 (10%) 경과 4.5분 ETA ~40.1분
+  [qd_comm_s43.step14M.pt] burn-in 810/5400 결정 (15%) 경과 6.8분 ETA ~38.5분
+  [qd_comm_s43.step14M.pt] burn-in 1080/5400 결정 (20%) 경과 9.2분 ETA ~36.7분
+  [qd_comm_s43.step14M.pt] burn-in 1350/5400 결정 (25%) 경과 11.5분 ETA ~34.5분
+  [qd_comm_s43.step14M.pt] burn-in 1620/5400 결정 (30%) 경과 13.8분 ETA ~32.3분
+  [qd_comm_s43.step14M.pt] burn-in 1890/5400 결정 (35%) 경과 16.2분 ETA ~30.1분
+  [qd_comm_s43.step14M.pt] burn-in 2160/5400 결정 (40%) 경과 18.5분 ETA ~27.7분
+Traceback (most recent call last):
+  File "C:\work\DT_Vessel_v3\Python\runs_fig1\2026-10-02_fig1\eval_mean.py", line 30, in <module>
+    eval_ckpt.main()
+  File "C:\work/DT_Vessel_v3/Python\eval\eval_ckpt.py", line 304, in main
+    obs, _, done, _ = env.step(a)
+  File "C:\work/DT_Vessel_v3/Python\vessel_gym.py", line 1901, in step
+    self._rp_legacy.update(self, self._last_pw, outcome)   # eval 병기용, 보상 무관
+  File "C:\work/DT_Vessel_v3/Python\vessel_gym.py", line 613, in update
+    ok_j = self.complies(self.role_j, self.dmax_j, self.dmin_j, self.so_j)
+  File "C:\work/DT_Vessel_v3/Python\vessel_gym.py", line 575, in complies
+    give = (role == SIT_HEADON) | (role == SIT_GIVEWAY)
+torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+

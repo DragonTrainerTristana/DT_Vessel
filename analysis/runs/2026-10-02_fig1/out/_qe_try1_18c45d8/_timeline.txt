@@ -1,0 +1,3 @@
+2026-10-29 12:29:20 배치 qe_ trunk 예고PBRS=410 LICS-SERVER 18c45d8 chore(runs_fig1): preview PBRS flag for qe_ and push check on the current branch 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qe action_mode=course 흉내=0 시드=[43]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_pbrs/Python/_repro_out_qe
+2026-10-29 12:29:20 시작 smoke
+2026-10-29 12:36:53 ★멈춤 smoke rc=1 — /c/work/DT_Vessel_pbrs/Python/_repro_out_qe/_smoke.log 확인

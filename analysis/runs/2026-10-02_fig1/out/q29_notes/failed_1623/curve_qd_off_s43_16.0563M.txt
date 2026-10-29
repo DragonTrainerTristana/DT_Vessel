@@ -1,0 +1,36 @@
+[eval] ckpt=qd_off_s43.pt ver=YUGIOH-2026-09-10 arm=ON msg_dim=6 attention=True pos_ground=True central_critic=True state_recon=0.05 radar=bottleneck/leaky msg_ln=True token_gain=8.0 agg=sum msg_gain=1.0 shared_enc=all moe=1/1.0/1 dyn=imo obst=none radar=56.0 sim=33keys comm_ext=1 fields=state groups=state+role latent=0.0 partner_range=56.0 aux=0.0 comm_range=300.0 max_partners=8 snapshot=yes
+[eval] [!] max_partners 요청 4 ≠ 학습 8 → 학습값으로 맞춤
+[eval] envs=256 vessels=16 ring=1.0 crossing=0 comm_range=300.0 reward_range=56.0 farfield=0.0 perpair=-0.15^3.0 seed=999 dyn=imo obst=none
+  [qd_off_s43.pt] 33775 dec/s, ETA ~655s
+  [qd_off_s43.pt] burn-in 270/5400 결정 (5%) 경과 0.5분 ETA ~10.1분
+  [qd_off_s43.pt] burn-in 540/5400 결정 (10%) 경과 1.1분 ETA ~9.8분
+  [qd_off_s43.pt] burn-in 810/5400 결정 (15%) 경과 1.7분 ETA ~9.5분
+  [qd_off_s43.pt] burn-in 1080/5400 결정 (20%) 경과 2.3분 ETA ~9.1분
+  [qd_off_s43.pt] burn-in 1350/5400 결정 (25%) 경과 2.9분 ETA ~8.6분
+  [qd_off_s43.pt] burn-in 1620/5400 결정 (30%) 경과 3.4분 ETA ~8.0분
+  [qd_off_s43.pt] burn-in 1890/5400 결정 (35%) 경과 4.0분 ETA ~7.5분
+  [qd_off_s43.pt] burn-in 2160/5400 결정 (40%) 경과 4.6분 ETA ~6.9분
+  [qd_off_s43.pt] 평가    2430/5400 결정 (45%) 경과 5.2분 ETA ~6.4분
+  [qd_off_s43.pt] 평가    2700/5400 결정 (50%) 경과 6.0분 ETA ~6.0분
+  [qd_off_s43.pt] 평가    2970/5400 결정 (55%) 경과 6.7분 ETA ~5.5분
+  [qd_off_s43.pt] 평가    3240/5400 결정 (60%) 경과 7.5분 ETA ~5.0분
+  [qd_off_s43.pt] 평가    3510/5400 결정 (65%) 경과 8.3분 ETA ~4.5분
+  [qd_off_s43.pt] 평가    3780/5400 결정 (70%) 경과 9.2분 ETA ~3.9분
+  [qd_off_s43.pt] 평가    4050/5400 결정 (75%) 경과 11.5분 ETA ~3.8분
+  [qd_off_s43.pt] 평가    4320/5400 결정 (80%) 경과 14.0분 ETA ~3.5분
+  [qd_off_s43.pt] 평가    4590/5400 결정 (85%) 경과 16.5분 ETA ~2.9분
+  [qd_off_s43.pt] 평가    4860/5400 결정 (90%) 경과 19.0분 ETA ~2.1분
+  [qd_off_s43.pt] 평가    5130/5400 결정 (95%) 경과 21.5분 ETA ~1.1분
+   [drain] 창 끝 미완 4094개 마감 시작 (최대 3000결정)
+Traceback (most recent call last):
+  File "C:\work\DT_Vessel_v3\Python\eval\eval_ckpt.py", line 1101, in <module>
+    main()
+  File "C:\work\DT_Vessel_v3\Python\eval\eval_ckpt.py", line 737, in main
+    obs, rew_step, done, outcome = env.step(a)
+  File "C:\work\DT_Vessel_v3\Python\vessel_gym.py", line 1935, in step
+    radar = radar.index_copy(0, rows, self._radar(self.pos.index_select(0, rows),
+  File "C:\work\DT_Vessel_v3\Python\vessel_gym.py", line 1200, in _radar
+    cand = self._obb_cand(o4, wx4, wz4, pos[:, None, j0:j1, :],
+  File "C:\work\DT_Vessel_v3\Python\vessel_gym.py", line 1250, in _obb_cand
+    return torch.where(valid, t_entry, torch.full_like(t_entry, float('inf')))
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 MiB. GPU 0 has a total capacity of 15.89 GiB of which 14.50 GiB is free. Of the allocated memory 106.31 MiB is allocated by PyTorch, and 19.69 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
