@@ -210,7 +210,7 @@ def e_off_equals_base():
           env._last_pw['preview_pair'] is None and env.last_preview_F is None)
     try:
         src = subprocess.run(['git', '-C', PYROOT, 'show', f'{BASE_REV}:Python/vessel_gym.py'],
-                             capture_output=True, text=True, check=True).stdout
+                             capture_output=True, text=True, encoding='utf-8', check=True).stdout   # Windows 기본 cp949 로 읽으면 한글·기호에서 깨짐
     except Exception as e:  # noqa: BLE001
         print(f"  SKIP  e base {BASE_REV} 비교 (git show 실패: {type(e).__name__})")
         return
