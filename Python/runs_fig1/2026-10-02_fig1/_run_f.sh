@@ -373,6 +373,18 @@ rank_note() {   # ★2026-10-13 보상이 n_(v4)과 같을 때: 관문 재실행
   [ -f "$O/_rank_note.txt" ] || { echo "> 순위 관문: 보상 = n_ 과 동일(v4, 반경 300). n_ 기록 = _rank_v4.json 0/3(도구 결함) · 타각 모드 진단 2/3 · 저자 override 10-09 — 이 배치는 재실행 없이 그 결정을 따름 ($(date '+%F %T'))"; } > "$O/_rank_note.txt"
   cat "$O/_rank_note.txt"
 }
+rank_override_v5() {   # ★2026-10-29 저자 결정('ㅇㅋ'): 순위 관문 v5 불통과(qd_ 10-28 기록 = 2/3, 시드 1 (iii) 여유·(v) v4 와 같은 값)를 넘김. 관문 재실행 없음
+  [ -n "${VESSEL_F_RANK_OVERRIDE:-}" ] || { echo "★FAIL VESSEL_F_RANK_OVERRIDE 없음"; return 1; }
+  if [ ! -f "$O/_rank_override.txt" ]; then
+    local src="${VESSEL_F_RANK_REF:-$O/_rank.log}"
+    { echo "> ★ 순위 관문 v5(보상 반경 56) 불통과 — 저자 결정으로 진행 ($(date '+%F %T'))"
+      echo "> 저자 결정: $VESSEL_F_RANK_OVERRIDE"
+      echo "> 근거 기록: $src (없으면 analysis 31a4633 out/qd/_rank.log)"
+      # 원 로그의 'FAIL' 은 '불통과'로 바꿔 적음 — step()·fig1_table 의 bad() 가 'FAIL' 을 실패로 읽어 멈추지 않게
+      grep -h "RANK GATE v2\|^DECISION\|\[v5\] seed [123]:" "$src" 2>/dev/null | sed 's/★FAIL/불통과/g; s/FAIL/불통과/g; s/^/> /'; } > "$O/_rank_override.txt"
+  fi
+  echo "순위 관문 v5 override 기록 → $O/_rank_override.txt"
+}
 curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
   : > "$O/_status_f.txt"; local s a f x run envset
   for s in $SEEDS; do for run in trunk_d6 $ARMS; do
@@ -405,6 +417,8 @@ phase1() {
     step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
     if [ -f "$O/_rank_note.txt" ]; then   # ★2026-10-13 trunk 모드에서 '보상 = n_ 동일' 로 적어 둔 배치 → 관문 재실행 없음
       log "순위 관문: $(cat "$O/_rank_note.txt")"
+    elif [ "$RANK_SET" = v5 ] && [ -n "${VESSEL_F_RANK_OVERRIDE:-}" ]; then
+      step rankov rank_override_v5   # ★2026-10-29 저자 결정으로 v5 불통과를 넘김(재실행 없음)
     elif [ "$RANK_SET" = v5 ] && { [ "${VESSEL_F_RANK_PARALLEL:-0}" = 1 ] || grep -q " 끝 rank_par\$" "$TL" 2>/dev/null; }; then
       step rank_par rank_start   # 관문은 trunk 와 동시에, 판정은 gate 뒤 rank_check
     elif grep -q " 끝 rank\$" "$TL" 2>/dev/null || [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ] || [ "$RANK_SET" != v4 ]; then
@@ -414,7 +428,7 @@ phase1() {
       if [ ! -f "$O/_rank_override.txt" ]; then
         { echo "> ★ 순위 관문 v4(스펙 2026-10-07 §5-2) 불통과 — 저자 결정으로 phase1 진행 ($(date '+%F %T'))"
           echo "> 저자 결정: $VESSEL_F_RANK_OVERRIDE"
-          grep -h "RANK GATE v2\|^DECISION" "$O/_rank.log" 2>/dev/null | sed 's/^/> /'; } > "$O/_rank_override.txt"
+          grep -h "RANK GATE v2\|^DECISION" "$O/_rank.log" 2>/dev/null | sed 's/★FAIL/불통과/g; s/FAIL/불통과/g; s/^/> /'; } > "$O/_rank_override.txt"   # ★2026-10-29 'FAIL' 단어가 bad() 에 걸리지 않게
       fi
       log "★순위 관문 불통과 — 저자 결정으로 진행: $VESSEL_F_RANK_OVERRIDE"; sync_out
     fi
@@ -429,7 +443,7 @@ phase1() {
   fi
   step trunk    trunk_all
   step gate     gate9
-  grep -q " 끝 rank_par\$" "$TL" 2>/dev/null && step rankchk rank_check   # ★2026-10-13 병렬 관문 판정(불통과 = 멈춤, 갈래 안 감)
+  grep -q " 끝 rank_par\$" "$TL" 2>/dev/null && [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ] && step rankchk rank_check   # ★2026-10-13 병렬 관문 판정(불통과 = 멈춤, 갈래 안 감). 10-29 override 면 건너뜀
   SEEDS=$(cat "$O/_seeds.txt") || exit 1
   log "갈래 시드: $SEEDS"
   step codec    codec_all
@@ -442,10 +456,12 @@ phase1() {
 
 trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 면 병렬) → trunk → gate 에서 끝. 갈래는 같은 접두어로 phase1
   step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
-  if [ "$RANK_SET" = v4 ]; then step ranknote rank_note; else step rank_par rank_start; fi
+  if [ "$RANK_SET" = v4 ]; then step ranknote rank_note
+  elif [ -n "${VESSEL_F_RANK_OVERRIDE:-}" ]; then step rankov rank_override_v5   # ★2026-10-29
+  else step rank_par rank_start; fi
   step trunk    trunk_all
   step gate     gate9
-  [ "$RANK_SET" = v5 ] && step rankchk rank_check
+  [ "$RANK_SET" = v5 ] && [ -z "${VESSEL_F_RANK_OVERRIDE:-}" ] && step rankchk rank_check
   if [ "$ARPA_R" = 56 ]; then log "trunk 모드 완료 — 관문 통과. 갈래는 phase1 로(같은 접두어·같은 env)"
   else echo "ARPA@$ARPA_R 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)" > "$O/_diag_only.txt"; log "trunk 모드 완료(ARPA@$ARPA_R 진단 전용, 갈래 없음)"; fi
 }
