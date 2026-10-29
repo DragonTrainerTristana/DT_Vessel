@@ -1,0 +1,24 @@
+19:16:04
+== qd_trunk_d6_s43.step2M.pt | top keys: ['model_state_dict', 'arm', 'comm_active', 'seed', 'steps', 'value_norm', 'cfg_snapshot', 'optimizer_state_dict']
+   seed = 43
+   steps = 2031616
+   cfg_snapshot.code_version = YUGIOH-2026-09-10
+   cfg_snapshot.comm_range = 300.0
+   cfg_snapshot.seed = 43
+   cfg_snapshot.logstd_init0 = -2.0
+   cfg_snapshot.lr_final = 0.0003
+   cfg_snapshot.lr_decay_dec = 0.0
+   cfg_snapshot.entropy_bonus = 0.0
+   cfg_snapshot.logstd_min = -3.0
+   cfg_snapshot.noise_hold = 0
+   cfg_snapshot.sim.REWARD_RANGE = 56.0
+   cfg_snapshot.sim.ROLE_V2_PRIMARY = cum
+   cfg_snapshot.sim.ROLE_V2_RES_F6 = 1
+   cfg_snapshot.comm_fields = state
+   cfg_snapshot.partner_range = 56.0
+   cfg_snapshot.action_mode = course
+   ctr_actor.experts.0.action_logstd = [-2.188, -0.617]
+   ctr_actor.experts.1.action_logstd = [-1.968, -0.489]
+   ctr_actor.experts.2.action_logstd = [-1.91, -0.449]
+   ctr_actor.experts.3.action_logstd = [-1.849, -0.491]
+   ctr_actor.experts.4.action_logstd = [-1.905, -0.512]

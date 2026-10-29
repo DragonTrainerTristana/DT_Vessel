@@ -1,0 +1,15 @@
+2026-10-28 20:36:09 meaneval qd_ [trunk_d6] s43 ARPA=56 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval GPU=1 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+qd_trunk_d6_s43.step2M.pt          steps=2031616 logstd0=-2.188 -1.968 -1.910 -1.849 -1.905 mean=-1.964 sigma_course=16.8deg
+qd_trunk_d6_s43.step4M.pt          steps=4063232 logstd0=-2.172 -1.970 -2.023 -1.897 -1.911 mean=-1.995 sigma_course=16.3deg
+qd_trunk_d6_s43.step6M.pt          steps=6029312 logstd0=-2.159 -2.038 -2.029 -1.920 -1.880 mean=-2.005 sigma_course=16.2deg
+qd_trunk_d6_s43.step8M.pt          steps=8060928 logstd0=-2.193 -1.972 -2.101 -1.873 -1.892 mean=-2.006 sigma_course=16.1deg
+qd_trunk_d6_s43.pt                 steps=9043968 logstd0=-2.247 -1.999 -2.076 -1.879 -1.907 mean=-2.022 sigma_course=15.9deg
+2026-10-28 20:56:08 trunk_d6 4M 끝
+# 무학습 재평가 qd_ — 표본 행동 vs 평균 행동 (기록용, 판정 아님. 시드 1개 = 단독 주장 금지)
+| run | 체크포인트 | 도착 % 표본 / 평균 (차) | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+
+## 마지막 K 점 평균 (갈래 = 분기 뒤 체크포인트 전부, trunk = 2M 이후 전부)
+| run | K | 도착 % 표본 / 평균 | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+2026-10-28 20:56:09 끝 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval/_meaneval_qd_.md

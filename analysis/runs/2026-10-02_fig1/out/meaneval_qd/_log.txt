@@ -1,0 +1,8 @@
+2026-10-28 20:36:09 meaneval qd_ [trunk_d6] s43 ARPA=56 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval GPU=2 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+2026-10-28 20:36:09 meaneval qd_ [trunk_d6] s43 ARPA=56 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+2026-10-28 20:36:09 meaneval qd_ [trunk_d6] s43 ARPA=56 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval GPU=1 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+2026-10-28 20:36:09 meaneval qd_ [trunk_d6] s43 ARPA=56 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+2026-10-28 20:55:10 trunk_d6 9.04397M 끝
+2026-10-28 20:56:08 trunk_d6 4M 끝
+2026-10-28 20:57:30 trunk_d6 9.04397M 끝
+2026-10-28 20:57:46 trunk_d6 4M 끝

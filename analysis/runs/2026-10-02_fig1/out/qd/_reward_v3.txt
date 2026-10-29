@@ -1,0 +1,23 @@
+==============================================================================
+보상 v3 토글 테스트 (imo·none, CPU)
+==============================================================================
+  PASS  v1 토글 기본값 = 비트동일(보상·obs)  
+  PASS  v1 게이트 끄면 risk_rw 는 risk 와 같은 객체  
+  PASS  v1 기본값 확인  0.1 0.07 0.0 end
+  PASS  v2 FORWARD 0: 상태 궤적 동일  
+  PASS  v2 보상 차 = 0.1·sr·SUBSTEPS (전 결정)  max|Δ|=4.17e-07
+  PASS  v3 TIME 0.035: 상태 동일 · 보상 차 = +0.035·SUBSTEPS  min=0.3500 max=0.3500
+  PASS  v4 게이트: obs·situation 비트동일  
+  PASS  v4 게이트: risk·near_risk·sit 키 불변  
+  PASS  v4 risk_rw = risk·clamp((48−dcpa)/24,0,1)  
+  PASS  v4 g(24)=1 g(30)=0.75 g(48)=0  
+  PASS  v5 게이트 보상 차 = #6·#7 차이만(손 계산)  max|Δ|=2.98e-07
+  PASS  v5 게이트가 실제로 뭔가 바꿈(공허 통과 방지)  
+  PASS  v6 ROLE_JUDGE=v2 · PEN 0: 보상·obs 비트동일  
+  PASS  v6 v2 → RolePromiseTrackerV2  
+  PASS  v6 legacy 판정기 = end 클래스(별도 객체)  
+  PASS  v6 judge=end 강제 → 교체  
+  PASS  v7 SIM_SNAPSHOT_KEYS 에 4키  
+  PASS  v7 apply_sim_snapshot 이 vessel_gym 전역을 덮어씀  0.0 0.035 48.0 v2
+
+ALL PASS  18/18

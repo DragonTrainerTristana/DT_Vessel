@@ -1,0 +1,11 @@
+2026-10-28 18:45:17 배치 qd_ trunk LICS-SERVER 2cd2fbd chore(runs_fig1): qd_ trunk pre-registration and checkpoint selection for meaneval 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qd action_mode=course 흉내=0 시드=[43]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qd
+2026-10-28 18:45:17 시작 smoke
+2026-10-28 18:52:07 끝 smoke
+2026-10-28 18:52:08 시작 rank_par
+2026-10-28 18:52:09 끝 rank_par
+2026-10-28 18:52:09 시작 trunk
+2026-10-28 20:35:29 끝 trunk
+2026-10-28 20:35:30 시작 gate
+2026-10-28 20:35:31 끝 gate
+2026-10-28 20:35:32 시작 rankchk
+2026-10-28 20:35:33 ★멈춤 rankchk rc=1 — /c/work/DT_Vessel_v3/Python/_repro_out_qd/_rankchk.log 확인

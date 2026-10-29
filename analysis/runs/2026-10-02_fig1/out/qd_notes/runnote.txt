@@ -1,0 +1,10 @@
+qd_ trunk 실행 기록 (2026-10-28 ~ 10-29, LICS 서버, Windows 클론 C:\work\DT_Vessel_v3 = feat/fig1-latent 2cd2fbd)
+- 명령 = 저자가 준 그대로(git pull → _run_f.sh trunk, VESSEL_F_REWARD_RANGE=56 · VESSEL_F_RANK_PARALLEL=1 · VESSEL_F_RANK_GPU=1 · EXTRA 4개). 추가 프로세스 · 스크립트 수정 없음
+- 시작 전 GPU: 다른 계정(HKK) 작업이 GPU 1–3 에 있었음, 남의 프로세스는 안 건드림 · 학습 GPU 0, 순위 관문 GPU 1
+- 18:45–18:52 smoke(검사 · trunk/off/a6 짧은 학습) 통과 → 18:52:09 순위 관문 v5 백그라운드 시작(GPU 1) · 같은 시각 trunk 학습 시작(GPU 0)
+- 18:52 부터 학습 · 관문 · 평가 python 을 우선순위 High 로 올리는 감시 스크립트 실행(Task Scheduler 아님, CPU 를 다른 계정에 뺏기지 않게 · 결과 무관), 10-29 12:04 종료
+- 19:16 2M 체크포인트 스냅샷 직접 열어 토글 확인: entropy_bonus 0.0 · logstd_min −3.0 · logstd_init0 −2.0 · sim.REWARD_RANGE 56.0 · partner_range 56.0 · action_mode course · LR 감쇠 0(snap_2M.txt)
+- 20:31:09 순위 관문 v5 끝(42행 5931 s) → 2/3 시드 통과 = 불통과(시드 1 규칙 (iii) · (v))
+- 20:35:29 trunk 학습 끝(138 update) → 20:35:31 trunk 관문 통과(마지막 4창 도착 69.9 %) → 20:35:33 rankchk 에서 멈춤(순위 관문 불통과, 스펙 §1 대로 갈래 안 감)
+- 20:36:08 저자 명령 2단계(평가 4개 동시, GPU 0–3: 4M 표본 · 4M 평균 · 9.04M 표본 · 9.04M 평균) 시작 → 20:55:11 · 20:56:09 · 20:57:31 · 20:57:47 끝(1개당 19–22분). 4개 모두 헤더 reward_range=56.0 · 체크포인트 이름 확인
+- 표 단계(--table)는 10-29 12:03 에 실행(평가 끝 뒤 세션 공백, 값은 20:57 표와 같음) → Dropbox out/meaneval_qd 다시 복사됨
