@@ -48,7 +48,7 @@ if [ "$IMIT" = 0 ]; then
   [ "$MODE" != phase0 ] || { echo "★멈춤: VESSEL_F_IMIT=0 은 phase1·trunk 만(phase0 = DAgger·P0)"; exit 1; }
 fi
 [ "$MODE" != trunk ] || [ "$IMIT" = 0 ] || { echo "★멈춤: trunk 모드는 VESSEL_F_IMIT=0 전용"; exit 1; }
-[ -z "${VESSEL_F_REWARD_RANGE:-}${VESSEL_F_EXTRA_ENV:-}${VESSEL_F_ARPA_RANGE:-}" ] || [ "$IMIT" = 0 ] || { echo "★멈춤: 10-13 토글(REWARD_RANGE·EXTRA_ENV·ARPA_RANGE)은 VESSEL_F_IMIT=0 전용"; exit 1; }
+[ -z "${VESSEL_F_REWARD_RANGE:-}${VESSEL_F_EXTRA_ENV:-}${VESSEL_F_ARPA_RANGE:-}${VESSEL_F_PREVIEW_COEF:-}" ] || [ "$IMIT" = 0 ] || { echo "★멈춤: 10-13 토글(REWARD_RANGE·EXTRA_ENV·ARPA_RANGE)은 VESSEL_F_IMIT=0 전용"; exit 1; }
 OFF_T=vo56h150                          # 위 주석(스펙 §5 규칙 적용 결과)
 COMM_T=vo300i
 SEEDS_ALL="43 44 45 46 47"
@@ -72,8 +72,10 @@ _busy=$(powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"
 cd "$R" || exit 1
 [ -z "$(git status --short --untracked-files=no)" ] || { echo "★멈춤: 추적 파일 변경 있음 — git status 확인"; exit 1; }
 [ "$(git rev-parse --is-shallow-repository)" = false ] || { echo "★멈춤: 얕은 클론 — git fetch --unshallow (preflight p6 차분에 ae58b93 필요)"; exit 1; }
-git fetch -q origin feat/fig1-latent || { sleep 7; git fetch -q origin feat/fig1-latent; } || { echo "★멈춤: git fetch 실패"; exit 1; }   # 동시 시작 시 ref lock 재시도
-git merge-base --is-ancestor HEAD FETCH_HEAD || { echo "★멈춤: HEAD $(git rev-parse --short HEAD) 가 origin/feat/fig1-latent 에 없음 — push 안 된 코드로 안 돌림"; exit 1; }
+# ★2026-10-29 기준 브랜치 = 지금 체크아웃된 브랜치(feat/early-pbrs 작업 폴더에서도 push 검사가 되게). detached HEAD 면 feat/fig1-latent
+_BR=$(git rev-parse --abbrev-ref HEAD); [ "$_BR" != HEAD ] || _BR=feat/fig1-latent
+git fetch -q origin "$_BR" || { sleep 7; git fetch -q origin "$_BR"; } || { echo "★멈춤: git fetch 실패"; exit 1; }   # 동시 시작 시 ref lock 재시도
+git merge-base --is-ancestor HEAD FETCH_HEAD || { echo "★멈춤: HEAD $(git rev-parse --short HEAD) 가 origin/$_BR 에 없음 — push 안 된 코드로 안 돌림"; exit 1; }
 [ -z "${VESSEL_F_HEAD:-}" ] || [ "$(git rev-parse --short HEAD)" = "$(git rev-parse --short "$VESSEL_F_HEAD" 2>/dev/null)" ] || {
   echo "★멈춤: HEAD $(git rev-parse --short HEAD) ≠ VESSEL_F_HEAD=$VESSEL_F_HEAD"; exit 1; }
 cd "$R/Python"
@@ -92,12 +94,18 @@ unset VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE VESSEL_BC_T
 unset VESSEL_ROLE_V2_PRIMARY VESSEL_ROLE_V2_RES_F6
 unset VESSEL_REWARD_RANGE VESSEL_LOGSTD_INIT0 VESSEL_LR_FINAL VESSEL_LR_DECAY_DEC   # ★2026-10-13 셸에 남은 값이 새지 않게
 unset VESSEL_ENTROPY_BONUS VESSEL_LOGSTD_MIN VESSEL_NOISE_HOLD VESSEL_GRAD_TELEMETRY   # ★2026-10-26 레퍼런스 포팅 토글(P2–P5)
+unset VESSEL_PREVIEW_PBRS_COEF VESSEL_PREVIEW_DCPA_G VESSEL_PREVIEW_T_S VESSEL_PREVIEW_TAPER_M   # ★2026-10-29 예고 PBRS(feat/early-pbrs)
 export VESSEL_RUN_PREFIX=$PRE VESSEL_ROLE_PROMISE_PEN=20 VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full
 export VESSEL_ROLE_JUDGE=v2 VESSEL_FORWARD_COEF=0 VESSEL_TIME_PENALTY=0.035 VESSEL_RISK_DCPA_GATE_M=48
 export VESSEL_ACTION_MODE=course
 [ "$IMIT" = 0 ] && export VESSEL_ROLE_V2_PRIMARY=cum VESSEL_ROLE_V2_RES_F6=1   # ★2026-10-07 n_ 보상 = v3 + 판정기 토글 2
 # ★2026-10-13 q_: 보상 반경(두 팔 동일) → 순위 관문 설정. 최적화 토글은 전역 export 라 trunk·off·comm 전부 같은 값(ON=OFF)
 RANK_SET=v4
+# ★2026-10-29 연속 위험 예고 PBRS(qe_, 스펙 2026-10-28 §5): 보상 키라 EXTRA_ENV 화이트리스트가 아니라 전용 플래그. 전역 export = trunk·off·comm 같은 값(ON=OFF)
+if [ -n "${VESSEL_F_PREVIEW_COEF:-}" ]; then
+  echo "$VESSEL_F_PREVIEW_COEF" | grep -Eq '^[0-9]+([.][0-9]+)?$' || { echo "★멈춤: VESSEL_F_PREVIEW_COEF=$VESSEL_F_PREVIEW_COEF — 0 이상 숫자"; exit 1; }
+  export VESSEL_PREVIEW_PBRS_COEF=$VESSEL_F_PREVIEW_COEF
+fi
 if [ -n "${VESSEL_F_REWARD_RANGE:-}" ]; then
   [ "$VESSEL_F_REWARD_RANGE" = 56 ] || { echo "★멈춤: VESSEL_F_REWARD_RANGE=$VESSEL_F_REWARD_RANGE — 스펙 §4·관문 v5 는 56 만"; exit 1; }
   export VESSEL_REWARD_RANGE=56; RANK_SET=v5
@@ -111,7 +119,7 @@ export VESSEL_OUT_DIR=$PWD/_repro_out_${PRE%_}
 CK=$VESSEL_CKPT_DIR
 O=$VESSEL_OUT_DIR; TL=$O/_timeline.txt; mkdir -p "$O" "$O/codec" "$CK"
 # ★2026-10-13 접두어별 실험 env 를 첫 실행에 기록하고 이후 실행마다 대조(같은 접두어로 trunk→phase1 이어갈 때 토글 누락·ARPA 300 뿌리 사용을 막음)
-_benv="ARPA=$ARPA_R RANK=$RANK_SET REWARD_RANGE=${VESSEL_REWARD_RANGE:-} EXTRA=[${VESSEL_F_EXTRA_ENV:-}]"
+_benv="ARPA=$ARPA_R RANK=$RANK_SET REWARD_RANGE=${VESSEL_REWARD_RANGE:-} EXTRA=[${VESSEL_F_EXTRA_ENV:-}]${VESSEL_PREVIEW_PBRS_COEF:+ PREVIEW=$VESSEL_PREVIEW_PBRS_COEF}"
 if [ -f "$O/_batch_env.txt" ]; then
   [ "$(cat "$O/_batch_env.txt")" = "$_benv" ] || { echo "★멈춤: 이 접두어($PRE)의 실험 env 가 다름 — 기록: $(cat "$O/_batch_env.txt") / 지금: $_benv (같은 env 로 다시, 또는 새 접두어)"; exit 1; }
 else
@@ -466,8 +474,8 @@ trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 
   else echo "ARPA@$ARPA_R 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)" > "$O/_diag_only.txt"; log "trunk 모드 완료(ARPA@$ARPA_R 진단 전용, 갈래 없음)"; fi
 }
 # ★2026-10-13 smoke(preflight 15종 + 작은 학습)는 기본값 env 로 — 토글은 본 런에서만. 새 코드 경로는 Mac 미니 런으로 검사함
-SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY"
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+SMOKE_CLEAN="env -u VESSEL_PREVIEW_PBRS_COEF -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY"
+log "배치 $PRE $MODE 예고PBRS=${VESSEL_PREVIEW_PBRS_COEF:-0} $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all
