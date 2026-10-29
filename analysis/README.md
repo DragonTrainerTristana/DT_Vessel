@@ -9,7 +9,7 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 23개 (09-30 – 10-29) |
+| `pdf/` | 결과 보고서 PDF 24개 (09-30 – 10-29) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
@@ -50,6 +50,7 @@
 | 2026-10-28_미리피하기_보상_AtoZ | `2026-10-28_early_avoid/make_pdf.sh report.md <출력.pdf>` (설계 문서, 자료 = 코드·스펙 인용) |
 | 2026-10-28_qd_trunk_위험56m_떨림수정_결과 | `2026-10-02_fig1/report/make_report_qd.py <출력 폴더>` (자료 `out/qd/` · `out/meaneval_qd/` · `out/qd_notes/` · 비교 `out/n_trunk_d6_s43.log` · `out/diag_trunk_n/` · `out/qa/` · `out/qb/` · `out/meaneval_qa/` · `out/meaneval_qb/`) |
 | 2026-10-29_qd_해석_순위관문 | `2026-10-29_qd_interp/make_pdf.sh report.md <출력.pdf>` (자료 = `runs/2026-10-02_fig1/out/qd/`·`meaneval_qd/`) |
+| 2026-10-29_병렬3건_qd갈래_qe_qd2_결과 | `2026-10-02_fig1/report/make_report_q29.py <출력 폴더>` (자료 `out/qd/` · `out/qe/` · `out/qd2/` · `out/meaneval_qd/` · `out/meaneval_qe/` · `out/meaneval_qd2/` · `out/q29_notes/`) |
 
 ## 다시 만들기
 
@@ -66,5 +67,5 @@
 - `out/q_stage1_notes/` = 세션이 실행 중 직접 본 기록(시작 시각·VRAM·우선순위·실행 env·2M 스냅샷 토글). 배치 스크립트가 쓴 파일 아님
 - `out/meaneval_q*/` = `meaneval_ckpts.sh` 출력(표본 / 평균 행동 짝, 기록용 · 관문 아님). `_extra_log.txt` = 속도용 추가 프로세스(같은 명령 · 같은 파일 이름) 기록, `out/r0_notes/` = 세션 실행 기록 · 추가 프로세스 스크립트 · 드라이버 로그
 - `out/qd/` = qd_ trunk 배치 출력(코드 `feat/fig1-latent` 2cd2fbd, 스펙 `2026-10-28-qd-trunk-design.md`). 순위 관문 v5 기록 = `out/qd/_rank.log` · `_rank_v5.json` · `_rankchk.log`. `out/qd_notes/` = 세션 실행 기록(`runnote.txt`) · 2M 스냅샷(`snap_2M.txt`) · 드라이버 · 평가 로그
-- 10-29 병렬 3건(스펙 `2026-10-28-qd-trunk-design.md` §5): `out/qd/` 에 qd_ phase1(갈래 off · comm) 출력이 더해짐(코드 adcb7f2), `out/qe/` = qe_ trunk(예고 PBRS c = 410, `feat/early-pbrs` fa772a3), `out/qd2/` = qd2_ trunk(시드 44, adcb7f2), `out/meaneval_qe/` · `out/meaneval_qd2/` = 평가. `out/q29_notes/` = 세션 실행 기록 · 스냅샷 · 드라이버 · 평가 로그 · 16:23 GPU 드라이버 리셋으로 죽은 평가 로그(`failed_1623/`) · CPU 로 미리 계산한 Fig1 표(`_fig1_cpu_session.md`, 배치 스크립트 표 아님). `out/_qe_try1_18c45d8/` · `out/_qd2_try1_gpu2/` = 다시 띄우기 전 첫 시도(학습 · 체크포인트 없음 / 0.98M 에서 멈춤). ★qd_ 곡선 5점 · 갈래 평균 행동 평가 8개는 GPU 복구 뒤 다시 돌려야 함(이 커밋 기준 미완)
+- 10-29 병렬 3건(스펙 `2026-10-28-qd-trunk-design.md` §5): `out/qd/` 에 qd_ phase1(갈래 off · comm) 출력이 더해짐(코드 adcb7f2), `out/qe/` = qe_ trunk(예고 PBRS c = 410, `feat/early-pbrs` fa772a3), `out/qd2/` = qd2_ trunk(시드 44, adcb7f2), `out/meaneval_qe/` · `out/meaneval_qd2/` = 평가. `out/q29_notes/` = 세션 실행 기록 · 스냅샷 · 드라이버 · 평가 로그 · 16:23 GPU 드라이버 리셋으로 죽은 평가 로그(`failed_1623/`) · CPU 로 미리 계산한 Fig1 표(`_fig1_cpu_session.md`, 배치 스크립트 표 아님). `out/_qe_try1_18c45d8/` · `out/_qd2_try1_gpu2/` = 다시 띄우기 전 첫 시도(학습 · 체크포인트 없음 / 0.98M 에서 멈춤). GPU 복구(17:57 재부팅) 뒤 곡선 남은 4점 · 갈래 평균 행동 평가 8개를 같은 명령으로 다시 재서 완료(18:05–19:20)
 - 설계·사전등록은 `docs/superpowers/specs/` 에 있음

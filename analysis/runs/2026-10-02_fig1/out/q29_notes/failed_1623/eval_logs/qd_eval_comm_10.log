@@ -1,0 +1,6 @@
+2026-10-29 16:02:44 meaneval qd_ [comm] s43 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval
+qd_comm_s43.step10M.pt             steps=10027008 logstd0=-2.326 -1.981 -2.074 -1.875 -1.914 mean=-2.034 sigma_course=15.7deg
+qd_comm_s43.step12M.pt             steps=12058624 logstd0=-2.520 -1.920 -2.134 -1.905 -1.942 mean=-2.084 sigma_course=14.9deg
+qd_comm_s43.step14M.pt             steps=14024704 logstd0=-2.693 -1.920 -2.183 -1.888 -1.881 mean=-2.113 sigma_course=14.5deg
+qd_comm_s43.step16M.pt             steps=16056320 logstd0=-2.828 -1.857 -2.177 -1.808 -1.842 mean=-2.102 sigma_course=14.7deg
+★FAIL 평가 실패 /c/Users/OSH/VESSEL_checkpoints/comm_intent/qd_comm_s43.step10M.pt (로그 /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval/sample_qd_comm_10M.txt · /c/work/DT_Vessel_v3/Python/_repro_out_qd/meaneval/mean_qd_comm_10M.txt)

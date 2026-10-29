@@ -309,8 +309,12 @@ TLD2 = [ln for ln in text('qd2', '_timeline.txt').splitlines() if ln.startswith(
 assert 'fa772a3' in TLE[0] and 'adcb7f2' in TLD2[0] and not any('★' in ln for ln in TLE + TLD2), (TLE[0], TLD2[0])
 OVR = text(D, '_rank_override.txt')
 assert '저자 결정' in OVR and 'FAIL' not in OVR
-NOTE = [ln[2:] for ln in text('q29_notes', 'runnote.txt').splitlines()[1:] if ln.startswith('- ')]
-NOTE2 = [ln[4:] for ln in text('q29_notes', 'runnote.txt').splitlines()[1:] if ln.startswith('  - ')]
+NOTE = []   # (본문, [하위 항목]) — runnote.txt 순서 그대로
+for ln in text('q29_notes', 'runnote.txt').splitlines()[1:]:
+    if ln.startswith('- '):
+        NOTE.append((ln[2:], []))
+    elif ln.startswith('  - '):
+        NOTE[-1][1].append(ln[4:])
 
 
 # ── 그림(SVG, 로그 값 그대로)
@@ -518,7 +522,7 @@ HTML = f"""<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>{NA
 
 <div class='box'><b>한 줄 결론</b> —
 <b>qd_ 갈래</b>: 주 평가(끝 모델, 표본 행동) Fig1 주 지표 통과 <b>{WIN_MAIN}/{len(MAIN)}</b>, comm 이 앞선 지표 {DIR_MAIN}/{len(MAIN)} · 도착 off {f(off['goal'])} % · comm {f(comm['goal'])} % · 배 충돌 {f(off['vColl'])} · {f(comm['vColl'])} %.
-평균 행동 도착(10–16M 4점): off {f(BM_K['off'])} % · comm {f(BM_K['comm'])} %, comm 위 {BM_ABOVE}/4. 곡선 M off {'우상향' if MC['off'][4] else '불통과'} · comm {'우상향' if MC['comm'][4] else '불통과'}.
+평균 행동 도착(10–16M 4점): off {f(BM_K['off'])} % · comm {f(BM_K['comm'])} %, comm 위 {BM_ABOVE}/4(차 {' · '.join(f(BM[('comm', x)][1]['goal'] - BM[('off', x)][1]['goal'], 1, True) for x in BX)} pt). 곡선 M off {'우상향' if MC['off'][4] else '불통과'} · comm {'우상향' if MC['comm'][4] else '불통과'}.
 <b>qd2_(시드 44)</b>: 관문 {'통과' if GT['qd2_']['ok'] else '불통과'}({f(GT['qd2_']['goal'])} %) · 처방 성공 {CR['qd2_']['n']}/3(9.04M 평균 {f(CR['qd2_']['A9'])} % · 하락 {f(CR['qd2_']['drop'], 1, True)} · 격차 {f(CR['qd2_']['gap'], 1, True)}) → {'<b>qd_ 결과 재현</b>' if QD2_OK else '<b>재현 미달</b>'}.
 <b>qe_(예고 PBRS)</b>: 관문 {'통과' if GT['qe_']['ok'] else '불통과'}({f(GT['qe_']['goal'])} %) · 처방 성공 {CR['qe_']['n']}/3 · qd_ 대비 {ok(CR['qe_']['C4'])}(9.04M 평균 {f(CR['qe_']['A9'])} % vs qd_ {f(CR['qd_']['A9'])}) → {'<b>성공</b>' if QE_OK else '<b>미달</b>'}.
 다음은 저자 결정.</div>
@@ -570,9 +574,8 @@ comm 첫 {f(MC['comm'][0], 0)} · 최고 {f(MC['comm'][1], 0)} · 끝 {f(MC['com
 
 <h2>6. 경과 · 실행 기록(세션)</h2>
 <ul>
-{''.join(f'<li>{ln}</li>' for ln in NOTE)}
+{''.join(f"<li>{ln}{('<ul>' + ''.join(f'<li>{c}</li>' for c in sub) + '</ul>') if sub else ''}</li>" for ln, sub in NOTE)}
 </ul>
-<ul class='small'>{''.join(f'<li>{ln}</li>' for ln in NOTE2)}</ul>
 
 <h2>7. 한계 — 그대로 읽을 것</h2>
 <ul>
@@ -580,7 +583,8 @@ comm 첫 {f(MC['comm'][0], 0)} · 최고 {f(MC['comm'][1], 0)} · 끝 {f(MC['com
 <li>qd2_ 는 qd_ 재현 확인 1개(시드 44). 두 시드 = 단독 주장 못 함</li>
 <li>qe_ 는 qd_ 에 예고 보상 하나를 더했지만 시드 43 하나 · 학습 경로가 갈라짐 → qd_ 와의 차가 보상 탓인지 시드 흔들림인지 모름</li>
 <li>평가는 체크포인트당 1회 · 평가 시드 1개(999). 같은 체크포인트 재측정 흔들림 크기 모름</li>
-<li>관문 · 판정식 · 평가 스크립트는 안 건드렸음. 바뀐 것 = qe_ 검사 파일 1줄(인코딩) · qd2_ GPU 번호(2 → 3)</li>
+<li>16:23 GPU 드라이버 리셋: 그때 돌던 평가는 재부팅 뒤 같은 명령으로 다시 잼. 곡선 comm 10M 점(GPU 3)만 리셋 뒤 정상 종료해 그대로 씀 — 리셋 영향은 확인 못 함(§6)</li>
+<li>관문 · 판정식 · 평가 스크립트는 안 건드렸음. 바뀐 것 = qe_ 검사 파일 1줄(인코딩) · qd2_ GPU 번호(2 → 3) · 갈래 표본 짝 파일을 같은 스크립트의 곡선 재사용 경로로 채움(새 평가 없음)</li>
 </ul>
 
 <h2>8. 다음 — 저자 결정</h2>

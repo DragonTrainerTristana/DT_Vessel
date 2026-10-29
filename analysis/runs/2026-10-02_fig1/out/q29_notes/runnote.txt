@@ -18,4 +18,10 @@
 - qd_ phase1: 15:09:30 주 평가 끝 → 15:09:31 곡선(체크포인트 15개, 4개씩) 시작
 - 16:02:43 저자 명령 5) 갈래 평균 행동 평가 8개(GPU 0)를 곡선 단계 중에 시작(명령 · 파일 같음, 체크포인트 10 · 12 · 14 · 16M 이미 있음 — 'phase1 완료' 를 기다리지 않은 건 세션 판단, 약 45분 단축). 헤더 ckpt · reward_range=56.0 · off fields=state 56 m · comm fields=intent 300 m 확인
 - ★16:23:15–21 GPU 드라이버 리셋(System 로그 nvlddmkm 153 다수) → 같은 초에 갈래 평균 행동 평가 8개 전부 · 곡선 3개(comm 14M · comm 16M · off 16.0563M) 가 `CUDA error: an illegal memory access` 로 죽음. 그 뒤 nvidia-smi 4장 전부 16165 MiB · 사용률 0 %, 새 python 에서 CUDA 장치 열기가 출력 없이 끝남(10-02 · 09-26 사고와 같은 모양). 그때 GPU 0 = 세션이 일찍 띄운 평가 8개 + 곡선 1개 + 다른 계정 작업. 원인 미확인(평가 프로세스 VRAM 을 미리 안 잼) — 세션이 곡선과 겹치게 평가를 일찍 띄운 것이 원인일 수 있음
+  - 곡선 comm 10M(GPU 3)은 리셋 뒤 16:25:01 에 정상 종료(epReward 있음, 도착 67.2 %) → 그대로 씀. 리셋 영향 여부는 확인 못 함
+- 17:57:52 서버 재부팅(세션 밖) → 18:03 GPU 4장 사용 0.2–0.5 GB · CUDA 4장 열림 확인 · 남은 python · 표식 파일 없음
+- 18:04:42 qd_ phase1 같은 명령으로 다시 시작(첫 드라이버 로그 = qd_phase1_driver_try1.log) → smoke · rankov · trunk · gate · codec · branches · eval 건너뜀 → 18:05:00 곡선 남은 4점(off 16.0563M · comm 14 · 16 · 16.0563M, GPU 2 · 3 · 1 · 0)만 다시 — 끝난 11점은 건너뜀
+- 18:27:23 곡선 끝 → 18:27:27 Fig1 표 → 18:27:28 phase1 완료(_fig1.md = 16:30 세션 CPU 재계산본과 글자 같음)
+- 18:27:43 저자 명령 5) 갈래 평균 행동 평가 8개를 명령대로 phase1 완료 뒤 다시 시작(GPU 0, VRAM 9.0–9.2 GB 유지) → 19:19:23 8개 끝. 16:23 에 죽은 평가 로그는 q29_notes/failed_1623 · 클론 q29_failed_eval_logs/
+- 19:19:48 표(--table) → 갈래 행 없음: VESSEL_F_WHICH=mean 은 표본 짝 파일(sample_*)을 안 만들고 표는 짝이 있어야 행을 씀 → 19:20 같은 스크립트를 VESSEL_F_WHICH=sample 로 돌려 같은 인자 곡선 파일을 복사(새 평가 없음, 8개 모두 cmp 같음) → 표에 갈래 8행
 - 12:30 부터 학습 · 평가 python 우선순위 High 감시 스크립트(결과 무관)

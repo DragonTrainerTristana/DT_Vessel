@@ -1,0 +1,4 @@
+qd_comm_s43.step10M.pt             steps=10027008 logstd0=-2.326 -1.981 -2.074 -1.875 -1.914 mean=-2.034 sigma_course=15.7deg
+qd_comm_s43.step12M.pt             steps=12058624 logstd0=-2.520 -1.920 -2.134 -1.905 -1.942 mean=-2.084 sigma_course=14.9deg
+qd_comm_s43.step14M.pt             steps=14024704 logstd0=-2.693 -1.920 -2.183 -1.888 -1.881 mean=-2.113 sigma_course=14.5deg
+qd_comm_s43.step16M.pt             steps=16056320 logstd0=-2.828 -1.857 -2.177 -1.808 -1.842 mean=-2.102 sigma_course=14.7deg
