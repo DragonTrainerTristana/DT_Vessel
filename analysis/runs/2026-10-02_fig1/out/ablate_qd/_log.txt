@@ -1,0 +1,12 @@
+2026-10-30 11:11:30 ablate qd_ comm s43 [shuffle] ckpt=[16 14] mean 5e678dc feat(eval): far_drop ablation and comm message ablation runner GPU=3
+2026-10-30 11:11:30 ablate qd_ comm s43 [far56] ckpt=[16 14] mean 5e678dc feat(eval): far_drop ablation and comm message ablation runner GPU=3
+2026-10-30 11:11:30 ablate qd_ comm s43 [decl0] ckpt=[16 14] mean 5e678dc feat(eval): far_drop ablation and comm message ablation runner GPU=3
+2026-10-30 11:11:30 ablate qd_ comm s43 [state] ckpt=[16 14] mean 5e678dc feat(eval): far_drop ablation and comm message ablation runner GPU=3
+2026-10-30 11:43:17 state 16M 끝
+2026-10-30 11:43:34 far56 16M 끝
+2026-10-30 11:43:46 decl0 16M 끝
+2026-10-30 11:44:04 shuffle 16M 끝
+2026-10-30 12:15:51 state 14M 끝
+2026-10-30 12:16:34 far56 14M 끝
+2026-10-30 12:16:42 decl0 14M 끝
+2026-10-30 12:17:01 shuffle 14M 끝

@@ -1,0 +1,6 @@
+  qd2_off_s44.log → GPU 0
+  qd2_comm_s44.log → GPU 1
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+qd2_off_s44.pt               ON         44    6   16056320    9043968  qd2_trunk_d6_s44.pt (b931650728e8)  imo/none  1:state,L0,R56,aux0
+qd2_comm_s44.pt              ON         44    6   16056320    9043968  qd2_trunk_d6_s44.pt (b931650728e8)  imo/none  1:intent,L0,R300,aux0,cdc:decode:9d551c47
+BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)

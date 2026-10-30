@@ -1,0 +1,19 @@
+10-30 qd2_ 갈래 · qd_ 메시지 절제 실행 기록 (LICS 서버, 저자 명령 블록 '10-30' 그대로, 세션이 실행)
+- 준비: C:\work\DT_Vessel_v3 = feat/fig1-latent adcb7f2(pull 안 함, 작업 트리 깨끗) · 시작 전 GPU 사용 0.2 · 0.3 · 0.6 · 0.4 GB, 남은 python 없음
+- 11:10:38 1) qd2_ phase1 시작(시드 44, GPU 자동) → smoke · rankov · trunk · gate 는 10-29 기록으로 건너뜀 → 11:11:02 코덱 시작
+- 11:11 2) git fetch → worktree C:\work\DT_Vessel_abl = origin/feat/fig1-latent 5e678dc(detached, 저자가 적은 해시와 같음). adcb7f2 대비 변경 = eval_ckpt.py --far_drop · comm_gather far_drop 인자(기본 None = 학습 동작 불변) · ablate_comm.sh 새 파일 · 스펙 §6
+- 11:11:29 절제 4개(far56 · shuffle · decl0 · state, GPU 3, 체크포인트 16M → 14M 순) 시작. 입력 = 원 클론 _repro_out_qd(코덱 s43 p46_k8 SHA 00f3c03149723cc0 · meaneval 기본 평가 짝)
+  - 헤더 확인(far56 16M): ckpt qd_comm_s43.step16M.pt · reward_range=56.0 · 코덱 복원 sha 00f3c0314972 decode · 절제 줄 far_drop=56m · 19987 dec/s
+- 11:12 학습 · 평가 python 우선순위 High 감시 스크립트(q30_prio.ps1, 결과 무관)
+- 11:11:02–11:17:40 qd2_ 코덱 → s44: k4 불통과 · k6 통과 · k8 · k12 통과 → k=6 선택(p46_k6_s0.pt SHA 9d551c4754e6419b). qd_ 시드 43 은 k=8 이었음(k6 불통과) — 같은 관문 규칙으로 시드마다 고른 값
+- 11:17:41 갈래 시작: off GPU 0 · comm GPU 1(자동 선택, GPU 3 은 절제 4개). 둘 다 qd2_trunk_d6_s44.pt(sha256 b931650728e8)에서 branch_at=9043968 재개 · comm 코덱 k=6 decode 확인
+- 11:43:17–11:44:04 절제 16M 4개 끝 · 12:15:51–12:17:01 14M 4개 끝(체크포인트당 약 32분 = 평가 3000 + drain) · 각 출력에 '[eval] 절제' 줄 · epReward 있음 · ★ 없음
+- 12:17:10 저자 명령 --table → _ablate_qd_.md(Dropbox out/ablate_qd/ 사본은 스크립트가 복사)
+- 12:38:54 qd2_ 갈래 off · comm 끝(81분, 각자 GPU · 약 9.2 GB) → 분기 검사 ALL PASS(16056320 · branch_at 9043968 · trunk b931650728e8 · off state R56 · comm intent R300 코덱 9d551c47) → 12:38:55 phase1 평가 단계 시작
+- 12:38:55–13:14:13 qd2_ 주 평가(끝 모델 off · comm) → 13:14:14 곡선(체크포인트 15개, 4개씩, GPU 자동) 시작
+- 12:45 갈래 체크포인트 스냅샷 직접 확인(CPU, snap_branch.txt): 두 갈래 seed 44 · entropy_bonus 0 · logstd_min −3.0 · logstd_init0 −2.0 · REWARD_RANGE 56 · course · off state/56 · comm intent/300
+- 13:14:14–14:33:04 곡선 15점(4개씩, GPU 4장, 묶음당 약 30분) → 14:33:07 Fig1 표 → 14:33:08 phase1 완료(타임라인 ★ 없음) · 남은 python 0 확인
+- 14:33:43 저자 명령 3) 갈래 평균 행동 평가 8개 시작(off GPU 0 · comm GPU 1, VESSEL_F_SEED=44) — 'phase1 완료' 뒤에 띄움(명령 순서 그대로)
+- 14:57:19–15:01:53 갈래 평균 행동 평가 8개 끝(GPU 0 · 1 각 4개, 약 4.5 GB씩) · ★ · Traceback 없음
+- 15:02 저자 명령 표본 짝 파일(VESSEL_F_WHICH=sample = 같은 인자 곡선 파일 복사, 새 평가 없음, 8개 모두 cmp 같음) → 15:02:41 표(--table)
+- 15:03 우선순위 감시 스크립트 종료(남은 학습 · 평가 python 없음)

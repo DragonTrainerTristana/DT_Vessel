@@ -1,0 +1,55 @@
+{
+ "4": {
+  "path": "C:/work/DT_Vessel_v3/Python/_repro_out_qd2/codec/s44\\p46_k4_s0.pt",
+  "sha": "eb368ddaa397003bb29f16414753a75b9b93a30e0f547a19fb81e92de57edd6e",
+  "fidelity_holdout": {
+   "heading_deg_p90": 13.854584693908691,
+   "speed_ms_p90": 0.13171133399009705,
+   "intent_deg_p90": 1.809743046760559,
+   "role_acc": 0.8779280185699463,
+   "role_n": 42008,
+   "n": 76800
+  },
+  "pass": false
+ },
+ "6": {
+  "path": "C:/work/DT_Vessel_v3/Python/_repro_out_qd2/codec/s44\\p46_k6_s0.pt",
+  "sha": "9d551c4754e6419beefe334c49d8c15d0831f331021fc5010007f878436727b4",
+  "fidelity_holdout": {
+   "heading_deg_p90": 3.9807815551757812,
+   "speed_ms_p90": 0.06851944327354431,
+   "intent_deg_p90": 1.228129267692566,
+   "role_acc": 0.9990531206130981,
+   "role_n": 41189,
+   "n": 76800
+  },
+  "pass": true
+ },
+ "8": {
+  "path": "C:/work/DT_Vessel_v3/Python/_repro_out_qd2/codec/s44\\p46_k8_s0.pt",
+  "sha": "718584410c657237dc39fa86796fe185415eb9503abe03a62882fae7133efabc",
+  "fidelity_holdout": {
+   "heading_deg_p90": 1.911529541015625,
+   "speed_ms_p90": 0.02039930783212185,
+   "intent_deg_p90": 0.5741973519325256,
+   "role_acc": 1.0,
+   "role_n": 41178,
+   "n": 76800
+  },
+  "pass": true
+ },
+ "12": {
+  "path": "C:/work/DT_Vessel_v3/Python/_repro_out_qd2/codec/s44\\p46_k12_s0.pt",
+  "sha": "f6b24bf2c060336664a7e1204c1f5f195f8076caf7fd0ec352f1ea2ccd937566",
+  "fidelity_holdout": {
+   "heading_deg_p90": 1.2818101644515991,
+   "speed_ms_p90": 0.012569623999297619,
+   "intent_deg_p90": 0.5096762776374817,
+   "role_acc": 0.999805748462677,
+   "role_n": 41181,
+   "n": 76800
+  },
+  "pass": true
+ },
+ "chosen_k": 6
+}

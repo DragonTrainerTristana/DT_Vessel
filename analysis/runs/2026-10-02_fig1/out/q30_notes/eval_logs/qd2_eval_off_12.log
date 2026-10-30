@@ -1,0 +1,17 @@
+2026-10-30 14:33:43 meaneval qd2_ [off] s44 ARPA=56 adcb7f2 chore(runs_fig1): rank gate v5 override path (author decision 10-29) and qd_ parallel plan GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval
+qd2_off_s44.step10M.pt             steps=10027008 logstd0=-2.470 -1.879 -1.979 -1.783 -1.734 mean=-1.969 sigma_course=16.8deg
+qd2_off_s44.step12M.pt             steps=12058624 logstd0=-2.529 -1.886 -1.991 -1.772 -1.729 mean=-1.981 sigma_course=16.5deg
+qd2_off_s44.step14M.pt             steps=14024704 logstd0=-2.576 -1.977 -2.013 -1.785 -1.724 mean=-2.015 sigma_course=16.0deg
+qd2_off_s44.step16M.pt             steps=16056320 logstd0=-2.632 -1.951 -2.007 -1.789 -1.680 mean=-2.012 sigma_course=16.1deg
+2026-10-30 14:57:18 off 12M 끝
+# 무학습 재평가 qd2_ — 표본 행동 vs 평균 행동 (기록용, 판정 아님. 시드 1개 = 단독 주장 금지)
+| run | 체크포인트 | 도착 % 표본 / 평균 (차) | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+| trunk_d6 | 4M | 63.6 / 68.0 (+4.4) | 36.0 / 31.8 | 788 / 1050 |
+| trunk_d6 | 9.04397M | 65.9 / 68.8 (+2.9) | 33.6 / 30.6 | 925 / 1152 |
+
+## 마지막 K 점 평균 (갈래 = 분기 뒤 체크포인트 전부, trunk = 2M 이후 전부)
+| run | K | 도착 % 표본 / 평균 | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+| trunk_d6 | 2 | 64.8 / 68.4 | 34.8 / 31.2 | 856 / 1101 |
+2026-10-30 14:57:19 끝 → /c/work/DT_Vessel_v3/Python/_repro_out_qd2/meaneval/_meaneval_qd2_.md

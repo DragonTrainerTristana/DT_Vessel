@@ -1,0 +1,15 @@
+curve_qd2_trunk_d6_s44_4M.txt rc=0
+curve_qd2_trunk_d6_s44_6M.txt rc=0
+curve_qd2_trunk_d6_s44_2M.txt rc=0
+curve_qd2_trunk_d6_s44_8M.txt rc=0
+curve_qd2_trunk_d6_s44_9.04397M.txt rc=0
+curve_qd2_off_s44_10M.txt rc=0
+curve_qd2_off_s44_12M.txt rc=0
+curve_qd2_off_s44_14M.txt rc=0
+curve_qd2_off_s44_16M.txt rc=0
+curve_qd2_off_s44_16.0563M.txt rc=0
+curve_qd2_comm_s44_10M.txt rc=0
+curve_qd2_comm_s44_12M.txt rc=0
+curve_qd2_comm_s44_14M.txt rc=0
+curve_qd2_comm_s44_16M.txt rc=0
+curve_qd2_comm_s44_16.0563M.txt rc=0

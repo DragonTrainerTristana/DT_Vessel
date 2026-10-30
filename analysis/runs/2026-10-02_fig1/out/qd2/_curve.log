@@ -1,0 +1,22 @@
+  curve_qd2_trunk_d6_s44_2M.txt → GPU 0
+  curve_qd2_trunk_d6_s44_4M.txt → GPU 1
+  curve_qd2_trunk_d6_s44_6M.txt → GPU 2
+  curve_qd2_trunk_d6_s44_8M.txt → GPU 3
+  curve_qd2_trunk_d6_s44_9.04397M.txt → GPU 1
+  curve_qd2_off_s44_10M.txt → GPU 2
+  curve_qd2_off_s44_12M.txt → GPU 0
+  curve_qd2_off_s44_14M.txt → GPU 3
+  curve_qd2_off_s44_16M.txt → GPU 1
+  curve_qd2_off_s44_16.0563M.txt → GPU 2
+  curve_qd2_comm_s44_10M.txt → GPU 0
+  curve_qd2_comm_s44_12M.txt → GPU 3
+  curve_qd2_comm_s44_14M.txt → GPU 1
+  curve_qd2_comm_s44_16M.txt → GPU 2
+  curve_qd2_comm_s44_16.0563M.txt → GPU 0
+# 고정 장면 체크포인트 곡선 (qd2_) — epReward, M = 최대 하락 ≤ 0.1 × (최고 − 첫 값)
+| 팔 | 시드 | 점 수 | 첫 값 | 최고 | 끝 | 최대 하락 | M |
+|---|---|---|---|---|---|---|---|
+| comm | 44 | 10 | 576.3 | 1411.6 | 1411.6 | 39.5 | 우상향 |
+| off | 44 | 10 | 576.3 | 1051.5 | 1051.5 | 39.5 | 우상향 |
+M 통과: off 1/1 · comm 1/1
+(matplotlib 없음 — 그림 건너뜀, CSV 는 씀)
