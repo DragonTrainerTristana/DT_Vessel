@@ -9,7 +9,7 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 27개 (09-30 – 10-30) |
+| `pdf/` | 결과 보고서 PDF 28개 (09-30 – 10-30) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
@@ -20,6 +20,7 @@
 | `runs/2026-10-29_qd_interp/` | 10-29 qd_ 해석 — 성공 기준 3/3·학습 곡선·PPO 계측·순위 관문 v5 불통과 내용((iii) 여유 부족 · (v) v4 와 같은 값) |
 | `runs/2026-10-30_q29_interp/` | 10-30 병렬 3건 해석 — qd_ 통신 vs OFF(주 지표·평균 행동·저자 논리 세부 신호)·qe_ 예고 PBRS 불채택·qd2_ 재현·한계·다음 |
 | `runs/2026-10-30_seed2_ablate_interp/` | 10-30 시드 2개 통신 vs OFF·메시지 절제 해석 — 시드별 승패·COLREGs 엇갈림(좌현 회피)·절제(far56·shuffle·state·decl0)·다음 |
+| `runs/2026-10-30_paper_plan/` | 10-30 논문 최종 설계안(제안) — 논리 사슬·현 위치·COLREGs 원인과 R*·5 시드 설계·그림·리뷰어 질문·순서·대안 |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) · qd_ trunk(10-28) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
@@ -56,6 +57,7 @@
 | 2026-10-30_병렬3건_해석_다음단계 | `2026-10-30_q29_interp/make_pdf.sh report.md <출력.pdf>` (자료 = `runs/2026-10-02_fig1/out/qd/`·`meaneval_qd·qe·qd2/`) |
 | 2026-10-30_qd2갈래_시드44_메시지절제_결과 | `2026-10-02_fig1/report/make_report_q30.py <출력 폴더>` (자료 `out/qd2/` · `out/qd/` · `out/meaneval_qd2/` · `out/meaneval_qd/` · `out/ablate_qd/` · `out/q30_notes/`) |
 | 2026-10-30_시드2개_절제_해석 | `2026-10-30_seed2_ablate_interp/make_pdf.sh report.md <출력.pdf>` (자료 = `out/qd/`·`qd2/`·`meaneval_qd*`·`ablate_qd/`) |
+| 2026-10-30_논문_최종설계안 | `2026-10-30_paper_plan/make_pdf.sh report.md <출력.pdf>` (설계 문서) |
 
 ## 다시 만들기
 
