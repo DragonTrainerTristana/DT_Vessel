@@ -284,7 +284,7 @@ def payload50_now(env, x, goal):
 
 
 def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=None,
-                msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None, ext_zero=None):
+                msg_override=None, return_dist=False, groups=None, ext_shuffle_gen=None, ext_zero=None, far_drop=None):
     """★배치 학습형 comm (2026-08): 각 배의 COMM_RANGE 내 nearest-K 파트너 메시지를 pos_ground 집계.
     evaluate_actions(update)의 pos_ground 분기와 *동일 함수형* → PPO ratio 유효 (mirror 검증 대상).
     Returns:
@@ -301,7 +301,9 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     ★COMM_EXT (2026-09-25): policy.relpos_dim > 3 이면 prelpos 뒤에 파트너 확장필드 20차원(vg.comm_pair_features)을 붙인다.
       켜는 그룹은 net_mod.COMM_GROUPS(스냅샷이 덮어씀). groups 인자 = 평가·텔레메트리 절제 전용 override.
       ext_shuffle_gen(torch.Generator) = 평가 전용 field-shuffle(같은 env 안 다른 수신자의 필드로 바꿔 정보만 끊음).
-      파트너 선택 반경 = net_mod.PARTNER_RANGE(None 이면 COMM_RANGE). relpos 거리 정규화는 항상 COMM_RANGE."""
+      파트너 선택 반경 = net_mod.PARTNER_RANGE(None 이면 COMM_RANGE). relpos 거리 정규화는 항상 COMM_RANGE.
+      far_drop(m) = ★2026-10-30 평가 전용 절제: 이 거리 밖 파트너를 후보에서 통째로 뺌(위치·필드 모두) → 파트너 집합이
+      ARPA@far_drop OFF 와 같아짐. 기본 None = 학습 동작 불변."""
     E, N = x.shape[0], x.shape[1]
     dev = x.device
     pos = env.pos                                              # [E,N,2]
@@ -313,6 +315,8 @@ def comm_gather(policy, env, x, goal, self_s, sit, K, send_mask=None, recv_mask=
     BIG = 1e9
     d = d + torch.eye(N, device=dev).unsqueeze(0) * BIG        # 자기 제외
     d = torch.where(d <= PART_R, d, torch.full_like(d, BIG))   # 범위 밖 제외
+    if far_drop is not None:                                   # ★2026-10-30 평가 전용(56 m 밖 통신 전체 끊기). 기본 None = 이 줄 안 탐
+        d = torch.where(d <= float(far_drop), d, torch.full_like(d, BIG))
     if send_mask is not None:                                  # 송신 불가 선박은 파트너 후보에서 제외
         _sm = send_mask.view(1, 1, N) if send_mask.dim() == 1 else send_mask.view(E, 1, N)
         d = torch.where(_sm, d, torch.full_like(d, BIG))

@@ -71,6 +71,8 @@ def main():
     ap.add_argument('--latent_zero', action='store_true', help='학습 latent 메시지만 0 (확장필드·위치는 유지)')
     ap.add_argument('--decl_zero', action='store_true',
                     help='★2026-09-29 확장필드 [13:18](상대 역할 칸: a8 = 선언, a6 = 수신측 추정)만 0 — 역할 선언 기여 절제')
+    ap.add_argument('--far_drop', type=float, default=None,
+                    help='★2026-10-30 이 거리(m) 밖 파트너를 통째로 뺌(위치·코덱 필드 모두) = 통신 배를 OFF 와 같은 파트너 집합으로(56 = 레이더)')
     ap.add_argument('--field_shuffle', action='store_true',
                     help='확장필드를 같은 env 의 다른 수신자 것으로 섞음(분포 유지, 정보 차단)')
     ap.add_argument('--traj_out', default=None,
@@ -143,8 +145,8 @@ def main():
     total = 0
 
     # ★2026-09-25 절제 옵션 (ON 팔에서만 의미). 전용 CPU generator → 정책 샘플 RNG 와 분리.
-    if (args.latent_zero or args.field_shuffle or args.decl_zero) and args.arm != 'ON':
-        raise SystemExit('[eval] --latent_zero/--field_shuffle/--decl_zero 는 --arm ON 에서만 의미가 있음')
+    if (args.latent_zero or args.field_shuffle or args.decl_zero or args.far_drop is not None) and args.arm != 'ON':
+        raise SystemExit('[eval] --latent_zero/--field_shuffle/--decl_zero/--far_drop 는 --arm ON 에서만 의미가 있음')
     if args.decl_zero and getattr(policy, 'relpos_dim', 3) <= 3:
         raise SystemExit('[eval] --decl_zero 는 COMM_EXT 체크포인트에서만 (확장필드가 없음)')
     _ext_zero = (13, 18) if args.decl_zero else None
@@ -152,16 +154,17 @@ def main():
         raise SystemExit('[eval] --field_shuffle 은 COMM_EXT 체크포인트에서만 (확장필드가 없음)')
     _shuf_gen = torch.Generator().manual_seed(args.seed + 7) if args.field_shuffle else None
     _zmsg = torch.zeros(E, N, _r.msg_dim, device=dev) if args.latent_zero else None
-    if args.latent_zero or args.field_shuffle or args.comm_groups is not None or args.decl_zero:
+    if args.latent_zero or args.field_shuffle or args.comm_groups is not None or args.decl_zero or args.far_drop is not None:
         print(f"[eval] 절제: latent_zero={args.latent_zero} field_shuffle={args.field_shuffle} "
               + ("decl_zero=[13:18] " if args.decl_zero else '')
+              + (f"far_drop={args.far_drop:g}m " if args.far_drop is not None else '')
               + f"comm_groups={list(net.COMM_GROUPS)} (학습과 다른 입력 — 절제 결과로만 보고)", flush=True)
 
     def act(x, goal, self_s, sit):
         with torch.no_grad():
             if args.arm == 'ON':
                 om, _ = comm_gather(policy, env, x, goal, self_s, sit, args.max_partners,
-                                    msg_override=_zmsg, ext_shuffle_gen=_shuf_gen, ext_zero=_ext_zero)
+                                    msg_override=_zmsg, ext_shuffle_gen=_shuf_gen, ext_zero=_ext_zero, far_drop=args.far_drop)
             else:
                 om = make_others_msg(env, args.arm, E, N, dev)
             action, _, _, _ = policy.ctr_actor(x, goal, self_s, om, sit)
