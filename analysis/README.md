@@ -21,7 +21,7 @@
 | `runs/2026-10-30_q29_interp/` | 10-30 병렬 3건 해석 — qd_ 통신 vs OFF(주 지표·평균 행동·저자 논리 세부 신호)·qe_ 예고 PBRS 불채택·qd2_ 재현·한계·다음 |
 | `runs/2026-10-30_seed2_ablate_interp/` | 10-30 시드 2개 통신 vs OFF·메시지 절제 해석 — 시드별 승패·COLREGs 엇갈림(좌현 회피)·절제(far56·shuffle·state·decl0)·다음 |
 | `runs/2026-10-30_paper_plan/` | 10-30 논문 최종 설계안(제안) — 논리 사슬·현 위치·COLREGs 원인과 R*·5 시드 설계·그림·리뷰어 질문·순서·대안 |
-| `runs/2026-10-30_stage2_plan/` | 10-30 묘책 — 2단계 학습(검증된 trunk 재사용 → 두 팔 원거리 COLREGs 규칙 벌점 갈래), 2×2·헤지 배치·사전 기준 |
+| `runs/2026-10-30_stage2_plan/` | 10-30 묘책 — 2단계 학습(검증된 trunk 재사용 → 두 팔 원거리 COLREGs 규칙 벌점 갈래), 2×2·헤지 배치·사전 기준 · **`HANDOFF.md` = 10-30 저녁 인계(c034422 실행 중 배치·결과 오면 할 분석 순서·안 만든 코드)** |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) · qd_ trunk(10-28) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
