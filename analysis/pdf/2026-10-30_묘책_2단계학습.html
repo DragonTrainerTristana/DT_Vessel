@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>묘책 — 2단계 학습으로 가장 안전하게, 저자 논리대로 (2026-10-30, 제안 · 저자 결정 대기)</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+  <style type="text/css">body { font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; font-size: 10.5pt; line-height: 1.5; max-width: 190mm; margin: 0 auto; color: #111; }
+h1 { font-size: 17pt; border-bottom: 2px solid #333; padding-bottom: 4px; }
+h2 { font-size: 13.5pt; margin-top: 18px; border-bottom: 1px solid #aaa; }
+h3 { font-size: 11.5pt; margin-top: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 6px 0; }
+th, td { border: 1px solid #999; padding: 3px 5px; vertical-align: top; }
+th { background: #eee; }
+code { font-size: 8.8pt; background: #f4f4f4; padding: 0 2px; }
+pre { background: #f4f4f4; padding: 6px; font-size: 8.5pt; white-space: pre-wrap; }
+header#title-block-header { display: none; }
+@page { size: A4; margin: 14mm 12mm; }
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">묘책 — 2단계 학습으로 가장 안전하게, 저자 논리대로
+(2026-10-30, 제안 · 저자 결정 대기)</h1>
+</header>
+<h1 id="묘책--2단계-학습으로-가장-안전하게-저자-논리대로-2026-10-30-제안--저자-결정-대기">묘책
+— 2단계 학습으로 가장 안전하게, 저자 논리대로 (2026-10-30, 제안 · 저자
+결정 대기)</h1>
+<ul>
+<li>앞 설계안(a3b4f2c, R* 를 처음부터)의 약점 두 개를 없앰: ① 새 trunk
+를 처음부터 학습하는 위험 ② 이미 얻은 시드 2개 결과를 버림</li>
+<li>근거 코드 확인: 갈래 시점 보상 변경은 학습기 재개
+검사(<code>vessel_gym_train.py</code> :781 <code>_bad_sim</code>)가 막음
+→ 허용 키 지정으로 열 수 있음. 분기 검사(<code>check_branch.py</code>
+:138)는 같은 trunk 의 갈래끼리 sim 이 같은지만 봄. 원거리 COLREGs 벌점과
+판정기 동시 사용은 assert(<code>config.py</code>
+:545)·<code>_reward</code> :1707 이 막음 → 벌점만 쓰는 경우 허용하도록
+작은 수정</li>
+</ul>
+<h2 id="0-묘책-한-줄">0. 묘책 한 줄</h2>
+<ul>
+<li><strong>1단계 = 이미 검증된 OFF trunk(qd_ 보상, 시드 43·44 처방 기준
+3/3) 를 그대로 재사용 → 2단계 = 두 팔 모두 &#39;원거리 COLREGs 규칙 벌점(300
+m)&#39; 을 켠 같은 보상으로 OFF·통신 갈래</strong></li>
+<li>이미 돌린 갈래(벌점 없음)는 버리지 않고 <strong>비교 축</strong>으로
+씀 → {OFF, 통신} × {원거리 규칙 벌점 없음, 있음} 2×2</li>
+</ul>
+<h2 id="1-왜-가장-안전한가">1. 왜 가장 안전한가</h2>
+<ol type="1">
+<li>가장 위험한 부분(OFF 가 처음부터 배우기)을 다시 안 함 — 이미 성공한
+trunk(시드 43·44)를 그대로 씀. 새 시드(45–47) trunk 도 검증된 qd_ 방법
+그대로</li>
+<li>2단계에서 더하는 건 &#39;하면 안 되는 행동&#39;(양보·정면 배 좌현, 유지 배
+침로 변경)의 벌점뿐 → 이미 피할 줄 아는 배가 방향만 고치면 됨. 처음부터
+배우는 것보다 훨씬 쉬움</li>
+<li>버리는 계산이 없음 — 2단계가 잘 안 되면 같은 trunk 로 대안 A(벌점
+없는 갈래, 이미 2 시드 있음)를 그대로 이어감</li>
+<li>짧음 — 시드 43·44 는 trunk 가 있어 2단계 갈래만(약 3.5 h). 새 시드
+trunk 와 동시에 돌림</li>
+<li>공정성 유지 — 각 단계에서 두 팔 보상 완전히 같음. 같은 trunk 짝.
+메시지 입력만 다름</li>
+</ol>
+<h2 id="2-왜-저자-논리대로인가">2. 왜 저자 논리대로인가</h2>
+<table>
+<thead>
+<tr>
+<th>목표</th>
+<th>2단계가 주는 것</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a) COLREGs</td>
+<td>300 m 안 조우 전체에서 규칙 방향이 보상됨 → 멀리 보는 통신 배만
+&#39;일찍 우현&#39;으로 지킬 수 있음 (지금 엇갈림의 원인 = 56–300 m 좌현이
+공짜였던 것)</td>
+</tr>
+<tr>
+<td>b) DCPA 넓음</td>
+<td>거리 관련 보상은 두 팔 같음(56 m 위험 비용 그대로)</td>
+</tr>
+<tr>
+<td>c) 매끄러움</td>
+<td>이미 2/2 시드에서 나옴. 규칙 벌점은 &#39;작게 일찍 우현&#39;을 막지
+않음</td>
+</tr>
+<tr>
+<td>d) 학습</td>
+<td>흉내 없음, 순수 PPO 두 단계</td>
+</tr>
+<tr>
+<td>곡선 우상향</td>
+<td>모든 체크포인트(trunk·갈래)를 <strong>2단계 보상으로 같은 장면
+평가</strong> → x 축 전체가 같은 보상 정의. 갈래에서 규칙을 배우며
+오름</td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-논문-서술-리뷰어가-자연스럽게-받아들이는-형태">3. 논문 서술
+(리뷰어가 자연스럽게 받아들이는 형태)</h2>
+<ul>
+<li>&quot;<strong>커리큘럼</strong>: 1단계에서 통신 없이 항해·근거리
+충돌회피를 배우고(공유 사전학습), 2단계에서 COLREGs 규칙을 조우 범위
+전체로 넓혀 통신 유무만 다르게 이어 학습&quot;</li>
+<li>왜 처음부터 안 하나 → 근거 있음: 관측 못 하는 거리의 보상 항을
+처음부터 넣으면 학습이 무너짐(n_ 300 m 위험 비용 27.3 %, qe_ 예고 보상
+0/3)</li>
+<li>2×2 결과가 보여 줄 이야기(가설): &quot;통신은 보상이 요구하는 것을 더
+잘하게 해 줌 — 규칙 벌점이 없으면 효율적인(좌현 포함) 회피, 있으면 일찍
+우현의 규칙 회피.&quot; 통신이 정보 증폭기라는 깔끔한 메시지</li>
+</ul>
+<h2 id="4-동시에-돌리는-배치-gpu-4장-결과에-따라-갈림">4. 동시에 돌리는
+배치 (GPU 4장, 결과에 따라 갈림)</h2>
+<table>
+<thead>
+<tr>
+<th>GPU</th>
+<th>무엇</th>
+<th>시간</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>시드 43 2단계 갈래 OFF·통신(qd_ trunk 재사용)</td>
+<td>약 3.5 h</td>
+</tr>
+<tr>
+<td>1</td>
+<td>시드 44 2단계 갈래 OFF·통신(qd2_ trunk 재사용)</td>
+<td>약 3.5 h</td>
+</tr>
+<tr>
+<td>2</td>
+<td>시드 45 trunk(qd_ 방법 그대로)</td>
+<td>약 2.5 h</td>
+</tr>
+<tr>
+<td>3</td>
+<td>시드 46 trunk → 이어서 시드 47 trunk</td>
+<td>약 5 h</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>2단계 결과(43·44) 가 사전 기준을 넘으면 → 45–47 도 2단계 갈래 → 5
+시드</li>
+<li>못 넘으면 → 45–47 은 벌점 없는 갈래(대안 A) → 5 시드, COLREGs 는
+&#39;나빠지지 않음&#39;으로 보고</li>
+<li>어느 쪽이든 trunk 3개는 그대로 쓰임</li>
+</ul>
+<h2 id="5-사전-기준결과-전에-고정-제안">5. 사전 기준(결과 전에 고정,
+제안)</h2>
+<ul>
+<li>2단계 안전: OFF 2단계 갈래 16M 평균 행동 도착 ≥ 같은 시드 trunk
+9.04M − 5 pt (규칙 벌점이 OFF 를 망치지 않음)</li>
+<li>Fig1 판정(5 시드 모이면): 시드별 짝 차이 평균 ± 95 % CI + 승 수,
+성공 = 승 ≥ 4/5 이고 CI 가 0 을 안 걸침. 주 지표 = 충돌 · 도착 · DCPA ·
+Woerner · 방향 변화</li>
+<li>주 평가 = 평균 행동, 표본 행동 부록</li>
+<li>이른 행동 지표(보상 안 함): 조우별 첫 우현 ≥ 10° 변침 때 거리·tcpa,
+56 m 밖에서 풀린 조우 비율</li>
+</ul>
+<h2 id="6-필요한-코드-작음-기본값-비트동일">6. 필요한 코드 (작음, 기본값
+비트동일)</h2>
+<ol type="1">
+<li>원거리 COLREGs 벌점(<code>COLREGS_FAR_RANGE=300</code>,
+<code>FAR_MODE=penalty</code>)을 판정기 v2 와 같이 쓸 수 있게(벌점만,
+가산 없음 확인)</li>
+<li>갈래 시점 보상 변경 허용: 허용 키(원거리 벌점 2개)만,
+분기점(<code>resume_at == comm_on_at</code>)에서만, 스냅샷에 기록 → 그
+뒤 재개는 다시 엄격</li>
+<li>runner: trunk 재사용(시드별 원 접두어) · 2단계 env 를 갈래·평가에만
+· 곡선은 모든 체크포인트를 2단계 보상으로 평가</li>
+<li>평가 스크립트(평균 행동·절제)에 2단계 env 전달 · 이른 행동 지표(평가
+전용, 다음 날 가능)</li>
+<li>검사: 골든 비트동일 · 보상 경로 단위 검사 · 재개 거부/허용 검사 →
+Mac 반나절</li>
+</ol>
+<h2 id="7-위험">7. 위험</h2>
+<ul>
+<li>2단계에서 OFF 가 규칙 벌점 때문에 지나치게 소극적이 될 수 있음 → §5
+안전 기준으로 확인</li>
+<li>통신의 COLREGs 개선은 보장 못 함 → 고정 기준대로 보고. 안 되면 대안
+A 결과로 정직하게</li>
+</ul>
+<h2 id="8-moe-10-30-추가-저자-질문">8. MoE (10-30 추가, 저자 질문)</h2>
+<ul>
+<li>현 구조: 상황별 전문가 5개, 라우팅 키 = 자기 레이더(56 m) 기준
+COLREGs 상황 → 두 팔 같은 구조(공정)</li>
+<li>주 평가 결정 몫(시드 43): 조우 전문가 4개 = OFF 12.3 % · 통신 10.7
+%. 정면 전문가 결정 수 149,270 → 55,115(−63 %). 나머지는 &#39;조우 없음&#39;
+전문가</li>
+<li>뜻: 56 m 밖(레이더 밖) 행동은 전부 &#39;조우 없음&#39; 전문가가 맡음 → 2단계
+원거리 규칙 벌점(sit = 0 일 때만)도 이 전문가가 배움. 통신 배는 메시지로
+상대 역할을 알아 이 전문가 안에서 &#39;일찍 우현&#39;을 배울 수 있음, OFF 는
+일반적인 우현 선호만 배울 수 있음</li>
+<li>결정: <strong>MoE 구조는 바꾸지 않음</strong> — 바꾸면 trunk
+재사용·공정성(두 팔 같은 구조)·지금까지 결과가 깨짐. 통신 팔만 원거리
+상황으로 라우팅하는 것도 구조가 달라져 불공정 → 하지 않음</li>
+<li>논문용 추가(평가만): ① 팔별 전문가 사용 몫 ② 첫 우현 변침이 어느
+전문가에서 일어났는지(통신 = 레이더 접촉 전 &#39;조우 없음&#39; 전문가 → 이른
+행동의 직접 증거) ③ 시간 되면 부록: 단일망(USE_MOE=0) 1–2 시드를 같은
+2단계 방식으로 → &#39;통신 이득이 MoE 탓이 아님&#39;</li>
+<li>위험: 56 m 에서 전문가가 바뀌는 순간 행동이 끊길 수 있음 · 조우
+전문가 데이터가 적음(약 11 %) — 두 팔 같음, 매끄러움 지표로 확인</li>
+</ul>
+</body>
+</html>
