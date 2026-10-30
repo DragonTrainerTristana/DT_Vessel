@@ -542,9 +542,12 @@ COLREGS_MODE = _env_str('VESSEL_COLREGS_MODE', 'unity').lower()   # 'unity'(기�
 #   두 배 모두 −ROLE_PROMISE_PEN (vessel_gym.RolePromiseTracker). 모든 팔 동일. 원거리 채점·unity_cs·simple 과는 같이 안 씀.
 ROLE_PROMISE_PEN = _env_float('VESSEL_ROLE_PROMISE_PEN', 0.0)
 assert ROLE_PROMISE_PEN >= 0.0, f"VESSEL_ROLE_PROMISE_PEN={ROLE_PROMISE_PEN} - 벌점 크기(≥0)"
-assert ROLE_PROMISE_PEN == 0.0 or (COLREGS_FAR_RANGE == 0.0 and COLREGS_MODE == 'unity'), \
-    (f"VESSEL_ROLE_PROMISE_PEN>0 은 COLREGS_FAR_RANGE=0 · COLREGS_MODE=unity 에서만 (현재 far={COLREGS_FAR_RANGE} "
-     f"mode={COLREGS_MODE}) — 결정당 준수항 재구성이 unity 식 기준이라 다른 조합은 조용히 다른 보상이 됨")
+# ★2026-10-30 2단계(묘책 §6, 저자 승인): 원거리 채점이 'penalty'(벌점만, 가산 0)면 역할 약속과 같이 씀 — 56 m 안은 역할 약속
+#   벌점항, 56–300 m 는 원거리 위반 벌점(vessel_gym._reward). 'full'(원거리 가산 있음)은 역할 약속의 '가산 없음'과 충돌 → 여전히 금지
+assert ROLE_PROMISE_PEN == 0.0 or ((COLREGS_FAR_RANGE == 0.0 or COLREGS_FAR_MODE == 'penalty') and COLREGS_MODE == 'unity'), \
+    (f"VESSEL_ROLE_PROMISE_PEN>0 은 COLREGS_MODE=unity 이고 COLREGS_FAR_RANGE=0 또는 COLREGS_FAR_MODE=penalty 에서만 "
+     f"(현재 far={COLREGS_FAR_RANGE} far_mode={COLREGS_FAR_MODE} mode={COLREGS_MODE}) — 결정당 준수항 재구성이 unity 식 기준이고 "
+     f"원거리 가산(full)은 역할 약속의 '가산 없음'과 어긋나 조용히 다른 보상이 됨")
 # 조우 판정 상수(보상 판정기와 eval 이 같이 import — 스펙 §2). env 로 바꾸지 않음: 바꾸려면 코드·스펙을 같이 고칠 것.
 ROLE_GIVEWAY_MIN_DEG = 10.0     # 정면·양보선: 조우 중 우현 침로 변화 최대값 ≥ 이것
 ROLE_PORT_TOL_DEG = 5.0         # 정면·양보선: 좌현 침로 변화가 이것을 넘으면 위반

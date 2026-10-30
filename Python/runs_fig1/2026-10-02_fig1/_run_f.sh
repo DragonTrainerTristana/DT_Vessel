@@ -31,10 +31,14 @@
 #   VESSEL_F_ARPA_RANGE=300 (trunk 모드 전용 진단: OFF 가 300 m 참값을 봄) · VESSEL_F_EXTRA_ENV="K=V K=V"(trunk·off·comm 전부에 같은 export = ON=OFF)
 #   VESSEL_F_REWARD_RANGE=56 (충돌코스·per-pair 비용 반경, 두 팔 동일 → 순위 관문 v5 새로) · VESSEL_F_RANK_PARALLEL=1 (관문을 trunk 와 동시에 다른 GPU)
 #   VESSEL_F_ALLOW_BUSY=1 (다른 학습이 돌아도 시작 — GPU 3장에 동시 실행용)
+# ★2026-10-30 2단계(묘책, 저자 승인 '진행해주고'. 스펙 docs/superpowers/specs/2026-10-30-stage2-far-colregs-design.md): MODE stage2
+#   = 이미 관문 통과한 trunk(VESSEL_F_TRUNK_FROM=<그 접두어>, 같은 시드 1개)를 그대로 쓰고, 두 팔 모두 원거리 COLREGs 벌점(300 m, penalty)을
+#   켠 같은 보상으로 갈래 off·comm → 분기 검사 → 주 평가(표본·평균 행동) → 곡선(trunk 점도 2단계 보상으로) → 표. 코덱도 그 trunk 배치 것
+#   예: VESSEL_F_IMIT=0 VESSEL_F_PREFIX=qs_ VESSEL_F_TRUNK_FROM=qd_ VESSEL_F_SEEDS=43 VESSEL_F_NGATE=1 VESSEL_F_REWARD_RANGE=56 VESSEL_F_EXTRA_ENV="..." bash ... stage2
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
-case "$MODE" in phase0|phase1|trunk) ;; *) echo "사용: $0 phase0|phase1|trunk"; exit 1 ;; esac
+case "$MODE" in phase0|phase1|trunk|stage2) ;; *) echo "사용: $0 phase0|phase1|trunk|stage2"; exit 1 ;; esac
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)           # .../Python/runs_fig1/2026-10-02_fig1
 BUNDLE=$(dirname "$HERE")                                     # .../Python/runs_fig1
 R=${VESSEL_F_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)} || { echo "★멈춤: git 저장소 안에서 실행할 것"; exit 1; }
@@ -48,6 +52,12 @@ if [ "$IMIT" = 0 ]; then
   [ "$MODE" != phase0 ] || { echo "★멈춤: VESSEL_F_IMIT=0 은 phase1·trunk 만(phase0 = DAgger·P0)"; exit 1; }
 fi
 [ "$MODE" != trunk ] || [ "$IMIT" = 0 ] || { echo "★멈춤: trunk 모드는 VESSEL_F_IMIT=0 전용"; exit 1; }
+TPRE=${VESSEL_F_TRUNK_FROM:-$PRE}       # ★2026-10-30 trunk 를 가져올 접두어(stage2 만 다름)
+if [ "$MODE" = stage2 ]; then
+  [ "$IMIT" = 0 ] && [ "$TPRE" != "$PRE" ] || { echo "★멈춤: stage2 는 VESSEL_F_IMIT=0 · VESSEL_F_TRUNK_FROM=<trunk 접두어, 이 접두어와 다름>"; exit 1; }
+else
+  [ "$TPRE" = "$PRE" ] || { echo "★멈춤: VESSEL_F_TRUNK_FROM 은 stage2 모드 전용"; exit 1; }
+fi
 [ -z "${VESSEL_F_REWARD_RANGE:-}${VESSEL_F_EXTRA_ENV:-}${VESSEL_F_ARPA_RANGE:-}" ] || [ "$IMIT" = 0 ] || { echo "★멈춤: 10-13 토글(REWARD_RANGE·EXTRA_ENV·ARPA_RANGE)은 VESSEL_F_IMIT=0 전용"; exit 1; }
 OFF_T=vo56h150                          # 위 주석(스펙 §5 규칙 적용 결과)
 COMM_T=vo300i
@@ -96,6 +106,11 @@ export VESSEL_RUN_PREFIX=$PRE VESSEL_ROLE_PROMISE_PEN=20 VESSEL_COLREGS_FAR_RANG
 export VESSEL_ROLE_JUDGE=v2 VESSEL_FORWARD_COEF=0 VESSEL_TIME_PENALTY=0.035 VESSEL_RISK_DCPA_GATE_M=48
 export VESSEL_ACTION_MODE=course
 [ "$IMIT" = 0 ] && export VESSEL_ROLE_V2_PRIMARY=cum VESSEL_ROLE_V2_RES_F6=1   # ★2026-10-07 n_ 보상 = v3 + 판정기 토글 2
+STAGE2=""; CURVE_X=""
+if [ "$MODE" = stage2 ]; then   # ★2026-10-30 2단계 보상 = 1단계 + 원거리(56–300 m) COLREGs 위반 벌점(가산 0), 두 팔 동일. trunk 점 곡선은 이 보상으로
+  export VESSEL_COLREGS_FAR_RANGE=300 VESSEL_COLREGS_FAR_MODE=penalty
+  STAGE2="far300penalty TRUNK_FROM=$TPRE"; CURVE_X="--sim_from_env COLREGS_FAR_RANGE,COLREGS_FAR_MODE"
+fi
 # ★2026-10-13 q_: 보상 반경(두 팔 동일) → 순위 관문 설정. 최적화 토글은 전역 export 라 trunk·off·comm 전부 같은 값(ON=OFF)
 RANK_SET=v4
 if [ -n "${VESSEL_F_REWARD_RANGE:-}" ]; then
@@ -111,7 +126,7 @@ export VESSEL_OUT_DIR=$PWD/_repro_out_${PRE%_}
 CK=$VESSEL_CKPT_DIR
 O=$VESSEL_OUT_DIR; TL=$O/_timeline.txt; mkdir -p "$O" "$O/codec" "$CK"
 # ★2026-10-13 접두어별 실험 env 를 첫 실행에 기록하고 이후 실행마다 대조(같은 접두어로 trunk→phase1 이어갈 때 토글 누락·ARPA 300 뿌리 사용을 막음)
-_benv="ARPA=$ARPA_R RANK=$RANK_SET REWARD_RANGE=${VESSEL_REWARD_RANGE:-} EXTRA=[${VESSEL_F_EXTRA_ENV:-}]"
+_benv="ARPA=$ARPA_R RANK=$RANK_SET REWARD_RANGE=${VESSEL_REWARD_RANGE:-} EXTRA=[${VESSEL_F_EXTRA_ENV:-}]${STAGE2:+ STAGE2=$STAGE2}"
 if [ -f "$O/_batch_env.txt" ]; then
   [ "$(cat "$O/_batch_env.txt")" = "$_benv" ] || { echo "★멈춤: 이 접두어($PRE)의 실험 env 가 다름 — 기록: $(cat "$O/_batch_env.txt") / 지금: $_benv (같은 env 로 다시, 또는 새 접두어)"; exit 1; }
 else
@@ -281,7 +296,7 @@ codec_all() {   # 스펙 §4-1: 시드마다 그 trunk 레이더 인코더 + vo3
     [ -f "$O/codec/rep_s$s.json" ] && continue
     rm -rf "$O/codec/s$s"
     launch 2500 "$O/${PRE}codec_s$s.log" bash -c "$ENV_ARPA
-      '$PY' -u comm_codec.py collect46 --ckpt '$CK/${PRE}trunk_d6_s$s.pt' --out '$O/codec/data_s$s.pt' --envs 64 --burn 300 --T 1500 --seed $s --teacher $COMM_T &&
+      '$PY' -u comm_codec.py collect46 --ckpt '$CK/${TPRE}trunk_d6_s$s.pt' --out '$O/codec/data_s$s.pt' --envs 64 --burn 300 --T 1500 --seed $s --teacher $COMM_T &&
       '$PY' -u comm_codec.py sweep46 --data '$O/codec/data_s$s.pt' --out_dir '$O/codec/s$s' --seed 0 --report '$O/codec/rep_s$s.json'"
   done
   wait_all
@@ -308,14 +323,14 @@ branch_one() {   # branch_one <off|comm|offb> <seed>
   [ "$arm" = offb ] && wu=2401             # offb = off 재분기(워밍업 +1 결정) — 잡음 자 N
   if [ "$arm" = comm ]; then envset=$(env_comm "$s") || return 1; teach=$COMM_T; else envset=$ENV_ARPA; teach=$OFF_T; fi
   rm -f "$O/$run.csv" "$O/${run}_aux.csv" "$O/${run}_ep.csv"
-  cp "$O/${PRE}trunk_d6_s$s.csv" "$O/$run.csv"
-  [ -f "$O/${PRE}trunk_d6_s${s}_aux.csv" ] && cp "$O/${PRE}trunk_d6_s${s}_aux.csv" "$O/${run}_aux.csv"
-  [ -f "$O/${PRE}trunk_d6_s${s}_ep.csv" ] && cp "$O/${PRE}trunk_d6_s${s}_ep.csv" "$O/${run}_ep.csv"
+  cp "$O/${TPRE}trunk_d6_s$s.csv" "$O/$run.csv"
+  [ -f "$O/${TPRE}trunk_d6_s${s}_aux.csv" ] && cp "$O/${TPRE}trunk_d6_s${s}_aux.csv" "$O/${run}_aux.csv"
+  [ -f "$O/${TPRE}trunk_d6_s${s}_ep.csv" ] && cp "$O/${TPRE}trunk_d6_s${s}_ep.csv" "$O/${run}_ep.csv"
   local bcset="export VESSEL_BC_TEACHER=$teach VESSEL_BC_COEF=1.0 VESSEL_BC_DECAY_DEC=$BC_DECAY"
   [ "$IMIT" = 0 ] && bcset="unset VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC"   # ★2026-10-07 갈래도 흉내 없음
   launch 3000 "$O/$run.log" bash -c "$envset
     $bcset
-    '$PY' -u vessel_gym_train.py --arm ON --resume '$CK/${PRE}trunk_d6_s$s.pt' --resume_at $BRANCH_AT --comm_on_at $BRANCH_AT \
+    '$PY' -u vessel_gym_train.py --arm ON --resume '$CK/${TPRE}trunk_d6_s$s.pt' --resume_at $BRANCH_AT --comm_on_at $BRANCH_AT \
       --resume_warmup $wu --steps $TOTAL $TARGS --seed $s --ckpt_every 2 --save '$CK/$run.pt' --csv '$O/$run.csv'"
 }
 branches_all() {
@@ -337,14 +352,17 @@ branches_all() {
   grep -q "ALL PASS" "$O/_branch_check.txt" || { echo "★FAIL 분기 검사"; return 1; }
 }
 eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scripted.py learned 모드(신경망 그대로, 지표 줄만 덧붙임)
-  : > "$O/_status_f.txt"; local s a envset
-  for s in $SEEDS; do for a in $ARMS; do
-    grep -q "R8=" "$O/lr_${PRE}${a}_s$s.txt" 2>/dev/null && continue
-    if [ "$a" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
-    launch 3000 "$O/lr_${PRE}${a}_s$s.txt" bash -c "$envset
-      '$PY' -u '$SDROP/eval_scripted.py' --py_root '$R/Python' --policy learned -- \
-        --ckpt '$CK/${PRE}${a}_s$s.pt' --arm ON --envs 256 --eval_decisions 10000 --burnin 2400 --seed 999"
-  done; done
+  : > "$O/_status_f.txt"; local s a envset k ma
+  for k in $EVAL_KINDS; do   # ★2026-10-30 stage2: lr = 표본 행동 · lrm = 평균 행동 tanh(mean)(묘책 §5 주 평가)
+    ma=""; [ "$k" = lrm ] && ma="--mean_action"
+    for s in $SEEDS; do for a in $ARMS; do
+      grep -q "R8=" "$O/${k}_${PRE}${a}_s$s.txt" 2>/dev/null && continue
+      if [ "$a" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
+      launch 3000 "$O/${k}_${PRE}${a}_s$s.txt" bash -c "$envset
+        '$PY' -u '$SDROP/eval_scripted.py' --py_root '$R/Python' --policy learned $ma -- \
+          --ckpt '$CK/${PRE}${a}_s$s.pt' --arm ON --envs 256 --eval_decisions 10000 --burnin 2400 --seed 999"
+    done; done
+  done
   wait_all
 }
 rank_v4() {   # ★2026-10-07 관문 2(스펙 2026-10-07): 학습 전 보상 순위 관문, 설정 하나(v4 · 10-13 v5)로 판정. 불통과 = 멈추고 보고
@@ -389,13 +407,14 @@ curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026
   : > "$O/_status_f.txt"; local s a f x run envset
   for s in $SEEDS; do for run in trunk_d6 $ARMS; do
     if [ "$run" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
-    for f in "$CK/${PRE}${run}_s$s".step*M.pt "$CK/${PRE}${run}_s$s.pt"; do
+    local fp=$PRE; [ "$run" = trunk_d6 ] && fp=$TPRE   # ★2026-10-30 stage2: trunk 점 = 가져온 trunk 체크포인트(결과 파일 이름은 이 접두어로)
+    for f in "$CK/${fp}${run}_s$s".step*M.pt "$CK/${fp}${run}_s$s.pt"; do
       [ -f "$f" ] || continue
       case "$f" in *.step*M.pt) x=$(echo "$f" | sed -E 's/.*\.step([0-9.]+)M\.pt$/\1/') ;;
                    *) [ "$run" = trunk_d6 ] && x=$(awk "BEGIN{print $BRANCH_AT/1e6}") || x=$(awk "BEGIN{print $TOTAL/1e6}") ;; esac
       grep -q "epReward=" "$O/curve_${PRE}${run}_s${s}_${x}M.txt" 2>/dev/null && continue
       launch 2500 "$O/curve_${PRE}${run}_s${s}_${x}M.txt" bash -c "$envset
-        '$PY' -u eval/eval_ckpt.py --ckpt '$f' --arm ON --envs 256 --eval_decisions 3000 --burnin 2400 --drain 3000 --seed 999"
+        '$PY' -u eval/eval_ckpt.py --ckpt '$f' --arm ON --envs 256 --eval_decisions 3000 --burnin 2400 --drain 3000 --seed 999 $CURVE_X"
     done
   done; done
   wait_all
@@ -408,9 +427,44 @@ fig1_table() {
   { [ -f "$O/_p0_override.txt" ] && { cat "$O/_p0_override.txt"; echo; }
     [ -f "$O/_rank_override.txt" ] && { cat "$O/_rank_override.txt"; echo; }
     [ -f "$O/_rank_note.txt" ] && { cat "$O/_rank_note.txt"; echo; }
+    [ -f "$O/_stage2_note.txt" ] && { cat "$O/_stage2_note.txt"; echo; }
     "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE"; } > "$O/_fig1.md" 2>&1; local rc=$?
   cat "$O/_fig1.md"; cp "$O/_fig1.md" "$RES/"
+  if [ "$EVAL_KINDS" != lr ]; then   # ★2026-10-30 평균 행동 표(묘책 §5 주 평가)
+    { [ -f "$O/_stage2_note.txt" ] && { cat "$O/_stage2_note.txt"; echo; }
+      "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE" lrm; } > "$O/_fig1_mean.md" 2>&1 || rc=1
+    cat "$O/_fig1_mean.md"; cp "$O/_fig1_mean.md" "$RES/"
+  fi
   return $rc
+}
+stage2_reuse() {   # ★2026-10-30 trunk 배치($TPRE)에서 관문 통과 기록·trunk 곡선 CSV·(있으면) 코덱 선택을 가져옴. trunk·코덱 파일은 그대로(복사 안 함 → SHA 같음)
+  local TO="$PWD/_repro_out_${TPRE%_}" s cd_ok=1
+  [ -f "$TO/_seeds.txt" ] || { echo "★FAIL $TO/_seeds.txt 없음 — $TPRE trunk 관문이 끝난 배치여야 함"; return 1; }
+  for s in $SEEDS_ALL; do
+    grep -qw "$s" "$TO/_seeds.txt" || { echo "★FAIL 시드 $s 는 $TPRE trunk 관문 통과 시드가 아님($(cat "$TO/_seeds.txt"))"; return 1; }
+    [ -f "$CK/${TPRE}trunk_d6_s$s.pt" ] || { echo "★FAIL trunk 없음 $CK/${TPRE}trunk_d6_s$s.pt"; return 1; }
+    grep -q "^CODEC_s$s=" "$TO/_codec_choice.txt" 2>/dev/null || cd_ok=0
+    cp "$TO/${TPRE}trunk_d6_s$s.csv" "$O/" || return 1
+    cp "$TO/${TPRE}trunk_d6_s${s}_aux.csv" "$TO/${TPRE}trunk_d6_s${s}_ep.csv" "$O/" 2>/dev/null
+  done
+  # 코덱: trunk 배치가 phase1 에서 고른 것이 있으면 그대로(1단계 갈래와 같은 코덱), 없으면(trunk 모드만 돈 배치) 이 배치가 같은 규칙으로 고름(codec 단계)
+  if [ $cd_ok = 1 ]; then cp "$TO/_codec_choice.txt" "$O/_codec_choice.txt"; echo reuse > "$O/_codec_src.txt"; else echo new > "$O/_codec_src.txt"; fi
+  echo "$SEEDS_ALL" > "$O/_seeds.txt"
+  { echo "> 2단계(스펙 2026-10-30): trunk = $TPRE 배치 그대로(관문 기록 $TO/_seeds.txt) · 코덱 = $([ $cd_ok = 1 ] && echo "$TPRE 선택 재사용($(grep '^CHOSEN_K' "$TO/_codec_choice.txt"))" || echo '이 배치에서 같은 규칙으로 고름') — trunk 관문·순위 관문 재실행 없음($TPRE 기록·10-29 저자 결정 따름)"
+    echo "> 2단계 보상 = $TPRE 보상 + 원거리 COLREGs 위반 벌점(VESSEL_COLREGS_FAR_RANGE=300 · FAR_MODE=penalty), 두 팔 동일. 곡선은 trunk 점도 이 보상으로 평가($CURVE_X)"; } > "$O/_stage2_note.txt"
+  cat "$O/_stage2_note.txt"
+}
+stage2() {
+  step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+  step reuse    stage2_reuse
+  SEEDS=$(cat "$O/_seeds.txt") || exit 1
+  log "2단계 갈래 시드: $SEEDS (trunk $TPRE)"
+  if grep -q reuse "$O/_codec_src.txt"; then log "코덱 = $TPRE 선택 재사용"; else step codec codec_all; fi
+  step branches branches_all
+  step eval     eval_all
+  step curve    curve_all
+  step fig1     fig1_table
+  log "stage2 완료 — 결과 $RES/_fig1.md · _fig1_mean.md"
 }
 phase1() {
   if [ "$IMIT" = 0 ]; then   # ★2026-10-07 흉내 없음: P0 대신 preflight + 순위 관문 v4
@@ -466,8 +520,9 @@ trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 
   else echo "ARPA@$ARPA_R 진단 trunk — Fig1 뿌리 아님(check_branch no_msg 규칙)" > "$O/_diag_only.txt"; log "trunk 모드 완료(ARPA@$ARPA_R 진단 전용, 갈래 없음)"; fi
 }
 # ★2026-10-13 smoke(preflight 15종 + 작은 학습)는 기본값 env 로 — 토글은 본 런에서만. 새 코드 경로는 Mac 미니 런으로 검사함
-SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY"
-log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O"
+SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full"
+EVAL_KINDS=lr; [ "$MODE" = stage2 ] && EVAL_KINDS="lr lrm"   # ★2026-10-30
+log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O${STAGE2:+ 2단계=[$STAGE2]}"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step dagger  dagger_all
@@ -481,6 +536,8 @@ if [ "$MODE" = phase0 ]; then
   fi
 elif [ "$MODE" = trunk ]; then
   trunk_mode
+elif [ "$MODE" = stage2 ]; then
+  stage2
 else
   phase1
 fi

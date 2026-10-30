@@ -1703,9 +1703,9 @@ class VesselBatchEnv:
             if ROLE_PROMISE_PEN > 0.0:
                 # ★2026-09-29 역할 약속: 결정당 가산(양보 우현·유지선 침로·속도 +0.5·17(b) +0.5) 없음 — 벌점 항만 *항별로* 다시 짠다.
                 #   합계에 clamp(max=0) 를 걸면 같은 결정의 가산·벌점이 상쇄돼 벌점까지 사라진다(검토 C1). 준수 판정은 조우 끝에
-                #   RolePromiseTracker 가 한다(step). 원거리 채점·unity_cs 와는 같이 쓰지 않음(config assert 와 같은 조건).
-                if COLREGS_FAR_RANGE > 0.0 or _cs:
-                    raise ValueError('ROLE_PROMISE_PEN>0 은 COLREGS_FAR_RANGE=0 · COLREGS_MODE=unity 에서만 (config assert 참고)')
+                #   RolePromiseTracker 가 한다(step). unity_cs·원거리 full 과는 같이 쓰지 않음(원거리 penalty 는 아래에서 _uf 칸을 덮음, config assert 와 같은 조건).
+                if (COLREGS_FAR_RANGE > 0.0 and COLREGS_FAR_MODE != 'penalty') or _cs:   # ★2026-10-30 원거리 벌점형은 허용(config assert)
+                    raise ValueError('ROLE_PROMISE_PEN>0 은 COLREGS_MODE=unity · 원거리 채점 끔 또는 penalty 에서만 (config assert 참고)')
                 _comp = (_give * torch.where(_nr < -0.1, torch.full_like(r, -0.5), _zero)
                          + _stand * _early17 * _spd_ok * torch.clamp(_spd_term, max=0.0))
             if COLREGS_FAR_RANGE > 0.0 and COLREGS_FAR_MODE == 'penalty':

@@ -169,18 +169,32 @@ def _apply_sim_dict(d):
     return n
 
 
-def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt]'):
+# ★2026-10-30 2단계 곡선: 이 키들만 '스냅샷 대신 현재 env 값'으로 평가할 수 있음(sim_from_env). 정책 입력·동역학과 무관한 보상 항뿐
+SIM_FROM_ENV_OK = ('COLREGS_FAR_RANGE', 'COLREGS_FAR_MODE')
+
+
+def apply_sim_snapshot(snap, *, allow_sim_mismatch=False, notes=None, tag='[ckpt]', sim_from_env=()):
     """Compare the checkpoint's sim settings (dyn_profile, obstacles, radar_range) with the current config and
     apply them to vessel_gym module globals. Missing keys mean legacy (agile / grid3x3). A mismatch aborts unless
     allow_sim_mismatch (deliberately separate from allow_comm_range_mismatch, which 4 eval scripts already set).
+    sim_from_env: sim keys (only SIM_FROM_ENV_OK) that keep the current env value instead of the snapshot value -
+    used to score every checkpoint of a curve with one reward definition. Each override is noted.
     Returns the effective {'dyn_profile', 'obstacles', 'radar_range'}."""
     snap = snap or {}
     notes = notes if notes is not None else []
+    _bad_keys = [k for k in sim_from_env if k not in SIM_FROM_ENV_OK]
+    if _bad_keys:
+        raise SystemExit(f"{tag} 중단: sim_from_env 허용 키 아님 {_bad_keys} (허용: {SIM_FROM_ENV_OK})")
     ck_dp = str(snap.get('dyn_profile') or 'agile').lower()
     ck_ob = str(snap.get('obstacles') or 'grid3x3').lower()
     # ★2026-09-23 sim 상수 24개(보상 계수·게이트·COLREGS_MODE·에피소드 길이). RADAR_RANGE 는 top-level
     #   'radar_range' 와 같은 값이라 아래 전용 검사(작은 레이더 가드 포함) 하나로만 다룬다 — 줄 중복 방지.
     ck_sim = snap.get('sim') if isinstance(snap.get('sim'), dict) else None
+    if ck_sim is not None and sim_from_env:
+        for k in sim_from_env:
+            if k in ck_sim and ck_sim[k] != getattr(cfg, k):
+                notes.append(f"sim_from_env: {k} 스냅샷 {ck_sim[k]!r} 대신 현재 env {getattr(cfg, k)!r} 로 평가(보상 정의만)")
+        ck_sim = {k: v for k, v in ck_sim.items() if k not in sim_from_env}
     ck_rr = snap.get('radar_range')
     if ck_rr is None and ck_sim is not None:
         ck_rr = ck_sim.get('RADAR_RANGE')
@@ -351,7 +365,7 @@ def restore_comm_ext(_sd, snap, msg_dim, notes, tag, comm_groups=None, allow_fie
 
 def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
                    allow_arm_mismatch=False, allow_comm_range_mismatch=False, allow_sim_mismatch=False, tag='[ckpt]',
-                   comm_groups=None, allow_fields_mismatch=False):
+                   comm_groups=None, allow_fields_mismatch=False, sim_from_env=()):
     """체크포인트를 열어 학습 때와 같은 구조·설정으로 CNNPolicy 를 만든다.
 
     Args:
@@ -482,7 +496,7 @@ def restore_policy(ckpt_path, device, *, arm=None, max_partners=None,
         max_partners = int(cfg.MAX_COMM_PARTNERS)
 
     # 4a) ★2026-09-21 sim 설정(동역학 프로필·시나리오·레이더 범위) — 불일치면 중단, 아니면 vessel_gym 전역에 적용
-    sim_eff = apply_sim_snapshot(snap, allow_sim_mismatch=allow_sim_mismatch, notes=notes, tag=tag)
+    sim_eff = apply_sim_snapshot(snap, allow_sim_mismatch=allow_sim_mismatch, notes=notes, tag=tag, sim_from_env=sim_from_env)
 
     # 4b) 인코더 공유 방식 — 키로는 구분 불가(공유해도 접두어별 사본이 저장됨). 스냅샷이 유일한 근거.
     #     구 체크포인트(스냅샷에 키 없음)는 인코더 3벌 = '0'.

@@ -10,6 +10,7 @@
 #   CUDA_VISIBLE_DEVICES=2 bash Python/runs_fig1/2026-10-02_fig1/meaneval_ckpts.sh qb_ comm
 #   CUDA_VISIBLE_DEVICES=3 VESSEL_F_ARPA_RANGE=300 bash Python/runs_fig1/2026-10-02_fig1/meaneval_ckpts.sh qa_ trunk_d6
 #   표만 다시: bash .../meaneval_ckpts.sh qb_ --table
+#   ★2026-10-30 2단계 배치(_run_f.sh stage2, 예 qs_): VESSEL_F_STAGE2=1 = 원거리 COLREGs 벌점 env(300 m penalty). 갈래 off·comm 만(trunk 는 원 배치에서)
 # 결과 = Python/_repro_out_<prefix>/meaneval/ (+ Dropbox runs/2026-10-02_fig1/out/meaneval_<prefix>/ 사본이 있으면)
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 PRE=${1:?사용: meaneval_ckpts.sh <prefix> [trunk_d6|off|comm ...|--table]}; shift
@@ -34,6 +35,7 @@ export VESSEL_ROLE_V2_PRIMARY=cum VESSEL_ROLE_V2_RES_F6=1
 unset VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC VESSEL_REWARD_RANGE
 unset VESSEL_LOGSTD_INIT0 VESSEL_LR_FINAL VESSEL_LR_DECAY_DEC VESSEL_ENTROPY_BONUS VESSEL_LOGSTD_MIN VESSEL_NOISE_HOLD
 [ -z "${VESSEL_F_REWARD_RANGE:-}" ] || export VESSEL_REWARD_RANGE=$VESSEL_F_REWARD_RANGE   # qc_(56 m) 같은 배치용
+[ "${VESSEL_F_STAGE2:-0}" = 1 ] && export VESSEL_COLREGS_FAR_RANGE=300 VESSEL_COLREGS_FAR_MODE=penalty   # ★2026-10-30 2단계 보상
 env_run() {   # env_run <run> : off·trunk = ARPA@$ARPA_R(메시지 없음) · comm = p46 코덱 복원값(_run_f.sh env_comm 과 같음)
   unset VESSEL_COMM_CODEC VESSEL_COMM_CODEC_SHA VESSEL_COMM_CODEC_MODE
   export VESSEL_USE_COMM=1 VESSEL_MSG_DIM=6 VESSEL_COMM_LATENT=0.0 VESSEL_AUX_LOSS_SCALE=0.0
@@ -47,7 +49,7 @@ env_run() {   # env_run <run> : off·trunk = ARPA@$ARPA_R(메시지 없음) · c
 }
 mtag() { case "$1" in *.step*M.pt) echo "$1" | sed -E 's/.*\.step([0-9.]+)M\.pt$/\1/' ;; *) echo "$2" ;; esac; }
 if [ "$RUNS" != "--table" ]; then
-  echo "$(date '+%F %T') meaneval $PRE [$RUNS] s$SEED ARPA=$ARPA_R $(git -C "$R" log -1 --oneline) GPU=${CUDA_VISIBLE_DEVICES:-auto} → $D" | tee -a "$D/_log.txt"
+  echo "$(date '+%F %T') meaneval $PRE [$RUNS] s$SEED ARPA=$ARPA_R far=${VESSEL_COLREGS_FAR_RANGE}/${VESSEL_COLREGS_FAR_MODE} $(git -C "$R" log -1 --oneline) GPU=${CUDA_VISIBLE_DEVICES:-auto} → $D" | tee -a "$D/_log.txt"
   for run in $RUNS; do
     env_run "$run" || exit 1
     base="$CK/${PRE}${run}_s$SEED"; [ "$run" = trunk_d6 ] && last=9.04397 || last=16.0563

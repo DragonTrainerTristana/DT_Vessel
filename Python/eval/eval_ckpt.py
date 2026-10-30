@@ -73,6 +73,8 @@ def main():
                     help='★2026-09-29 확장필드 [13:18](상대 역할 칸: a8 = 선언, a6 = 수신측 추정)만 0 — 역할 선언 기여 절제')
     ap.add_argument('--far_drop', type=float, default=None,
                     help='★2026-10-30 이 거리(m) 밖 파트너를 통째로 뺌(위치·코덱 필드 모두) = 통신 배를 OFF 와 같은 파트너 집합으로(56 = 레이더)')
+    ap.add_argument('--sim_from_env', default='',
+                    help='★2026-10-30 쉼표 sim 키(COLREGS_FAR_RANGE,COLREGS_FAR_MODE 만): 스냅샷 대신 현재 env 값으로 평가 = 2단계 곡선의 trunk 점을 2단계 보상으로')
     ap.add_argument('--field_shuffle', action='store_true',
                     help='확장필드를 같은 env 의 다른 수신자 것으로 섞음(분포 유지, 정보 차단)')
     ap.add_argument('--traj_out', default=None,
@@ -107,7 +109,8 @@ def main():
                         allow_arm_mismatch=args.allow_arm_mismatch,
                         allow_comm_range_mismatch=args.allow_comm_range_mismatch,
                         allow_sim_mismatch=args.allow_sim_mismatch, tag='[eval]',
-                        comm_groups=_cg, allow_fields_mismatch=args.allow_fields_mismatch)
+                        comm_groups=_cg, allow_fields_mismatch=args.allow_fields_mismatch,
+                        sim_from_env=tuple(k.strip() for k in args.sim_from_env.split(',') if k.strip()))
     policy = _r.policy
     args.max_partners = _r.max_partners
     env = make_env_from_snapshot(_r.snap, device=dev, num_envs=E, seed=args.seed, n_vessels=N,

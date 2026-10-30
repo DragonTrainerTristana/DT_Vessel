@@ -105,8 +105,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--py_root', required=True, help='feat/reward-v3 Python dir (has eval/eval_ckpt.py)')
     ap.add_argument('--policy', required=True, choices=sorted(POLICIES) + [LEARNED])
+    ap.add_argument('--mean_action', action='store_true',
+                    help='★2026-10-30 learned 전용: 신경망이 tanh(mean) 으로 몲(표본 잡음 없음, runs_fig1 eval_mean.py 와 같은 감쌈)')
     ap.add_argument('rest', nargs=argparse.REMAINDER, help='-- then eval_ckpt.py args')
     a = ap.parse_args()
+    if a.mean_action and a.policy != LEARNED:
+        raise SystemExit('[scripted] --mean_action 은 --policy learned 에서만')
     rest = a.rest[1:] if a.rest[:1] == ['--'] else a.rest
     if a.policy != LEARNED and '--arm' in rest and rest[rest.index('--arm') + 1] != 'OFF':
         raise SystemExit('[scripted] --arm must be OFF (scripted ships send no messages)')
@@ -205,11 +209,14 @@ def main():
         r = _restore(*args, **kw)
         if a.policy != LEARNED:
             r.policy = ScriptedPolicy()
+        elif a.mean_action:
+            orig = r.policy.ctr_actor.forward
+            r.policy.ctr_actor.forward = lambda *fa, **fk: (lambda o: (torch.tanh(o[2]),) + tuple(o[1:]))(orig(*fa, **fk))
         return r
 
     ckpt_io.make_env_from_snapshot = make_env
     ckpt_io.restore_policy = restore
-    tag = f"[scripted] policy={a.policy} " + ('learned network from --ckpt (unchanged), extra metric lines only' if a.policy == LEARNED else
+    tag = f"[scripted] policy={a.policy}{' mean_action=tanh(mean)' if a.mean_action else ''} " + ('learned network from --ckpt (unchanged), extra metric lines only' if a.policy == LEARNED else
                                                'goal steer, no avoidance' if spec is None else
                                                f"{'COLREGs rule + VO' if spec['kind'] == 'col' else 'VO'}"
                                                f"{' + intent sharing (others predicted on their broadcast course)' if spec.get('intent') else ''}"

@@ -6,7 +6,7 @@ arms off · comm · offb. Rule (2026-09-30 spec §7): comm wins a metric if it i
 Best-OFF pool (spec §3, as 2026-09-30 §7): for goal · vColl · DCPA every comm seed must also beat the best pool mean,
 pool = this batch's off and offb + earlier learned t_off (lr_t_off_s*.txt in runs/2026-10-01_scripted/out), healthy only (goal >= 50).
 
-Usage: python summarize_fig1.py <dir> [prefix f_]
+Usage: python summarize_fig1.py <dir> [prefix f_] [lr|lrm]   (lrm = mean-action main eval files lrm_*, 2026-10-30)
 """
 import glob
 import os
@@ -30,9 +30,9 @@ def fmt(v, nd=1):
     return 'n/a' if v is None else f"{v:.{nd}f}"
 
 
-def load(d, pre, arm):
+def load(d, pre, arm, kind='lr'):
     out = {}
-    for f in sorted(glob.glob(os.path.join(d, f'lr_{pre}{arm}_s*.txt'))):
+    for f in sorted(glob.glob(os.path.join(d, f'{kind}_{pre}{arm}_s*.txt'))):
         m = re.search(r'_s(\d+)\.txt$', f)
         r = parse_all(f)
         if m and 'goal' in r:
@@ -43,9 +43,11 @@ def load(d, pre, arm):
 def main():
     d = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'out')
     pre = sys.argv[2] if len(sys.argv) > 2 else 'f_'
-    off, comm, offb = load(d, pre, 'off'), load(d, pre, 'comm'), load(d, pre, 'offb')
+    kind = sys.argv[3] if len(sys.argv) > 3 else 'lr'
+    off, comm, offb = load(d, pre, 'off', kind), load(d, pre, 'comm', kind), load(d, pre, 'offb', kind)
     seeds = sorted(set(off) & set(comm))
-    print(f"# Fig1 — 통신(comm) vs OFF (같은 trunk 짝 {len(seeds)}개: {seeds})\n")
+    print(f"# Fig1 — 통신(comm) vs OFF (같은 trunk 짝 {len(seeds)}개: {seeds})"
+          + (" — 평균 행동 tanh(mean)" if kind == 'lrm' else '') + "\n")
     print("판정(결과 전 고정): 같은 시드 짝 전부 승 + |평균차| > N, N = max(OFF 시드 범위, |offb − off| 평균(offb 없으면 빠짐), 고정 하한)\n")
     pool = {'off': off, 'offb': offb, 't_off': load(os.path.join(HERE, '..', '2026-10-01_scripted', 'out'), 't_', 'off')}
     pool_mean = {}
