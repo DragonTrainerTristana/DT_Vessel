@@ -9,7 +9,7 @@
 
 | 폴더 | 내용 |
 |---|---|
-| `pdf/` | 결과 보고서 PDF 29개 (09-30 – 10-30) |
+| `pdf/` | 결과 보고서 PDF 30개 (09-30 – 11-01) |
 | `runs/2026-09-30_t/` | 보상 v3 + 판정기 v2 배치 t_ — 로그·평가 출력·원인 분석(`rootcause_2026-09-30.md`)·보고서 조립 스크립트 |
 | `runs/2026-10-01_scripted/` | 규칙 배 평가 1–4차 — 평가 출력·요약·보고서 생성기 |
 | `runs/2026-10-02_imitation/` | 흉내 시작 P0 (i_) — 로그·판정 표 |
@@ -22,6 +22,7 @@
 | `runs/2026-10-30_seed2_ablate_interp/` | 10-30 시드 2개 통신 vs OFF·메시지 절제 해석 — 시드별 승패·COLREGs 엇갈림(좌현 회피)·절제(far56·shuffle·state·decl0)·다음 |
 | `runs/2026-10-30_paper_plan/` | 10-30 논문 최종 설계안(제안) — 논리 사슬·현 위치·COLREGs 원인과 R*·5 시드 설계·그림·리뷰어 질문·순서·대안 |
 | `runs/2026-10-30_stage2_plan/` | 10-30 묘책 — 2단계 학습(검증된 trunk 재사용 → 두 팔 원거리 COLREGs 규칙 벌점 갈래), 2×2·헤지 배치·사전 기준 · **`HANDOFF.md` = 10-30 저녁 인계(c034422 실행 중 배치·결과 오면 할 분석 순서·안 만든 코드)** |
+| `runs/2026-11-01_rootcause/` | 11-01 통신 결과 부진 원인·해결 방안(읽기 전용 종합, 새 학습·평가 없음) — 원인 8개 순위·방안 N1–N9·B1–B5·L1–L6·추천 경로·저자 결정 A0–A15 · 보고서 원본 `report.md` · 손계산·MC `notes/`(운동학 kin56·검정력 power·trunk 로그 파싱 등) |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) · qd_ trunk(10-28) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
@@ -60,6 +61,7 @@
 | 2026-10-30_시드2개_절제_해석 | `2026-10-30_seed2_ablate_interp/make_pdf.sh report.md <출력.pdf>` (자료 = `out/qd/`·`qd2/`·`meaneval_qd*`·`ablate_qd/`) |
 | 2026-10-30_논문_최종설계안 | `2026-10-30_paper_plan/make_pdf.sh report.md <출력.pdf>` (설계 문서) |
 | 2026-10-30_묘책_2단계학습 | `2026-10-30_stage2_plan/make_pdf.sh report.md <출력.pdf>` (설계 문서) |
+| 2026-11-01_통신부진_원인_해결방안 | `2026-11-01_rootcause/make_pdf.sh report.md <출력.pdf>` (분석 문서) |
 
 ## 다시 만들기
 
