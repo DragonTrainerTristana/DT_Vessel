@@ -521,7 +521,7 @@ trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 
 }
 # ★2026-10-13 smoke(preflight 15종 + 작은 학습)는 기본값 env 로 — 토글은 본 런에서만. 새 코드 경로는 Mac 미니 런으로 검사함
 SMOKE_CLEAN="env -u VESSEL_REWARD_RANGE -u VESSEL_LOGSTD_INIT0 -u VESSEL_LR_FINAL -u VESSEL_LR_DECAY_DEC -u VESSEL_ENTROPY_BONUS -u VESSEL_LOGSTD_MIN -u VESSEL_NOISE_HOLD -u VESSEL_GRAD_TELEMETRY VESSEL_COLREGS_FAR_RANGE=0 VESSEL_COLREGS_FAR_MODE=full"
-EVAL_KINDS=lr; [ "$MODE" = stage2 ] && EVAL_KINDS="lr lrm"   # ★2026-10-30
+EVAL_KINDS="lr lrm"   # ★2026-10-30 stage2 · ★2026-11-02 phase1 도 — 저자 성공 지표(스펙 2026-11-02) 주 추정량 = 평균 행동 lrm
 log "배치 $PRE $MODE $(hostname) $(git -C "$R" log -1 --oneline) 결과사본=$RES action_mode=$VESSEL_ACTION_MODE 흉내=$IMIT 시드=[$SEEDS_ALL]·관문$NGATE 갈래=[$ARMS] ARPA=$ARPA_R 보상반경=${VESSEL_REWARD_RANGE:-300(COMM_RANGE)} 관문설정=$RANK_SET extra=[${VESSEL_F_EXTRA_ENV:-}] OFF선생님=$OFF_T 통신선생님=$COMM_T K=$K OUT=$O${STAGE2:+ 2단계=[$STAGE2]}"
 if [ "$MODE" = phase0 ]; then
   step smoke   env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
