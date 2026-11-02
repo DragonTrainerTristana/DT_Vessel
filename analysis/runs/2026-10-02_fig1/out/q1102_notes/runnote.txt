@@ -19,3 +19,15 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - 재시도·수정 없음. 학습 시작 안 함(GPU 학습 프로세스 없음)
 - 저자 결정 11-02: 골든 불통과 = 플랫폼 차이로 면제(VESSEL_F_GOLDEN_WAIVE), torch 새 환경 안 만듦,
   같은 접두어 qr_ 로 42f59b5 이상에서 다시 실행
+
+## 시도 2 — qr_ phase1 (16M), 42f59b5, 결과 out/qr/
+- 명령 = HANDOFF §3 + VESSEL_PY(Python310, torch 2.6.0+cu124) + VESSEL_F_GOLDEN_WAIVE(저자 11-02 문구)
+- 13:41:43 시작 smoke → 13:43:38 골든 면제 기록(_golden_waiver.txt, 불통과 건수 시도 1과 같음) → 13:45:23 끝 smoke
+- 13:45:24–14:30:57 trunk (약 45분) · 관문: s43 goal=60.3 vColl=39.4 oColl=0.0 창=4 통과 (G1 마지막 창 goal 57.0·vColl 43.0 미충족 표시, 실행기는 통과 처리)
+- 14:30:59–14:33:33 codec: k4·k6 불통과, k8·k12 통과 → CHOSEN_K=8 (sha 0cfb6f606cec4cc1)
+- 14:33:33–15:50:11 갈래 off(36.7분, 16.06M)→comm 차례로 · 15:50–17:05 eval 4개(각 약 18–20분) · 17:05–19:38 곡선 15점 · 19:38:48 phase1 완료
+- trunk 10분 점검(13:55): VRAM 11482/12288 MiB(다른 앱 약 2.96 GB 포함), 공유 메모리 넘침 없음, 0.33M 4165 → 1.97M 3482 dec/s (서버 qd_ 같은 지점 2486 → 1611, 약 2.2배)
+- ★멈춤·★FAIL 없음
+- trunk meaneval(HANDOFF §4-1, VESSEL_PY 같이 줌) 19:39–20:27: 9.04M 도착 표본 54.0 / 평균 59.1 %, 4M 표본 65.0 / 평균 69.0 %
+  (서버 qd_ 9.04M 평균 69.4 % — 기록, 판정 아님)
+- 다음: git pull(b54e41e) → qr_run.sh qr_ 43 extend (갈래 끝점 24M, 스펙 §7)

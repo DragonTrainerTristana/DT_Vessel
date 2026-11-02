@@ -1,0 +1,6 @@
+2026-11-02 19:39:23 meaneval qr_ [trunk_d6] s43 ARPA=56 far=0/full 42f59b5 feat(fig1): opt-in golden waiver for a new machine GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qr/meaneval
+2026-11-02 19:48:37 trunk_d6 2M 끝
+2026-11-02 19:58:14 trunk_d6 4M 끝
+2026-11-02 20:07:53 trunk_d6 6M 끝
+2026-11-02 20:17:40 trunk_d6 8M 끝
+2026-11-02 20:27:28 trunk_d6 9.04397M 끝
