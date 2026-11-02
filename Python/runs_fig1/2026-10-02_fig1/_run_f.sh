@@ -38,7 +38,7 @@
 # 규칙: 단계 실패면 멈춤. 끝난 단계는 다시 돌릴 때 건너뜀(_timeline.txt). 배치 도중 HEAD 가 바뀌면 멈춤(→ VESSEL_F_PREFIX=f2_).
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 MODE=${1:-}
-case "$MODE" in phase0|phase1|trunk|stage2) ;; *) echo "사용: $0 phase0|phase1|trunk|stage2"; exit 1 ;; esac
+case "$MODE" in phase0|phase1|trunk|stage2|extend) ;; *) echo "사용: $0 phase0|phase1|trunk|stage2|extend"; exit 1 ;; esac
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)           # .../Python/runs_fig1/2026-10-02_fig1
 BUNDLE=$(dirname "$HERE")                                     # .../Python/runs_fig1
 R=${VESSEL_F_REPO:-$(git -C "$HERE" rev-parse --show-toplevel)} || { echo "★멈춤: git 저장소 안에서 실행할 것"; exit 1; }
@@ -74,6 +74,14 @@ SEEDS_ALL=${VESSEL_F_SEEDS:-$SEEDS_ALL}; NGATE=${VESSEL_F_NGATE:-$NGATE}
 K=8                                     # 스펙 §4-1 파트너 수
 BRANCH_AT=9043968
 TOTAL=16056320
+TOTAL16=$TOTAL                          # ★2026-11-02 phase1 갈래 끝점(16M). extend 모드만 VESSEL_F_TOTAL 로 늘림(저자 결정 24M, 스펙 2026-11-02 §7)
+if [ "$MODE" = extend ]; then
+  TOTAL=${VESSEL_F_TOTAL:-}
+  [ -n "$TOTAL" ] && [ "$TOTAL" -gt "$TOTAL16" ] && [ $(( TOTAL % 65536 )) -eq 0 ] && [ "$IMIT" = 0 ] \
+    || { echo "★멈춤: extend 는 VESSEL_F_IMIT=0 · VESSEL_F_TOTAL > $TOTAL16 이고 65536(update) 배수(24M = 24051712)"; exit 1; }
+else
+  [ -z "${VESSEL_F_TOTAL:-}" ] || { echo "★멈춤: VESSEL_F_TOTAL 은 extend 모드 전용(phase1 갈래는 16M 그대로 → 끝난 뒤 extend)"; exit 1; }
+fi
 BC_DECAY=3000000                        # 스펙 §4-1 흉내 보조손실 1.0 → 0, 3M 결정
 JOBS=${VESSEL_F_JOBS:-8}
 GPU_CAP=${VESSEL_F_GPU_CAP:-2}          # GPU 한 장에 이 배치 런 2개까지(09-29 '한 장에 ON 3개 = 정지' 기록)
@@ -446,14 +454,63 @@ fig1_table() {
     [ -f "$O/_rank_override.txt" ] && { cat "$O/_rank_override.txt"; echo; }
     [ -f "$O/_rank_note.txt" ] && { cat "$O/_rank_note.txt"; echo; }
     [ -f "$O/_stage2_note.txt" ] && { cat "$O/_stage2_note.txt"; echo; }
+    [ -f "$O/_extend_note.txt" ] && { cat "$O/_extend_note.txt"; echo; }
     "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE"; } > "$O/_fig1.md" 2>&1; local rc=$?
   cat "$O/_fig1.md"; cp "$O/_fig1.md" "$RES/"
   if [ "$EVAL_KINDS" != lr ]; then   # ★2026-10-30 평균 행동 표(묘책 §5 주 평가)
     { [ -f "$O/_stage2_note.txt" ] && { cat "$O/_stage2_note.txt"; echo; }
+      [ -f "$O/_extend_note.txt" ] && { cat "$O/_extend_note.txt"; echo; }
       "$PY" "$HERE/summarize_fig1.py" "$RES" "$PRE" lrm; } > "$O/_fig1_mean.md" 2>&1 || rc=1
     cat "$O/_fig1_mean.md"; cp "$O/_fig1_mean.md" "$RES/"
   fi
   return $rc
+}
+ext_one() {   # ★2026-11-02 ext_one <arm> <seed>: phase1 끝 모델(16M)에서 같은 런으로 TOTAL 까지 이어 학습
+  #   크래시 재개와 같은 방식(가중치·Adam·ValueNorm 복원, 환경은 새로 → 재개 워밍업 2400 = 학습·기록 없음). 출발점은 늘 보존한 16M 끝 모델·CSV
+  local arm=$1 s=$2 run="${PRE}$1_s$2" envset c
+  [ -f "$CK/$run.step$(( TOTAL / 2000000 * 2 ))M.pt" ] && return 0
+  [ -f "$CK/$run.end16.pt" ] || cp "$CK/$run.pt" "$CK/$run.end16.pt" || return 1
+  for c in "$run.csv" "${run}_aux.csv" "${run}_ep.csv"; do
+    [ -f "$O/$c" ] || continue
+    [ -f "$O/$c.16M" ] || cp "$O/$c" "$O/$c.16M"; cp "$O/$c.16M" "$O/$c"   # 중간에 끊겨 다시 돌 때 16M 뒤 줄이 겹치지 않게
+  done
+  if [ "$arm" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
+  launch 3000 "$O/${run}_ext.log" bash -c "$envset
+    unset VESSEL_BC_TEACHER VESSEL_BC_COEF VESSEL_BC_DECAY_DEC
+    '$PY' -u vessel_gym_train.py --arm ON --resume '$CK/$run.end16.pt' --resume_at $TOTAL16 --comm_on_at $BRANCH_AT \
+      --resume_warmup 2400 --steps $TOTAL $TARGS --seed $s --ckpt_every 2 --save '$CK/$run.pt' --csv '$O/$run.csv'"
+}
+ext_all() {
+  : > "$O/_status_f.txt"; local s a files=""
+  for a in $ARMS; do for s in $SEEDS; do ext_one $a $s || return 1; done; done
+  wait_all
+  for s in $SEEDS; do for a in $ARMS; do
+    [ -f "$CK/${PRE}${a}_s$s.step$(( TOTAL / 2000000 * 2 ))M.pt" ] || { echo "★FAIL 연장 안 끝남 ${PRE}${a}_s$s"; return 1; }
+    files="$files $CK/${PRE}${a}_s$s.pt"
+  done; done
+  "$PY" -u verify/check_branch.py --trunk_dir "$CK" --csv_dir "$O" $files > "$O/_branch_check_ext.txt" 2>&1
+  cat "$O/_branch_check_ext.txt"
+  grep -q "ALL PASS" "$O/_branch_check_ext.txt" || { echo "★FAIL 분기 검사(연장 뒤)"; return 1; }
+}
+ext_keep16() {   # 16M(원래 끝점) 평가·표를 lr16_·lrm16_·*_16M.md 로 보존 → 연장 평가가 기본 이름(lr_·lrm_·_fig1*.md·_curve.md)으로 다시 씀
+  local f n
+  for f in "$O"/lr_${PRE}*_s*.txt "$O"/lrm_${PRE}*_s*.txt; do
+    [ -f "$f" ] || continue; n=$(basename "$f"); mv "$f" "$O/${n%%_*}16_${n#*_}"
+  done
+  for f in _fig1.md _fig1_mean.md _curve.md; do [ -f "$O/$f" ] && mv "$O/$f" "$O/${f%.md}_16M.md"; done
+  echo "16M 결과 보존: $(ls "$O" | grep -c '^lrm\?16_') 평가 파일 · $(ls "$O" | grep -c '_16M\.md$') 표"
+}
+extend() {   # ★2026-11-02 저자 결정: 갈래 끝점 24M(두 팔 같음, 결과 전). phase1(16M) 끝난 배치 → 이어 학습 → 평가·곡선·표를 새 끝점으로
+  grep -q " 끝 fig1\$" "$TL" || { log "★멈춤: extend 는 phase1 이 끝난 배치에서만(_timeline 에 '끝 fig1' 없음)"; exit 1; }
+  SEEDS=$(cat "$O/_seeds.txt") || exit 1
+  echo "> ★ 갈래 끝점 $TOTAL16 → $TOTAL 결정 (저자 11-02, 두 팔 같음, 스펙 2026-11-02 §7). 16M 끝 모델에서 같은 런으로 이어 학습(재개 워밍업 2400 = 학습·기록 없음). 16M 결과 = lr16_·lrm16_·*_16M.md" > "$O/_extend_note.txt"
+  log "연장 시드: $SEEDS · $TOTAL16 → $TOTAL"
+  step ext_branches ext_all
+  step keep16       ext_keep16
+  step ext_eval     eval_all
+  step ext_curve    curve_all
+  step ext_fig1     fig1_table
+  log "extend 완료 — 결과 $RES/_fig1_mean.md(끝점 $TOTAL) · 16M = *_16M.md"
 }
 stage2_reuse() {   # ★2026-10-30 trunk 배치($TPRE)에서 관문 통과 기록·trunk 곡선 CSV·(있으면) 코덱 선택을 가져옴. trunk·코덱 파일은 그대로(복사 안 함 → SHA 같음)
   local TO="$PWD/_repro_out_${TPRE%_}" s cd_ok=1
@@ -556,6 +613,8 @@ elif [ "$MODE" = trunk ]; then
   trunk_mode
 elif [ "$MODE" = stage2 ]; then
   stage2
+elif [ "$MODE" = extend ]; then
+  extend
 else
   phase1
 fi

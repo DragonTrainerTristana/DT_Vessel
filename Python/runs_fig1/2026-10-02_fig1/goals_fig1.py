@@ -6,7 +6,8 @@ Goal metrics a) Woerner COLREGs, b) DCPA, c) mean |rudder|: success = comm wins 
 Guard: mean paired difference arrival >= -3 pt and ship collision <= +3 pt; if it fails, no a-c superiority claim.
 Report only (no verdict): optional seed subsets, e.g. healthy trunks by qd_ spec §2 (--subset 'trunk 건강=43,45').
 
-Usage: python goals_fig1.py <out_dir>:<prefix> [...] [--subset NAME=s1,s2 ...]   e.g. _repro_out_qr:qr_ ... _repro_out_qr5:qr5_
+Usage: python goals_fig1.py <out_dir>:<prefix> [...] [--subset NAME=s1,s2 ...] [--kind lrm16]   e.g. _repro_out_qr:qr_ ... _repro_out_qr5:qr5_
+       --kind lrm16 = 16M (original endpoint) files kept by `_run_f.sh extend`; default lrm = current end model (24M after extend)
        python goals_fig1.py --selftest
 """
 import math
@@ -45,16 +46,16 @@ def curve_m(d):
     return out
 
 
-def main(pairs, subsets=()):
+def main(pairs, subsets=(), kind='lrm'):
     off, comm, curve = {}, {}, {}
     for dp in pairs:
         d, pre = dp.rsplit(':', 1)
-        off.update(load(d, pre, 'off', 'lrm'))
-        comm.update(load(d, pre, 'comm', 'lrm'))
+        off.update(load(d, pre, 'off', kind))
+        comm.update(load(d, pre, 'comm', kind))
         curve.update(curve_m(d))
     seeds = sorted(set(off) & set(comm))
     full = len(seeds) == N_SEEDS
-    print(f"# 저자 성공 지표 — 통신 vs OFF, 평균 행동 lrm 끝 모델 (짝 {len(seeds)}개: {seeds})\n")
+    print(f"# 저자 성공 지표 — 통신 vs OFF, 주 평가 {kind}(lrm = 평균 행동) (짝 {len(seeds)}개: {seeds})\n")
     print(f"판정(결과 전 고정, 스펙 2026-11-02): 지표마다 승 ≥ {NEED_WIN}/{N_SEEDS} + 95 % t-CI 가 0 을 안 걸침 · "
           f"가드 = 짝 차 평균 도착 ≥ −{MARGIN:g} pt · 배 충돌 ≤ +{MARGIN:g} pt"
           + ('' if full else f" — ★시드 {len(seeds)}개라 판정 안 함(5 시드 필요), 값만 적음") + "\n")
@@ -117,7 +118,9 @@ if __name__ == '__main__':
         selftest()
     elif len(sys.argv) > 1:
         a = sys.argv[1:]
+        opt = {'--subset', '--kind'}
         subs = [(v.split('=')[0], tuple(int(x) for x in v.split('=')[1].split(','))) for k, v in zip(a, a[1:]) if k == '--subset']
-        main([x for i, x in enumerate(a) if x != '--subset' and (i == 0 or a[i - 1] != '--subset')], subs)
+        kind = next((v for k, v in zip(a, a[1:]) if k == '--kind'), 'lrm')
+        main([x for i, x in enumerate(a) if x not in opt and (i == 0 or a[i - 1] not in opt)], subs, kind)
     else:
         print(__doc__)
