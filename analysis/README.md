@@ -23,6 +23,7 @@
 | `runs/2026-10-30_paper_plan/` | 10-30 논문 최종 설계안(제안) — 논리 사슬·현 위치·COLREGs 원인과 R*·5 시드 설계·그림·리뷰어 질문·순서·대안 |
 | `runs/2026-10-30_stage2_plan/` | 10-30 묘책 — 2단계 학습(검증된 trunk 재사용 → 두 팔 원거리 COLREGs 규칙 벌점 갈래), 2×2·헤지 배치·사전 기준 · **`HANDOFF.md` = 10-30 저녁 인계(c034422 실행 중 배치·결과 오면 할 분석 순서·안 만든 코드)** |
 | `runs/2026-11-01_rootcause/` | 11-01 통신 결과 부진 원인·해결 방안(읽기 전용 종합, 새 학습·평가 없음) — 원인 8개 순위·방안 N1–N9·B1–B5·L1–L6·추천 경로·저자 결정 A0–A15 · 보고서 원본 `report.md` · 손계산·MC `notes/`(운동학 kin56·검정력 power·trunk 로그 파싱 등) |
+| `runs/2026-11-02_goals_run/` | 11-02 저자 성공 지표(스펙 `2026-11-02-author-goals-criteria.md`, `feat/fig1-latent` 03c4179) 실행 인계 — **`HANDOFF.md` = Windows 새 세션·다른 기계용**(J1 qd_·qd2_ lrm 4회 · J2 qd3–5_ phase1 · 점검·명령·끝나면 할 일) |
 | `runs/2026-10-02_fig1/` | Fig1 배치 f_ · f2_ · n_ · q_(qa_ · qb_) · R0 무학습 재평가(10-27) · qd_ trunk(10-28) — `out/`(배치 로그·관문 기록·진단 출력), `report/`(보고서 생성기·진단 스크립트) |
 
 원본 위치 = Dropbox `Private_Paper_Project/0702_NewVessel/runs/` (폴더 구조 그대로 옮김).
