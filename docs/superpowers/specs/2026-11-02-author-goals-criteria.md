@@ -62,3 +62,4 @@
   - 새 기계 확인용 기록(판정 아님): qr_ trunk 9.04M 평균 행동 도착 vs 서버 qd_ 69.4 %
 - trunk 관문 불통과(실행기 ★멈춤)면 그 시드를 바꾸지 않고 저자에게 보고. 시드 교체는 저자 결정으로만, 교체하면 원 시드 결과도 같이 적음
 - VRAM: 서버 trunk 약 9.3 GB(10-30 기록). 12 GB 카드에서 다른 앱이 쓰는 메모리가 크면 모자랄 수 있음 → 처음 10분 nvidia-smi 확인, 넘치거나 속도가 크게 떨어지면 멈추고 보고(학습 인자 줄이기 = 다른 실험이라 금지)
+- 골든(11-02 qr_ 시도 1): 새 기계(torch 2.6.0+cu124, CPU 다름)에서 비트동일 골든만 불통과, 다른 검사 14종 PASS. 골든은 CPU/BLAS·torch 종속이라 기계가 바뀌면 코드가 같아도 못 맞춤(`verify/test_golden.py` golden_path 설명, 09-10 Mac↔Windows 선례). 저자가 면제를 정하면 `VESSEL_F_GOLDEN_WAIVE="<문구>"` 로 실행 → 조건(불통과 = 골든 하나뿐 · 학습·평가 코드 = 서버 골든 ALL PASS 커밋 c034422)이 맞을 때만 `_golden_waiver.txt` 에 기록하고 진행. 시도 1 기록은 analysis `out/qr_try1_golden/`

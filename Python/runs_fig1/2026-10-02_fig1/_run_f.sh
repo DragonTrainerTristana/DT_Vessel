@@ -177,6 +177,24 @@ step() {
   if [ $rc -ne 0 ] || bad "$O/_$nm.log"; then log "★멈춤 $nm rc=$rc — $O/_$nm.log 확인"; sync_out; exit 1; fi
   log "끝 $nm"; sync_out
 }
+smoke_run() {   # ★2026-11-02 골든 플랫폼 면제 — 저자 결정 VESSEL_F_GOLDEN_WAIVE="<문구>" 를 줄 때만. 안 주면 명령 그대로(기존과 같음)
+  #   비트동일 골든은 CPU/BLAS·torch 에 종속(verify/test_golden.py golden_path 설명) → 기계가 바뀌면 코드가 같아도 못 맞춤.
+  #   면제 조건 = ① 검사 중 불통과가 '골든 비트동일' 하나뿐 ② 학습·평가 코드가 서버 골든 ALL PASS 커밋(VESSEL_F_GOLDEN_REF, 기본 c034422)과 같음.
+  #   둘 다 맞으면 _golden_waiver.txt 에 기록하고 미러만 다시 돌려(VESSEL_SKIP_GOLDEN=1) smoke 학습까지 감. 하나라도 아니면 멈춤
+  [ -n "${VESSEL_F_GOLDEN_WAIVE:-}" ] || { "$@"; return $?; }
+  local ref=${VESSEL_F_GOLDEN_REF:-c034422} nf
+  "$@" > "$O/_smoke_full.log" 2>&1 && { cat "$O/_smoke_full.log"; return 0; }
+  nf=$(grep -c '^  ★FAIL ' "$O/_smoke_full.log")
+  { [ "$nf" -eq 1 ] && grep -q '^  ★FAIL 골든 비트동일' "$O/_smoke_full.log"; } || { echo "골든 면제 안 됨: 골든 말고 다른 검사도 불통과이거나 검사 줄 없음 — _smoke_full.log 확인"; return 1; }
+  git -C "$R" diff --quiet "$ref" HEAD -- . ':(exclude)Python/runs_fig1' ':(exclude)docs' || { echo "골든 면제 안 됨: 학습·평가 코드가 $ref 와 다름"; return 1; }
+  { echo "> ★ 골든 비트동일 불통과 — 저자 결정으로 면제 ($(date '+%F %T'), $(hostname))"
+    echo "> 저자 결정: $VESSEL_F_GOLDEN_WAIVE"
+    echo "> 학습·평가 코드 = $ref 와 같음(서버 골든 ALL PASS 커밋) · 이 기계 torch $("$PY" -c 'import torch; print(torch.__version__)' 2>/dev/null)"
+    grep -h 'PASS\|FAIL\|VERDICT' "$O/_golden.txt" 2>/dev/null | sed 's/★FAIL/불통과/g; s/FAIL/불통과/g; s/실패/불통과/g; s/^/> 골든 /'
+    grep '^  PASS' "$O/_smoke_full.log" | sed 's/^/> /'; } > "$O/_golden_waiver.txt"
+  cat "$O/_golden_waiver.txt"
+  env VESSEL_SKIP_GOLDEN=1 "$@"
+}
 # ── 실행기: 동시 JOBS 개, GPU 마다 이 배치 런 GPU_CAP 개까지(표식 파일 $O/.gpu<번호>_<로그>) ──
 PIDS=()
 running() { local n=0 p; for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done; echo $n; }
@@ -455,7 +473,7 @@ stage2_reuse() {   # ★2026-10-30 trunk 배치($TPRE)에서 관문 통과 기�
   cat "$O/_stage2_note.txt"
 }
 stage2() {
-  step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+  step smoke smoke_run $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   step reuse    stage2_reuse
   SEEDS=$(cat "$O/_seeds.txt") || exit 1
   log "2단계 갈래 시드: $SEEDS (trunk $TPRE)"
@@ -468,7 +486,7 @@ stage2() {
 }
 phase1() {
   if [ "$IMIT" = 0 ]; then   # ★2026-10-07 흉내 없음: P0 대신 preflight + 순위 관문 v4
-    step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+    step smoke smoke_run $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
     if [ -f "$O/_rank_note.txt" ]; then   # ★2026-10-13 trunk 모드에서 '보상 = n_ 동일' 로 적어 둔 배치 → 관문 재실행 없음
       log "순위 관문: $(cat "$O/_rank_note.txt")"
     elif [ "$RANK_SET" = v5 ] && [ -n "${VESSEL_F_RANK_OVERRIDE:-}" ]; then
@@ -509,7 +527,7 @@ phase1() {
 }
 
 trunk_mode() {   # ★2026-10-13 smoke → (관문: v4 면 n_ 기록 적용, v5 면 병렬) → trunk → gate 에서 끝. 갈래는 같은 접두어로 phase1
-  step smoke $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
+  step smoke smoke_run $SMOKE_CLEAN env VESSEL_FORCE_PREFLIGHT=1 VESSEL_SEEDS=43 VESSEL_SMOKE_ARMS="off a6" $TRAIN_GPU bash run_repro.sh smoke
   if [ "$RANK_SET" = v4 ]; then step ranknote rank_note
   elif [ -n "${VESSEL_F_RANK_OVERRIDE:-}" ]; then step rankov rank_override_v5   # ★2026-10-29
   else step rank_par rank_start; fi
