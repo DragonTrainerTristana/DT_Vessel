@@ -47,3 +47,18 @@
 1. qd_·qd2_ lrm 4회: `lrm_eval.sh qd_ off|comm`(VESSEL_F_SEED=43) · `lrm_eval.sh qd2_ off|comm`(VESSEL_F_SEED=44), `VESSEL_F_REWARD_RANGE=56`, 카드당 1개
 2. qd3_·qd4_·qd5_ phase1(trunk 모드 때와 같은 env + `VESSEL_F_RANK_OVERRIDE` 같은 문구) — 접두어마다 `VESSEL_F_GPU` 고정
 3. 5 시드 표: `goals_fig1.py _repro_out_qd:qd_ _repro_out_qd2:qd2_ _repro_out_qd3:qd3_ _repro_out_qd4:qd4_ _repro_out_qd5:qd5_`
+
+## 6. 11-02 개정 — 서버 고장, 새 기계에서 5 시드 처음부터 (저자 지시 '이제부터 여기서 진행')
+
+- 서버(LICS-SERVER) 고장. 체크포인트(qd_·qd2_ 갈래, qd3–5_ trunk)와 코덱 `.pt`·`_repro_out_qd*` 는 서버 로컬에만 있었음 → 새 기계(DESKTOP-JA8O9SS, RTX 3060 12 GB 1장)에 없음
+- 그래서 §5 실행 순서를 바꿈: **같은 처방(qd_ env)으로 시드 43–47 을 새 접두어 `qr_`(43)·`qr2_`(44)·`qr3_`(45)·`qr4_`(46)·`qr5_`(47) 로 처음부터** — trunk → 관문 → 코덱 → 갈래 off·comm → 분기 검사 → lr·lrm 평가 → 곡선 → 표
+  - env = qd3_ trunk 와 같음: `VESSEL_F_IMIT=0 VESSEL_F_REWARD_RANGE=56 VESSEL_F_EXTRA_ENV="VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1"` + 순위 관문 v5 는 10-29 저자 결정 override(재실행 없음)
+  - GPU 1장: `VESSEL_F_GPU=0 VESSEL_F_JOBS=1`(런 하나씩 차례로). 학습 인자(envs 128 · vessels 16 · rollout 32 등)는 안 바꿈
+- 판정 기준(§1–§2)은 그대로. 바뀌는 것:
+  - 5 시드 전부 기준을 고정한 뒤에 학습 → **5 시드 모두 확증 성격**(§4 '43·44 탐색' 구분은 qr_ 에 해당 없음)
+  - 옛 qd_·qd2_ 결과는 1단계 탐색 기록으로만 남기고 판정에 섞지 않음(다른 기계·다른 런)
+  - 같이 적는 부분 집합 = trunk 건강 시드: qd_ 스펙 §2 처방(9.04M 평균 행동 도착 ≥ 65 · 4M→9.04M 하락 ≤ 5 · 평균−표본 ≤ 10)을 새 trunk 에 `meaneval_ckpts.sh <접두어> trunk_d6` 으로 잼(판정 아님). `goals_fig1.py --subset '건강=…'`
+- 순서 = 시드 43(`qr_`) 먼저(저자 상시 규칙 '시드 1개 먼저'). 끝나면 저자가 보고 44–47 진행 결정
+  - 새 기계 확인용 기록(판정 아님): qr_ trunk 9.04M 평균 행동 도착 vs 서버 qd_ 69.4 %
+- trunk 관문 불통과(실행기 ★멈춤)면 그 시드를 바꾸지 않고 저자에게 보고. 시드 교체는 저자 결정으로만, 교체하면 원 시드 결과도 같이 적음
+- VRAM: 서버 trunk 약 9.3 GB(10-30 기록). 12 GB 카드에서 다른 앱이 쓰는 메모리가 크면 모자랄 수 있음 → 처음 10분 nvidia-smi 확인, 넘치거나 속도가 크게 떨어지면 멈추고 보고(학습 인자 줄이기 = 다른 실험이라 금지)

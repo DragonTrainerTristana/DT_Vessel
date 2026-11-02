@@ -4,9 +4,9 @@ Reads, per batch, lrm_<prefix>{off,comm}_s<seed>.txt (mean-action main eval, end
 Goal metrics a) Woerner COLREGs, b) DCPA, c) mean |rudder|: success = comm wins >= 4/5 paired seeds AND the 95 % t-CI
 (df n-1) of the paired difference excludes 0 on comm's side. Goal 1 (reward curve rises): comm arm passes curve M in >= 4/5.
 Guard: mean paired difference arrival >= -3 pt and ship collision <= +3 pt; if it fails, no a-c superiority claim.
-Report only (no verdict): seeds 45-47 (registered before their results), healthy-trunk seeds 43-45 (qd_ spec §2 3/3).
+Report only (no verdict): optional seed subsets, e.g. healthy trunks by qd_ spec §2 (--subset 'trunk 건강=43,45').
 
-Usage: python goals_fig1.py <out_dir>:<prefix> [...]      e.g. _repro_out_qd:qd_ _repro_out_qd2:qd2_ ... _repro_out_qd5:qd5_
+Usage: python goals_fig1.py <out_dir>:<prefix> [...] [--subset NAME=s1,s2 ...]   e.g. _repro_out_qr:qr_ ... _repro_out_qr5:qr5_
        python goals_fig1.py --selftest
 """
 import math
@@ -21,8 +21,6 @@ T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8:
 GOALS = [('w_score', 'a) COLREGs(Woerner) %', +1), ('dcpa', 'b) DCPA(통과거리) m', +1), ('rud_abs', 'c) 평균 타각 크기 °', -1)]
 GUARD = [('goal', '도착 %', +1), ('vColl', '배끼리 충돌 %', -1)]
 MARGIN, NEED_WIN, N_SEEDS = 3.0, 4, 5
-PRE_RESULT = (45, 46, 47)   # 갈래 결과 전에 이 지표가 정해진 시드(43·44 는 1단계 표본 결과를 본 뒤)
-HEALTHY = (43, 44, 45)      # qd_ 스펙 §2 trunk 처방 3/3 (meaneval_qd*/ 9.04M, 갈래 결과 전 확정)
 
 
 def paired(diffs):
@@ -47,7 +45,7 @@ def curve_m(d):
     return out
 
 
-def main(pairs):
+def main(pairs, subsets=()):
     off, comm, curve = {}, {}, {}
     for dp in pairs:
         d, pre = dp.rsplit(':', 1)
@@ -93,7 +91,7 @@ def main(pairs):
         print(f"가드: {'통과' if guard else '★불통과 — a–c 를 통과해도 통신 우월 주장 안 함'} · "
               f"성공 지표: 1) {'성공' if ok1 else '불성공'} · "
               + ' · '.join(f"{lab.split()[0]} {'성공' if verdict.get(k) else '불성공'}" for k, lab, _ in GOALS) + "\n")
-    for nm, sub in (('결과 전 등록 시드 45–47', PRE_RESULT), ('trunk 건강 시드 43–45(qd_ §2 3/3)', HEALTHY)):
+    for nm, sub in subsets:   # ★2026-11-02 qr_ 재실행: 부분 집합은 인자로(판정 아님)
         ss = [s for s in seeds if s in sub]
         if not ss:
             continue
@@ -118,6 +116,8 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--selftest']:
         selftest()
     elif len(sys.argv) > 1:
-        main(sys.argv[1:])
+        a = sys.argv[1:]
+        subs = [(v.split('=')[0], tuple(int(x) for x in v.split('=')[1].split(','))) for k, v in zip(a, a[1:]) if k == '--subset']
+        main([x for i, x in enumerate(a) if x != '--subset' and (i == 0 or a[i - 1] != '--subset')], subs)
     else:
         print(__doc__)
