@@ -1,0 +1,6 @@
+  qr_off_s43_ext.log → GPU 0
+  qr_comm_s43_ext.log → GPU 0
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+qr_off_s43.pt                ON         43    6   24051712    9043968  qr_trunk_d6_s43.pt (ddff2e00ba9f)  imo/none  1:state,L0,R56,aux0
+qr_comm_s43.pt               ON         43    6   24051712    9043968  qr_trunk_d6_s43.pt (ddff2e00ba9f)  imo/none  1:intent,L0,R300,aux0,cdc:decode:0cfb6f60
+BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)

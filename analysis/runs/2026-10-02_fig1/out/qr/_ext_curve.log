@@ -1,0 +1,16 @@
+  curve_qr_off_s43_18M.txt → GPU 0
+  curve_qr_off_s43_20M.txt → GPU 0
+  curve_qr_off_s43_22M.txt → GPU 0
+  curve_qr_off_s43_24M.txt → GPU 0
+  curve_qr_off_s43_24.0517M.txt → GPU 0
+  curve_qr_comm_s43_18M.txt → GPU 0
+  curve_qr_comm_s43_20M.txt → GPU 0
+  curve_qr_comm_s43_22M.txt → GPU 0
+  curve_qr_comm_s43_24M.txt → GPU 0
+  curve_qr_comm_s43_24.0517M.txt → GPU 0
+# 고정 장면 체크포인트 곡선 (qr_) — epReward, M = 최대 하락 ≤ 0.1 × (최고 − 첫 값)
+| 팔 | 시드 | 점 수 | 첫 값 | 최고 | 끝 | 최대 하락 | M |
+|---|---|---|---|---|---|---|---|
+| comm | 43 | 15 | 535.8 | 1454.9 | 1428.9 | 129.6 | ★불통과 |
+| off | 43 | 15 | 535.8 | 915.3 | 915.3 | 129.6 | ★불통과 |
+M 통과: off 0/1 · comm 0/1

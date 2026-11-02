@@ -31,3 +31,10 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - trunk meaneval(HANDOFF §4-1, VESSEL_PY 같이 줌) 19:39–20:27: 9.04M 도착 표본 54.0 / 평균 59.1 %, 4M 표본 65.0 / 평균 69.0 %
   (서버 qd_ 9.04M 평균 69.4 % — 기록, 판정 아님)
 - 다음: git pull(b54e41e) → qr_run.sh qr_ 43 extend (갈래 끝점 24M, 스펙 §7)
+
+## qr_ extend (16M → 24,051,712, 스펙 §7), b54e41e, 결과 out/qr/ (16M = *_16M.md · lr16_/lrm16_)
+- phase1 runner 종료·학습/평가 python 0개·.gpu 표식 없음 확인 뒤 git pull(42f59b5 → b54e41e)
+- 명령: nohup bash /c/work/qr_run.sh qr_ 43 extend (qr_run.sh = HANDOFF 11-02 오후 개정 그대로, VESSEL_PY=Python310, 골든 면제 문구 = 시도 2 문구)
+- 20:28:46 시작 → ext_branches 20:28–21:55 → keep16 21:55 → ext_eval 21:55–23:09 → ext_curve 23:09–00:54 → ext_fig1 → 11-03 00:54:39 extend 완료
+- ★멈춤·★FAIL 없음
+- 평균 행동 주 지표(_fig1_mean.md, 시드 1개 = 단독 주장 아님): 24M 6/6 통과 · 16M 4/6
