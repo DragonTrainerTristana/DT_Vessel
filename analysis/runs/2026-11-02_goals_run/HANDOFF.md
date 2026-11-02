@@ -1,6 +1,31 @@
 # 인계 — 새 기계에서 5 시드 처음부터 (2026-11-02 개정, DESKTOP-JA8O9SS)
 
-새 세션은 이 순서로 읽음: 루트 `CLAUDE.md` §0 마지막 항목 → 이 파일 → 스펙 `docs/superpowers/specs/2026-11-02-author-goals-criteria.md` **§6**(`feat/fig1-latent` 974f3d2, 판정 기준 = 결과 전 고정, 바꾸지 않음)
+새 세션은 이 순서로 읽음: 루트 `CLAUDE.md` §0 마지막 항목 → 이 파일 → 스펙 `docs/superpowers/specs/2026-11-02-author-goals-criteria.md` **§6·§7**(`feat/fig1-latent` b54e41e, 판정 기준 = 결과 전 고정, 바꾸지 않음)
+
+
+## ★ 11-02 오후 개정 — 갈래 끝점 24M (저자 결정, 스펙 §7, `feat/fig1-latent` b54e41e)
+
+- 시드마다 `phase1`(16M 까지 + 평가·곡선·표) → 이어서 `extend`(16M 끝 모델에서 같은 런으로 24,051,712 결정까지, 두 팔 같음) → 24M 평가·곡선·표. 16M 결과는 `lr16_`·`lrm16_`·`*_16M.md` 로 보존
+- **돌고 있는 runner 가 끝나기 전에는 `git pull` 금지** — bash 는 실행 중인 스크립트 파일을 읽어 가며 돌아서, 도중에 `_run_f.sh` 가 바뀌면 엉뚱한 줄을 실행할 수 있음. qr_ phase1 runner 가 끝난 뒤 pull
+- 실행 묶음 `C:\work\qr_run.sh`(저장소 밖에 만듦, 내용 아래). `VESSEL_PY` 는 이 기계 Python310 경로, 골든 면제 문구는 시도 2 때 쓴 문구 그대로
+
+```bash
+#!/bin/bash
+# qr_run.sh <접두어> <시드> <phase1|extend>
+cd /c/work/DT_Vessel_v3 || exit 1
+export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.3 VESSEL_F_GPU=0 VESSEL_F_GPU_CAP=1 VESSEL_F_JOBS=1
+export VESSEL_F_IMIT=0 VESSEL_F_PREFIX=$1 VESSEL_F_SEEDS=$2 VESSEL_F_NGATE=1 VESSEL_F_REWARD_RANGE=56
+export VESSEL_F_EXTRA_ENV="VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1"
+export VESSEL_F_RANK_OVERRIDE="저자 10-29: 순위 관문 v5 불통과(시드1 (iii) 여유 부족·(v) v4 와 같은 값) 넘기고 성공 경로 진행"
+export VESSEL_PY="<이 기계 Python310 python.exe 경로>"
+export VESSEL_F_GOLDEN_WAIVE="<시도 2 때 쓴 골든 면제 문구 그대로>"
+[ "$3" = extend ] && export VESSEL_F_TOTAL=24051712
+bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh "$3"
+```
+
+- 시드 43: qr_ phase1 끝난 뒤 → `git pull`(b54e41e 이상) → `nohup bash /c/work/qr_run.sh qr_ 43 extend > run_qr_extend.log 2>&1 &`
+- 시드 44–47(저자가 진행을 정하면): `nohup bash -c 'for p in "qr2_ 44" "qr3_ 45" "qr4_ 46" "qr5_ 47"; do set -- $p; bash /c/work/qr_run.sh $1 $2 phase1 && bash /c/work/qr_run.sh $1 $2 extend || exit 1; done' > run_qr2345.log 2>&1 &`
+- 시드마다 extend 끝나면 `out/<접두어>/` push(16M·24M 결과 둘 다). 5 시드 표 = `goals_fig1.py ... `(24M) + `--kind lrm16`(16M, 같이 적음)
 
 ## 1. 상황
 
