@@ -1,0 +1,21 @@
+# 실행 기록 — 2026-11-02 새 기계 5 시드 (qr_ ~ qr5_)
+
+기계: DESKTOP-JA8O9SS (Windows 11 Pro), GPU: NVIDIA GeForce RTX 3060 12 GB x1
+클론: C:\work\DT_Vessel_v3 (새 clone). 옛 클론 C:\work\DT_Vessel(9183a0f)은 건드리지 않음
+다른 앱 GPU 사용량(실행 전): 2964 MiB / 12288 MiB (Unity Editor·Chrome 등, 끄지 않음)
+Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/<접두어>
+
+## 명령과 다르게 한 것
+- VESSEL_PY=/c/Users/sengh/AppData/Local/Programs/Python/Python310/python.exe
+  (torch 2.6.0+cu124, cuda True). 기본 mltest = Python 3.7·torch 1.13.1 CPU 전용(torch.version.cuda=None)
+  → HANDOFF §2 '다르면 VESSEL_PY= 로' 조항. 10-03 f_ 런도 같은 파이썬
+
+## 시도 1 — qr_ phase1, 974f3d2 (기록 out/qr_try1_golden/)
+- 2026-11-02 13:30:45 시작 → 13:30:46 시작 smoke → 13:32:40 ★멈춤 smoke rc=1
+- preflight: 골든 비트동일 ★FAIL (VERDICT: FAIL), 다른 14종 PASS (+ YUGIOH 드리프트 PASS)
+  default_ON 369건(319텐서) · default_OFF 279건(319) · batch_2026_09_04_ON 218건(289)
+  · batch_shared_all_ON 203건(289) · batch_shared_actor_ON 210건(289) · config 기본값==YUGIOH PASS
+- PASS/FAIL 줄이 10-03 이 기계 f_ 런 _golden.txt 와 같음 → torch·CPU 차이로 봄
+- 재시도·수정 없음. 학습 시작 안 함(GPU 학습 프로세스 없음)
+- 저자 결정 11-02: 골든 불통과 = 플랫폼 차이로 면제(VESSEL_F_GOLDEN_WAIVE), torch 새 환경 안 만듦,
+  같은 접두어 qr_ 로 42f59b5 이상에서 다시 실행

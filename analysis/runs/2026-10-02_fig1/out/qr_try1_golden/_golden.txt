@@ -1,0 +1,116 @@
+==============================================================================
+골든 비트동일 테스트  2026-09-10  (default_ON, default_OFF, batch_2026_09_04_ON, batch_shared_all_ON, batch_shared_actor_ON)
+==============================================================================
+  PASS   config 기본값 == YUGIOH
+  ★FAIL  default_ON               차이 369건 (state_dict 319텐서)
+           state_dict.attn.k_proj.bias
+           state_dict.attn.k_proj.weight
+           state_dict.attn.q_proj.bias
+           state_dict.attn.q_proj.weight
+           state_dict.attn.v_proj.bias
+           state_dict.attn.v_proj.weight
+           state_dict.critic.experts.0.fc2.bias
+           state_dict.critic.experts.0.fc2.weight
+           state_dict.critic.experts.0.glob_enc.0.bias
+           state_dict.critic.experts.0.glob_enc.0.weight
+           state_dict.critic.experts.0.glob_enc.2.bias
+           state_dict.critic.experts.0.glob_enc.2.weight
+           state_dict.critic.experts.0.msg_gate
+           state_dict.critic.experts.0.radar_encoder.conv1.bias
+           state_dict.critic.experts.0.radar_encoder.conv1.weight
+           state_dict.critic.experts.0.radar_encoder.conv2.bias
+           state_dict.critic.experts.0.radar_encoder.conv2.weight
+           state_dict.critic.experts.0.radar_encoder.conv3.bias
+           state_dict.critic.experts.0.radar_encoder.conv3.weight
+           state_dict.critic.experts.0.radar_encoder.fc.bias
+           ... +349
+  ★FAIL  default_OFF              차이 279건 (state_dict 319텐서)
+           state_dict.critic.experts.0.fc2.bias
+           state_dict.critic.experts.0.fc2.weight
+           state_dict.critic.experts.0.glob_enc.0.bias
+           state_dict.critic.experts.0.glob_enc.0.weight
+           state_dict.critic.experts.0.glob_enc.2.bias
+           state_dict.critic.experts.0.glob_enc.2.weight
+           state_dict.critic.experts.0.radar_encoder.conv1.bias
+           state_dict.critic.experts.0.radar_encoder.conv1.weight
+           state_dict.critic.experts.0.radar_encoder.conv2.bias
+           state_dict.critic.experts.0.radar_encoder.conv2.weight
+           state_dict.critic.experts.0.radar_encoder.conv3.bias
+           state_dict.critic.experts.0.radar_encoder.conv3.weight
+           state_dict.critic.experts.0.radar_encoder.fc.bias
+           state_dict.critic.experts.0.radar_encoder.fc.weight
+           state_dict.critic.experts.0.radar_encoder.reduce.bias
+           state_dict.critic.experts.0.radar_encoder.reduce.weight
+           state_dict.critic.experts.0.value_out.bias
+           state_dict.critic.experts.0.value_out.weight
+           state_dict.critic.experts.1.fc2.bias
+           state_dict.critic.experts.1.fc2.weight
+           ... +259
+  ★FAIL  batch_2026_09_04_ON      차이 218건 (state_dict 289텐서)
+           state_dict.attn.k_proj.bias
+           state_dict.attn.k_proj.weight
+           state_dict.attn.q_proj.bias
+           state_dict.attn.q_proj.weight
+           state_dict.attn.v_proj.bias
+           state_dict.attn.v_proj.weight
+           state_dict.critic.experts.0.fc2.bias
+           state_dict.critic.experts.0.fc2.weight
+           state_dict.critic.experts.0.glob_enc.0.bias
+           state_dict.critic.experts.0.glob_enc.0.weight
+           state_dict.critic.experts.0.glob_enc.2.bias
+           state_dict.critic.experts.0.glob_enc.2.weight
+           state_dict.critic.experts.0.msg_gate
+           state_dict.critic.experts.0.radar_encoder.conv1.bias
+           state_dict.critic.experts.0.radar_encoder.conv1.weight
+           state_dict.critic.experts.0.radar_encoder.conv2.bias
+           state_dict.critic.experts.0.radar_encoder.conv2.weight
+           state_dict.critic.experts.0.radar_encoder.conv3.bias
+           state_dict.critic.experts.0.radar_encoder.conv3.weight
+           state_dict.critic.experts.0.radar_encoder.fc.bias
+           ... +198
+  ★FAIL  batch_shared_all_ON      차이 203건 (state_dict 289텐서)
+           state_dict.attn.k_proj.bias
+           state_dict.attn.k_proj.weight
+           state_dict.attn.q_proj.bias
+           state_dict.attn.q_proj.weight
+           state_dict.attn.v_proj.bias
+           state_dict.attn.v_proj.weight
+           state_dict.critic.experts.0.fc2.bias
+           state_dict.critic.experts.0.fc2.weight
+           state_dict.critic.experts.0.glob_enc.0.bias
+           state_dict.critic.experts.0.glob_enc.0.weight
+           state_dict.critic.experts.0.glob_enc.2.bias
+           state_dict.critic.experts.0.glob_enc.2.weight
+           state_dict.critic.experts.0.msg_gate
+           state_dict.critic.experts.0.radar_encoder.conv1.bias
+           state_dict.critic.experts.0.radar_encoder.conv1.weight
+           state_dict.critic.experts.0.radar_encoder.conv2.bias
+           state_dict.critic.experts.0.radar_encoder.conv2.weight
+           state_dict.critic.experts.0.radar_encoder.conv3.bias
+           state_dict.critic.experts.0.radar_encoder.conv3.weight
+           state_dict.critic.experts.0.radar_encoder.fc.bias
+           ... +183
+  ★FAIL  batch_shared_actor_ON    차이 210건 (state_dict 289텐서)
+           state_dict.attn.k_proj.bias
+           state_dict.attn.k_proj.weight
+           state_dict.attn.q_proj.bias
+           state_dict.attn.q_proj.weight
+           state_dict.attn.v_proj.bias
+           state_dict.attn.v_proj.weight
+           state_dict.critic.experts.0.fc2.bias
+           state_dict.critic.experts.0.fc2.weight
+           state_dict.critic.experts.0.glob_enc.0.bias
+           state_dict.critic.experts.0.glob_enc.0.weight
+           state_dict.critic.experts.0.glob_enc.2.bias
+           state_dict.critic.experts.0.glob_enc.2.weight
+           state_dict.critic.experts.0.msg_gate
+           state_dict.critic.experts.0.radar_encoder.conv1.bias
+           state_dict.critic.experts.0.radar_encoder.conv1.weight
+           state_dict.critic.experts.0.radar_encoder.conv2.bias
+           state_dict.critic.experts.0.radar_encoder.conv2.weight
+           state_dict.critic.experts.0.radar_encoder.conv3.bias
+           state_dict.critic.experts.0.radar_encoder.conv3.weight
+           state_dict.critic.experts.0.radar_encoder.fc.bias
+           ... +190
+==============================================================================
+VERDICT: FAIL

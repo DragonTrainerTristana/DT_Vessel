@@ -1,0 +1,18 @@
+==============================================================================
+역할 약속 판정기 v2 단위 테스트 (imo·none, CPU)
+==============================================================================
+  PASS  rp14 정면 0 번 좌현 → F1 0 번만 1회, 위반 결정에  charges=[[1.0, 0.0]] 벌점결정=14 첫 −5° 결정=14 {'judged': 1, 'success': 0, 'fail': 1, 'discard': 0, 'coll': 1, 'start': 1, 'resolved': 0}
+  PASS  rp14 판정=실패·fail_type=1·벌점 결정 < 판정 결정  판정결정=215 fail_type=1
+  PASS  rp14 쌍둥이 env 보상 차 = PEN·벌점(그 결정)  [[1.0, 0.0]] max|오차|=0.0e+00
+  PASS  rp15a 유지선이 hold 창 안에서 >10° → F2 유지선만 1회 · fail_type 2  charges=[[0.0, 1.0]] 벌점결정=[192] 판정=323 fail_type=2 {'judged': 1, 'success': 0, 'fail': 1, 'discard': 0, 'coll': 0, 'start': 1, 'resolved': 0}
+  PASS  rp15b 창 열리기 전 유지선 선회 → v2 는 위반 아님(벌점 0 또는 해소)  charges=[[0.0, 0.0]] {'judged': 1, 'success': 1, 'fail': 0, 'discard': 0, 'coll': 0, 'start': 1, 'resolved': 1}
+  PASS  rp16 정면 직진 → F4 거리<24 결정에 둘 다 1회, 이후 충돌은 추가 벌점 없음  charges=[[1.0, 1.0]] 벌점결정=197 첫<24m=197 충돌=True {'judged': 1, 'success': 0, 'fail': 1, 'discard': 0, 'coll': 1, 'start': 1, 'resolved': 0}
+  PASS  rp16 fail_type=4(거리)  
+  PASS  rp17 둘 다 우현 → 해소 성공(resolved 1·벌점 0), 옛 판정보다 이른 종료  {'judged': 1, 'success': 1, 'fail': 0, 'discard': 0, 'coll': 0, 'start': 1, 'resolved': 1} v2 종료=21 end 종료=209
+  PASS  rp18a 늦은 시작: 둘 다 좌현이어도 침로 벌점 0  charges=[[0.0, 0.0]] late=True {'judged': 1, 'success': 1, 'fail': 0, 'discard': 0, 'coll': 0, 'start': 1, 'resolved': 0}
+  PASS  rp18b 같은 기동, 멀리서 시작(tcpa ≥ 28) → F1 둘 다 1회  charges=[[1.0, 1.0]] {'judged': 1, 'success': 0, 'fail': 1, 'discard': 0, 'coll': 0, 'start': 1, 'resolved': 0}
+  PASS  rp19 실패 뒤 재시작·추가 벌점 없음(400결정)  charges=[[1.0, 0.0]] {'judged': 1, 'success': 0, 'fail': 1, 'discard': 0, 'coll': 1, 'start': 1, 'resolved': 0}
+  PASS  rp20 16척 규칙 정책: v2 이벤트·결정당 벌점 == 참조 구현(전 결정) + 공허 통과 아님  {'success': 201, 'fail': 82, 'discard': 44, 'resolved': 194} 벌점합=179 불일치 결정 0 벌점 불일치 0 []
+  PASS  rp21 v2+legacy 병기 == end 단독 (이벤트 열 전부) · 클래스  같음=True 판정합 v2병기=0 end=0
+==============================================================================
+VERDICT: ALL PASS
