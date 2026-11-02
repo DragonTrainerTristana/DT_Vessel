@@ -37,7 +37,9 @@ nohup bash Python/runs_fig1/2026-10-02_fig1/_run_f.sh phase1 > run_qr_phase1.log
 ```
 
 - 진행: `tail -3 Python/_repro_out_qr/_timeline.txt`, `tail run_qr_phase1.log`
-- smoke 안에 골든·미러 검사(preflight)가 있음. 이 기계 torch 버전이 서버(2.10 dev cu128)와 달라 골든이 FAIL 하면 ★멈춤 → 고치지 말고 그대로 보고
+- smoke 안에 골든·미러 검사(preflight)가 있음. ★11-02 시도 1: 골든만 불통과(torch 2.6.0+cu124·CPU 다름), 다른 14종 PASS → 기록 `out/qr_try1_golden/`
+  - 저자가 면제를 정하면 위 명령에 `VESSEL_PY=<Python310 python.exe> VESSEL_F_GOLDEN_WAIVE="<저자 문구>"` 를 더해 같은 명령으로 다시(`feat/fig1-latent` 42f59b5 이상). 실행기가 '불통과 = 골든 하나뿐 · 학습·평가 코드 = c034422' 일 때만 `_golden_waiver.txt` 기록 후 진행, 아니면 멈춤
+  - mltest 는 CPU 전용 torch 1.13.1 → `VESSEL_PY` 로 torch 2.6.0+cu124 파이썬을 줌(runnote 에 적음)
 - **trunk 시작 뒤 10분**: `nvidia-smi` 로 VRAM·`_repro_out_qr/qr_trunk_d6_s43.log` 의 dec/s 확인. 메모리가 넘치거나 속도가 크게 떨어지면(Windows 공유 메모리로 넘침) 멈추고 보고. **학습 인자(envs·vessels·rollout) 줄이기 금지**(다른 실험이 됨)
 - 예상 시간(추정): trunk 2–3 h · 갈래 2개 차례로 4–5 h · 평가 4개 · 곡선 15점 → 시드 하나 약 12–15 h
 - trunk 관문 불통과 = ★멈춤 → 시드 바꾸지 말고 보고
