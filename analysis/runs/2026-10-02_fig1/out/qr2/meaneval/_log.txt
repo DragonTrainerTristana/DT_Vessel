@@ -1,0 +1,6 @@
+2026-11-03 23:31:19 meaneval qr2_ [trunk_d6] s44 ARPA=56 far=0/full 27f1ae0 docs(spec): correct the times of the first JOBS=1 attempt on LICS-SERVER GPU=0 → /c/work/DT_Vessel_v3/Python/_repro_out_qr2/meaneval
+2026-11-04 00:14:02 trunk_d6 2M 끝
+2026-11-04 00:53:43 trunk_d6 4M 끝
+2026-11-04 01:25:39 trunk_d6 6M 끝
+2026-11-04 01:47:26 trunk_d6 8M 끝
+2026-11-04 02:10:06 trunk_d6 9.04397M 끝

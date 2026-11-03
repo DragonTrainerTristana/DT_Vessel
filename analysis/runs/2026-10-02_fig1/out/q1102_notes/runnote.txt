@@ -59,3 +59,6 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - 평균 행동 주 지표(_fig1_mean.md, 시드 1개 = 단독 주장 아님): 24M 5/6(배끼리 충돌 차 −8.7 < N 12.10 불통과) · 16M 5/6(Woerner −0.5 불통과)
   표본 행동(_fig1.md): 24M 5/6 · 16M 5/6
 - trunk meaneval: qr3_ trunk(약 8.5 GB)와 같이 돌리면 VRAM 이 넘칠 수 있어 미룸 → qr3_ 평가 단계(VRAM 약 5 GB) 때 돌릴 예정
+- qr2_ trunk meaneval(HANDOFF §4-1, VESSEL_PY·VESSEL_F_SEED=44): 11-03 23:31 – 11-04 02:10 (qr3_ phase1 eval 단계와 같이 돌림, VRAM 시작 3.1 GB)
+  9.04M 도착 표본 53.3 / 평균 57.3 % · 마지막 5점 평균 52.6 / 57.8 % (기록, 판정 아님)
+  같이 돌린 탓에 meaneval 159분(시드 43 은 48분), qr3_ eval 23:30–02:08 157분(qr2_ 75분)으로 둘 다 느려짐
