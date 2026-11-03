@@ -1,0 +1,22 @@
+[env] torch 2.6.0+cu124 cuda True gpus 1
+2026-11-03 10:12:57 배치 qr2_ phase1 DESKTOP-JA8O9SS b54e41e feat(fig1): extend mode to continue branches from 16M to 24M 결과사본=/c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr2 action_mode=course 흉내=0 시드=[44]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qr2
+2026-11-03 10:12:57 시작 smoke
+2026-11-03 10:16:44 끝 smoke
+2026-11-03 10:16:44 시작 rankov
+2026-11-03 10:16:45 끝 rankov
+2026-11-03 10:16:45 시작 trunk
+2026-11-03 11:02:21 끝 trunk
+2026-11-03 11:02:21 시작 gate
+2026-11-03 11:02:22 끝 gate
+2026-11-03 11:02:23 갈래 시드: 44
+2026-11-03 11:02:23 시작 codec
+2026-11-03 11:05:00 끝 codec
+2026-11-03 11:05:00 시작 branches
+2026-11-03 12:22:08 끝 branches
+2026-11-03 12:22:09 시작 eval
+2026-11-03 13:37:10 끝 eval
+2026-11-03 13:37:11 시작 curve
+2026-11-03 16:12:03 끝 curve
+2026-11-03 16:12:04 시작 fig1
+2026-11-03 16:12:05 끝 fig1
+2026-11-03 16:12:06 phase1 완료 — 결과 /c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr2/_fig1.md

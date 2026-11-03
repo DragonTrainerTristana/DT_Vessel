@@ -1,0 +1,21 @@
+  curve_qr2_trunk_d6_s44_2M.txt → GPU 0
+  curve_qr2_trunk_d6_s44_4M.txt → GPU 0
+  curve_qr2_trunk_d6_s44_6M.txt → GPU 0
+  curve_qr2_trunk_d6_s44_8M.txt → GPU 0
+  curve_qr2_trunk_d6_s44_9.04397M.txt → GPU 0
+  curve_qr2_off_s44_10M.txt → GPU 0
+  curve_qr2_off_s44_12M.txt → GPU 0
+  curve_qr2_off_s44_14M.txt → GPU 0
+  curve_qr2_off_s44_16M.txt → GPU 0
+  curve_qr2_off_s44_16.0563M.txt → GPU 0
+  curve_qr2_comm_s44_10M.txt → GPU 0
+  curve_qr2_comm_s44_12M.txt → GPU 0
+  curve_qr2_comm_s44_14M.txt → GPU 0
+  curve_qr2_comm_s44_16M.txt → GPU 0
+  curve_qr2_comm_s44_16.0563M.txt → GPU 0
+# 고정 장면 체크포인트 곡선 (qr2_) — epReward, M = 최대 하락 ≤ 0.1 × (최고 − 첫 값)
+| 팔 | 시드 | 점 수 | 첫 값 | 최고 | 끝 | 최대 하락 | M |
+|---|---|---|---|---|---|---|---|
+| comm | 44 | 10 | 374.4 | 1226.6 | 1226.6 | 5.8 | 우상향 |
+| off | 44 | 10 | 374.4 | 793.1 | 733.6 | 59.5 | ★불통과 |
+M 통과: off 0/1 · comm 1/1

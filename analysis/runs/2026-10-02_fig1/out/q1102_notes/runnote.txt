@@ -38,3 +38,24 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - 20:28:46 시작 → ext_branches 20:28–21:55 → keep16 21:55 → ext_eval 21:55–23:09 → ext_curve 23:09–00:54 → ext_fig1 → 11-03 00:54:39 extend 완료
 - ★멈춤·★FAIL 없음
 - 평균 행동 주 지표(_fig1_mean.md, 시드 1개 = 단독 주장 아님): 24M 6/6 통과 · 16M 4/6
+
+## qr2_ (시드 44) phase1 + extend, 결과 out/qr2/ (16M = *_16M.md · lr16_/lrm16_)
+- 11-03 10:12 저자 승인(44–47) → for 문(qr2_..qr5_, phase1 && extend || exit 1) 실행, 로그 run_qr2345.log(= out/qr2/run_qr2_phase1.log), b54e41e
+- phase1: smoke 10:12–10:16 · trunk 10:16:45–11:02:21 · 관문 s44 goal=55.5 vColl=43.3 통과(G1 미충족 표시) · codec k8·k12 통과 → CHOSEN_K=8
+  · 갈래 11:05–12:22 · eval 12:22–13:37(75분, JOBS=1) · 곡선 13:37–16:12 · 16:12:06 phase1 완료
+- [명령과 다르게 한 일 1] 11:1x '방법 1' 지시로 qr_run.sh 의 VESSEL_F_JOBS·GPU_CAP 1→2 로 고침 → VESSEL_F_GPU=0 이면
+  메모리 검사를 건너뛰어 8 GB 갈래 2개가 같이 뜰 수 있음을 확인 → 어떤 실행도 읽기 전에 원래 파일(바이트 같음)로 되돌림, 저자에 보고
+- [끊고 다시 띄운 일] 11-03 11:2x 저자 지시(3aa51b9 평가 단계 동시 실행): 바깥 for 문 bash 만 끊음.
+  taskkill /PID 는 "강제로만 종료 가능" 으로 거부 → taskkill /F /PID <for 문 bash> (/T 안 씀). qr2_ phase1 runner·python 은 그대로 돌아 끝까지 감
+- 16:12 phase1 완료 뒤 runner·학습/평가 python 0개·.gpu 표식 없음 확인 → git pull(b54e41e → 27f1ae0, ≥ 3aa51b9)
+  → qr_run.sh 에 export VESSEL_F_EVAL_JOBS=3 한 줄 추가
+- 저자 정정: 시드 46·47(qr4_·qr5_)은 다른 기계가 돌림 → 이 기계는 qr2_·qr3_ 만. 다시 띄운 명령(16:12:41):
+  nohup bash -c 'bash /c/work/qr_run.sh qr2_ 44 extend && bash /c/work/qr_run.sh qr3_ 45 phase1 && bash /c/work/qr_run.sh qr3_ 45 extend' > run_qr23b.log 2>&1 &
+  (run_qr23b.log 의 21:2x 사본 = out/qr2/run_qr23b_snapshot.log)
+- extend: ext_branches 16:12:41–17:40:29 · keep16 · ext_eval 17:40:32–19:11:27 · ext_curve 19:11–21:22:42 · 21:22:45 extend 완료
+- EVAL_JOBS=3 측정(ext_eval): VRAM 최대 5185/12288 MiB(다른 앱 약 3 GB 포함). 평가 3개 동시 → 1개 약 57–67분, 4개 전체 91분
+  (JOBS=1 phase1 75분 · 시드 43 extend 74분보다 느림) → 저자에 "빨라지지 않음" 보고, 설정은 바꾸지 않음
+- ★멈춤·★FAIL 없음
+- 평균 행동 주 지표(_fig1_mean.md, 시드 1개 = 단독 주장 아님): 24M 5/6(배끼리 충돌 차 −8.7 < N 12.10 불통과) · 16M 5/6(Woerner −0.5 불통과)
+  표본 행동(_fig1.md): 24M 5/6 · 16M 5/6
+- trunk meaneval: qr3_ trunk(약 8.5 GB)와 같이 돌리면 VRAM 이 넘칠 수 있어 미룸 → qr3_ 평가 단계(VRAM 약 5 GB) 때 돌릴 예정
