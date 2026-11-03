@@ -86,6 +86,7 @@ BC_DECAY=3000000                        # 스펙 §4-1 흉내 보조손실 1.0 �
 JOBS=${VESSEL_F_JOBS:-8}
 EVAL_JOBS=${VESSEL_F_EVAL_JOBS:-$JOBS}   # ★2026-11-03 평가·곡선 단계만의 동시 실행 수(학습 단계는 JOBS 그대로). GPU 1장: JOBS=1 · EVAL_JOBS=3(평가 1개 ≈ 1.1 GB)
 GPU_CAP=${VESSEL_F_GPU_CAP:-2}          # GPU 한 장에 이 배치 런 2개까지(09-29 '한 장에 ON 3개 = 정지' 기록)
+EVAL_GPU_CAP=${VESSEL_F_EVAL_GPU_CAP:-$GPU_CAP}   # ★2026-11-03 평가·곡선 단계만의 GPU 한 장당 개수(VESSEL_F_GPU 가 목록이거나 자동일 때만 씀. 번호 하나면 개수 검사 없음 = 기존과 같음)
 _busy=$(powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Select-Object -ExpandProperty CommandLine" 2>/dev/null | grep -c "vessel_gym_train\|dagger_init\|eval_ckpt\|comm_codec")   # 규칙 배 평가(eval_scripted)는 같이 돌아도 됨
 [ "${_busy:-0}" -eq 0 ] || [ "${VESSEL_F_ALLOW_BUSY:-0}" = 1 ] || { echo "★멈춤: 학습·평가 python 프로세스 ${_busy}개가 돌고 있음 — 끝난 뒤 실행(동시 실행이면 VESSEL_F_ALLOW_BUSY=1)"; exit 1; }
 cd "$R" || exit 1
@@ -209,9 +210,12 @@ PIDS=()
 running() { local n=0 p; for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null && n=$((n + 1)); done; echo $n; }
 pick_gpu() {   # 남은 메모리 need + 1.5 GB 이상이고 표식 < GPU_CAP 인 GPU 중 여유 가장 큰 것
   local g
-  [ -z "${VESSEL_F_GPU:-}" ] || { echo "$VESSEL_F_GPU"; return; }   # ★2026-10-13 동시 배치는 GPU 를 명시(다른 배치의 표식은 못 봄)
+  # ★2026-10-13 동시 배치는 GPU 를 명시(다른 배치의 표식은 못 봄). 번호 하나 = 그 GPU 고정(기존과 같음)
+  # ★2026-11-03 목록 "0 1" = 그 GPU 들 안에서만 고름(여유·표식 검사는 자동과 같음) → 배치마다 서로 겹치지 않는 GPU 묶음
+  [ -z "${VESSEL_F_GPU:-}" ] || [ "$(echo $VESSEL_F_GPU | wc -w)" -gt 1 ] || { echo "$VESSEL_F_GPU"; return; }
   for g in $(nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits | tr -d ' \r' | sort -t, -k2 -nr \
              | awk -F, -v need="$1" '$2>=need+1500{print $1}'); do
+    [ -z "${VESSEL_F_GPU:-}" ] || case " $VESSEL_F_GPU " in *" $g "*) ;; *) continue ;; esac
     [ "$(ls "$O"/.gpu${g}_* 2>/dev/null | wc -l)" -lt "$GPU_CAP" ] && { echo "$g"; return; }
   done
 }
@@ -380,7 +384,7 @@ branches_all() {
 }
 eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scripted.py learned 모드(신경망 그대로, 지표 줄만 덧붙임)
   : > "$O/_status_f.txt"; local s a envset k ma
-  local JOBS=$EVAL_JOBS   # ★2026-11-03 launch 가 읽는 동시 실행 수를 이 단계에서만 바꿈(bash 동적 범위)
+  local JOBS=$EVAL_JOBS GPU_CAP=$EVAL_GPU_CAP   # ★2026-11-03 launch 가 읽는 동시 실행 수·GPU 한 장당 개수를 이 단계에서만 바꿈(bash 동적 범위)
   for k in $EVAL_KINDS; do   # ★2026-10-30 stage2: lr = 표본 행동 · lrm = 평균 행동 tanh(mean)(묘책 §5 주 평가)
     ma=""; [ "$k" = lrm ] && ma="--mean_action"
     for s in $SEEDS; do for a in $ARMS; do
@@ -433,7 +437,7 @@ rank_override_v5() {   # ★2026-10-29 저자 결정('ㅇㅋ'): 순위 관문 v5
 }
 curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
   : > "$O/_status_f.txt"; local s a f x run envset
-  local JOBS=$EVAL_JOBS   # ★2026-11-03
+  local JOBS=$EVAL_JOBS GPU_CAP=$EVAL_GPU_CAP   # ★2026-11-03
   for s in $SEEDS; do for run in trunk_d6 $ARMS; do
     if [ "$run" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
     local fp=$PRE; [ "$run" = trunk_d6 ] && fp=$TPRE   # ★2026-10-30 stage2: trunk 점 = 가져온 trunk 체크포인트(결과 파일 이름은 이 접두어로)

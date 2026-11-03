@@ -79,3 +79,4 @@
 - 코드(`feat/fig1-latent` 3aa51b9 이상)·env·명령(phase1 → extend 24M, 처방 qd_)은 같음. 골든은 그 기계에서 불통과하면 §6 과 같은 면제 조건(불통과 = 골든 하나뿐 · 학습·평가 코드 = c034422)
 - 판정은 §1–§2·§7 그대로(5 시드). 표에 시드마다 기계 이름을 적음. 같이 적음(판정 아님): DESKTOP 시드(43–45)만의 짝 차
 - 기계 차이는 GPU 비결정성처럼 시드 간 흔들림에 섞임 → 시드별 승패·CI 로 다룸
+- 11-03 실행 환경(저자 승인 'GPU 4장 다 쓰게 재시작', 결과 무관): 두 번째 기계 = LICS-SERVER(RTX 5070 Ti 16 GB 4장, 골든 포함 15종 PASS). 시드마다 GPU 2장 — `qr4_` = GPU 0·1, `qr5_` = GPU 2·3. `VESSEL_F_GPU="0 1"`(목록) · `VESSEL_F_JOBS=2` · `VESSEL_F_GPU_CAP=1`(학습 런은 GPU 한 장에 1개 → 갈래 off·comm 동시) · `VESSEL_F_EVAL_JOBS=6` · `VESSEL_F_EVAL_GPU_CAP=3`(평가는 한 장에 3개 = 1장 기계와 같은 밀도). 학습 인자·env·판정은 그대로. 처음 띄운 JOBS=1 시도(11:35–11:58, trunk 17분·smoke)는 끄고 기록만 남김(`_repro_out_qr4_try0_jobs1`·`_repro_out_qr5_try0_jobs1`)
