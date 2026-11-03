@@ -1,0 +1,17 @@
+  curve_qr4_off_s46_18M.txt → GPU 1
+  curve_qr4_off_s46_20M.txt → GPU 0
+  curve_qr4_off_s46_22M.txt → GPU 1
+  curve_qr4_off_s46_24M.txt → GPU 0
+  curve_qr4_off_s46_24.0517M.txt → GPU 1
+  curve_qr4_comm_s46_18M.txt → GPU 0
+  curve_qr4_comm_s46_20M.txt → GPU 1
+  curve_qr4_comm_s46_22M.txt → GPU 1
+  curve_qr4_comm_s46_24M.txt → GPU 1
+  curve_qr4_comm_s46_24.0517M.txt → GPU 0
+# 고정 장면 체크포인트 곡선 (qr4_) — epReward, M = 최대 하락 ≤ 0.1 × (최고 − 첫 값)
+| 팔 | 시드 | 점 수 | 첫 값 | 최고 | 끝 | 최대 하락 | M |
+|---|---|---|---|---|---|---|---|
+| comm | 46 | 15 | 577.6 | 895.2 | 853.3 | 255.8 | ★불통과 |
+| off | 46 | 15 | 577.6 | 824.4 | 824.1 | 255.8 | ★불통과 |
+M 통과: off 0/1 · comm 0/1
+(matplotlib 없음 — 그림 건너뜀, CSV 는 씀)

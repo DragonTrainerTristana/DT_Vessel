@@ -1,0 +1,3 @@
+> ★ 순위 관문 v5(보상 반경 56) 불통과 — 저자 결정으로 진행 (2026-11-03 11:54:31)
+> 저자 결정: 저자 10-29: 순위 관문 v5 불통과(시드1 (iii) 여유 부족·(v) v4 와 같은 값) 넘기고 성공 경로 진행
+> 근거 기록: /c/work/DT_Vessel_v3/Python/_repro_out_qr4/_rank.log (없으면 analysis 31a4633 out/qd/_rank.log)

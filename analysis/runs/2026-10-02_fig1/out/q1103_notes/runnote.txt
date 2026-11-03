@@ -1,0 +1,46 @@
+# 2026-11-03 시드 46·47(qr4_·qr5_) 실행 기록 — 두 번째 기계 (스펙 2026-11-02 §6–§8)
+
+## 기계·환경
+- 기계: LICS-SERVER (Windows Server 2025, 40 논리 코어), GPU RTX 5070 Ti 16 GB ×4, 드라이버 617.14
+- python: C:\Users\OSH\anaconda3\envs\mltest\python.exe · torch 2.10.0.dev20251204+cu128 · CUDA 4장
+- CUDA 번호 = nvidia-smi 번호 확인(pci_bus_id 0x18·0x51·0x8A·0xC3)
+- 클론 C:\work\DT_Vessel_v3 (feat/fig1-latent). 실행 HEAD = a9d154b (= 7258968 + 실행기 GPU 목록 1커밋). 학습·평가 코드 = c034422 와 같음(git diff, runs_fig1·docs 제외)
+- 시작 시 GPU: 0 = 200 MiB(데스크톱) · 1·2 = 0 · 3 = 195. 로그인 사용자 osh 하나
+- 골든: smoke 에서 골든 포함 15종 PASS → 면제 안 씀(_golden_waiver.txt 없음). VESSEL_F_GOLDEN_WAIVE 는 명령대로 env 에 있었음
+- 실행 스크립트 사본 = 이 폴더 scripts/ (qr_run.sh · qr4/qr5_launch.sh · qr_guard.ps1 · qr_hold.py · qr_meaneval.sh)
+
+## 명령과 다르게 한 것
+1. nohup 대신 Task Scheduler(vessel_qr4·vessel_qr5, wscript 로 숨김)로 띄움. 같은 bash -c 명령. 세션이 끝나도 안 죽게. 작업 우선순위 4(Normal), 시간 제한 없음
+2. 첫 시도(명령 그대로 JOBS=1: qr4_ GPU 1 · qr5_ GPU 2)
+   - qr4_ 11:35 시작 → smoke 15종 PASS(11:41) → trunk 11:41–11:46 약 5분
+   - qr5_ 11:41 smoke 시작 → smoke 도중
+   - 11:46 저자 승인('GPU 4장 다 쓰게 재시작')으로 둘 다 끔. 기록 = out/qr4_try0_jobs1 · out/qr5_try0_jobs1 (smoke .pt 는 서버 VESSEL_checkpoints/qr_try0_jobs1/)
+3. 실행기 변경 a9d154b(Python/runs_fig1 만): VESSEL_F_GPU 가 목록("0 1")이면 그 GPU 들 안에서만 고름 · VESSEL_F_EVAL_GPU_CAP(평가·곡선 단계 GPU 한 장당 개수). 번호 하나면 기존과 같음. 스펙 §8 에 한 줄(a9d154b, 시각 정정 27f1ae0)
+4. qr_run.sh: VESSEL_F_GPU="${4}"(목록) · JOBS=2 · GPU_CAP=1 · EVAL_JOBS=6 · EVAL_GPU_CAP=3. qr4_ = GPU "0 1", qr5_ = GPU "2 3". 학습 인자·실험 env·판정 그대로
+5. guard(C:\work\qr_guard.ps1, Task Scheduler vessel_qr_guard, 결과 무관): 우리 python → AboveNormal(High 안 씀, 10-06 서버 다운 기록) · 다른 계정이 우리 카드 메모리를 크게 잡으면 그 배치 $O 에 .gpu<g>_BLOCK(새 런 안 올림) · 밀어내기(아래). 다른 계정 프로세스는 kill·중단 안 함
+6. trunk meaneval(명령 6)은 체크포인트별로 나눠 동시에(VESSEL_F_ONLY, 10-27 저자 승인 방식, 같은 명령·인자·결과 파일) → 끝에 --table. GPU 2장(qr4_ 0·1, qr5_ 2·3)
+
+## 시각
+- qr4_(46): 11:49 시작 → smoke 11:54 → trunk 11:54–13:26 (GPU 1) → 관문 통과 → 코덱 13:26–13:33 → 갈래 off 13:33(GPU 1)·comm 13:58(GPU 0) → 15:40 → 평가 15:40–16:26 → 곡선 16:26–17:30 → phase1 완료 17:30 → extend 갈래 17:35–19:25(off GPU 0 · comm GPU 1) → 평가 19:25–20:14 → 곡선 20:14–21:07 → driver exit rc=0 21:07 → meaneval 21:09–21:41
+- qr5_(47): 11:55 시작 → trunk 12:00–13:30 (GPU 2) → 관문 통과 → 코덱 13:30–13:37 → 갈래 off 13:59(GPU 2)·comm 13:59(GPU 3) → 15:50 → 평가 15:50–16:37 → 곡선 16:37–17:49 → phase1 완료 17:49 → extend 갈래 17:50–19:41(off GPU 2 · comm GPU 3) → 평가 19:41–20:45 → 곡선 20:45–21:42 → driver exit rc=0 21:42 → meaneval 21:42–(아래)
+- 분기 검사: 16M(_branch_check.txt)·24M(_branch_check_ext.txt) 둘 다 ALL PASS (두 시드)
+- stall kill(_kill_log.txt) 없음
+
+## 측정
+- trunk 10분 뒤(12:05): qr4_ 0.98M · 2,104 dec/s · VRAM 8.9 GB / qr5_ 0.66M · 2,364 dec/s · 8.9 GB. CPU 23 %
+- trunk 관문(_gate.log): s46 마지막 4창 도착 51.8 %·배 충돌 48.1·벽 0.0 / s47 30.6 %·69.4·0.0 (기준 30) → 둘 다 통과
+- 코덱: qr4_ k=8 · qr5_ k=6
+- 갈래 속도: 4개 동시(16M) 약 730–1,480 dec/s · extend 4개 동시 약 1,380–1,490 dec/s
+- trunk meaneval(기록용, 판정 아님): qr4_ 9.04M 평균 행동 도착 58.0 % (표본 49.9) · 4M 64.8 → 9.04M 58.0 · 평균−표본 +8.1 → 건강 부분집합 기준 1/3 충족. qr5_ 는 meaneval/_meaneval_qr5_.md
+
+## 다른 계정(ljb) GPU 사용과 대응 (결과 무관, 실행 환경만)
+- ljb 로그인 12:05. ljb 프로세스는 다른 세션이라 nvidia-smi 목록에 안 보임 → 카드 사용량 차로만 봄
+- 13:14 ljb 가 4장에 각 약 6.6 GB → 빈 카드(0·3)는 13.4 GB 까지. 우리 trunk 카드(1·2)는 15.9/16.3 GB 상태로 끝까지 정상(속도 변화 없음)
+- 13:3x 저자 결정: guard 학습 단계 기준 6000 → 7000 MiB(trunk 가 돈 15.9 GB 상태 허용) → qr4_ off 13:33 GPU 1 시작
+- qr5_ 코덱이 GPU 2 를 비운 13:37 뒤 ljb 가 GPU 2 를 13.7 GB 로 → 갈래 3개 대기
+- 13:58 저자 지시('우리가 채우면 되잖아') → 메모리 holder(qr_hold.py) GPU 0·2·3 → 카드당 12 GB 할당 성공(WDDM 이 ljb 의 메모리를 시스템 메모리로 밀어냄, 상주 13.4 → 약 3.2 GB) → holder 정상 종료 → 13:58–13:59 갈래 3개 시작
+- 14:53 ljb 메모리 빠짐 → 15:05 holder 를 우리 학습 옆에도 켬 → WDDM 이 물리 VRAM 을 넘는 할당 허용(holder 13.5 GB + 우리 9.3 GB 표시, used 15.8 GB) → 우리 메모리가 밀려날 위험 → 약 1분 만에 전부 해제. 갈래 4개 오류 0·진행 계속 확인(15:08)
+- 15:10 guard v7: 평소 채우기 없음. 우리 학습 런이 대기 중이고 남의 메모리로 자리가 없을 때만 10 GB 10초 밀어내기 → 해제
+- 17:08 ljb 가 다시 4장 각 약 12 GB → 17:2x guard v8: 평가·곡선 대기분에도 밀어내기(우리 런 없는 카드, 7 GB 10초). 첫 버전은 free 안에 들어가는 양(1.27 GB)만 잡아 효과 없음 → 7 GB 로 고침 → 17:22 GPU 2 12.6 → 8.1 GB
+- 17:31–17:35 qr4_ extend: 밀어내기 몇 번 효과 늦음 → 세션이 GPU 0 에서 손으로 10 GB 할당 시험 1회(17:35) → 17:35–17:36 갈래 2개 시작. qr5_ extend 17:50 밀어내기 1회로 시작. 20:14·20:45 곡선도 밀어내기로 시작
+- 우리 런이 도는 동안 카드가 15.9 GB 근처였던 시간이 길었음(ljb + 우리). TDR(nvlddmkm) 없음. WHEA 17(PCIe 수정된 오류) 13:27–13:33 3건(이전부터 GPU 쓸 때 나오던 이벤트)

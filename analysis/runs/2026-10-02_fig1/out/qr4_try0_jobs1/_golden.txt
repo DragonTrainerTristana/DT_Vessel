@@ -1,0 +1,11 @@
+==============================================================================
+골든 비트동일 테스트  2026-09-10  (default_ON, default_OFF, batch_2026_09_04_ON, batch_shared_all_ON, batch_shared_actor_ON)
+==============================================================================
+  PASS   config 기본값 == YUGIOH
+  PASS   default_ON               state_dict 319텐서 · adam · value_norm · curve 전부 비트동일
+  PASS   default_OFF              state_dict 319텐서 · adam · value_norm · curve 전부 비트동일
+  PASS   batch_2026_09_04_ON      state_dict 289텐서 · adam · value_norm · curve 전부 비트동일
+  PASS   batch_shared_all_ON      state_dict 289텐서 · adam · value_norm · curve 전부 비트동일
+  PASS   batch_shared_actor_ON    state_dict 289텐서 · adam · value_norm · curve 전부 비트동일
+==============================================================================
+VERDICT: ALL PASS
