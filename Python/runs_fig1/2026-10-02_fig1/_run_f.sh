@@ -84,6 +84,7 @@ else
 fi
 BC_DECAY=3000000                        # 스펙 §4-1 흉내 보조손실 1.0 → 0, 3M 결정
 JOBS=${VESSEL_F_JOBS:-8}
+EVAL_JOBS=${VESSEL_F_EVAL_JOBS:-$JOBS}   # ★2026-11-03 평가·곡선 단계만의 동시 실행 수(학습 단계는 JOBS 그대로). GPU 1장: JOBS=1 · EVAL_JOBS=3(평가 1개 ≈ 1.1 GB)
 GPU_CAP=${VESSEL_F_GPU_CAP:-2}          # GPU 한 장에 이 배치 런 2개까지(09-29 '한 장에 ON 3개 = 정지' 기록)
 _busy=$(powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Select-Object -ExpandProperty CommandLine" 2>/dev/null | grep -c "vessel_gym_train\|dagger_init\|eval_ckpt\|comm_codec")   # 규칙 배 평가(eval_scripted)는 같이 돌아도 됨
 [ "${_busy:-0}" -eq 0 ] || [ "${VESSEL_F_ALLOW_BUSY:-0}" = 1 ] || { echo "★멈춤: 학습·평가 python 프로세스 ${_busy}개가 돌고 있음 — 끝난 뒤 실행(동시 실행이면 VESSEL_F_ALLOW_BUSY=1)"; exit 1; }
@@ -379,6 +380,7 @@ branches_all() {
 }
 eval_all() {   # 주 평가(t_ 와 같은 조건) + Woerner·타 줄 = eval_scripted.py learned 모드(신경망 그대로, 지표 줄만 덧붙임)
   : > "$O/_status_f.txt"; local s a envset k ma
+  local JOBS=$EVAL_JOBS   # ★2026-11-03 launch 가 읽는 동시 실행 수를 이 단계에서만 바꿈(bash 동적 범위)
   for k in $EVAL_KINDS; do   # ★2026-10-30 stage2: lr = 표본 행동 · lrm = 평균 행동 tanh(mean)(묘책 §5 주 평가)
     ma=""; [ "$k" = lrm ] && ma="--mean_action"
     for s in $SEEDS; do for a in $ARMS; do
@@ -431,6 +433,7 @@ rank_override_v5() {   # ★2026-10-29 저자 결정('ㅇㅋ'): 순위 관문 v5
 }
 curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026-10-07 §곡선): step 체크포인트 + 끝 모델, 평가 시드 999
   : > "$O/_status_f.txt"; local s a f x run envset
+  local JOBS=$EVAL_JOBS   # ★2026-11-03
   for s in $SEEDS; do for run in trunk_d6 $ARMS; do
     if [ "$run" = comm ]; then envset=$(env_comm "$s") || return 1; else envset=$ENV_ARPA; fi
     local fp=$PRE; [ "$run" = trunk_d6 ] && fp=$TPRE   # ★2026-10-30 stage2: trunk 점 = 가져온 trunk 체크포인트(결과 파일 이름은 이 접두어로)
@@ -439,6 +442,8 @@ curve_all() {   # ★2026-10-07 고정 장면 체크포인트 곡선(스펙 2026
       case "$f" in *.step*M.pt) x=$(echo "$f" | sed -E 's/.*\.step([0-9.]+)M\.pt$/\1/') ;;
                    *) [ "$run" = trunk_d6 ] && x=$(awk "BEGIN{print $BRANCH_AT/1e6}") || x=$(awk "BEGIN{print $TOTAL/1e6}") ;; esac
       grep -q "epReward=" "$O/curve_${PRE}${run}_s${s}_${x}M.txt" 2>/dev/null && continue
+      # ★2026-11-03 갈래 끝 모델이 마지막 step 체크포인트와 바이트까지 같으면(16.06M = step16M, 24.05M = step24M) 같은 모델을 두 번 재지 않음(값 같음)
+      [ "$run" != trunk_d6 ] && [ "$f" = "$CK/${fp}${run}_s$s.pt" ] && cmp -s "$f" "$CK/${fp}${run}_s$s.step$(( TOTAL / 2000000 * 2 ))M.pt" && continue
       launch 2500 "$O/curve_${PRE}${run}_s${s}_${x}M.txt" bash -c "$envset
         '$PY' -u eval/eval_ckpt.py --ckpt '$f' --arm ON --envs 256 --eval_decisions 3000 --burnin 2400 --drain 3000 --seed 999 $CURVE_X"
     done
