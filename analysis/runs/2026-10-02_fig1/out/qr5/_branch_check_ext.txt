@@ -1,0 +1,4 @@
+체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+qr5_off_s47.pt               ON         47    6   24051712    9043968  qr5_trunk_d6_s47.pt (f8c92bf94326)  imo/none  1:state,L0,R56,aux0
+qr5_comm_s47.pt              ON         47    6   24051712    9043968  qr5_trunk_d6_s47.pt (f8c92bf94326)  imo/none  1:intent,L0,R300,aux0,cdc:decode:2ff0c291
+BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)

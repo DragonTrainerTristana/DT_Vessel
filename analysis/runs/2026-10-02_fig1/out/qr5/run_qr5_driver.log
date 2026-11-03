@@ -1,0 +1,38 @@
+===== 2026-11-03 11:55:34 launch qr5_ (HEAD a9d154b) =====
+[env] torch 2.10.0.dev20251204+cu128 cuda True gpus 4
+2026-11-03 11:55:47 배치 qr5_ phase1 LICS-SERVER a9d154b feat(fig1): let VESSEL_F_GPU take a GPU list so one batch can use two cards 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr5 action_mode=course 흉내=0 시드=[47]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qr5
+2026-11-03 11:55:47 시작 smoke
+2026-11-03 12:00:05 끝 smoke
+2026-11-03 12:00:06 시작 rankov
+2026-11-03 12:00:06 끝 rankov
+2026-11-03 12:00:07 시작 trunk
+2026-11-03 13:30:42 끝 trunk
+2026-11-03 13:30:43 시작 gate
+2026-11-03 13:30:44 끝 gate
+2026-11-03 13:30:45 갈래 시드: 47
+2026-11-03 13:30:45 시작 codec
+2026-11-03 13:37:31 끝 codec
+2026-11-03 13:37:32 시작 branches
+2026-11-03 15:50:40 끝 branches
+2026-11-03 15:50:41 시작 eval
+2026-11-03 16:37:03 끝 eval
+2026-11-03 16:37:04 시작 curve
+2026-11-03 17:49:23 끝 curve
+2026-11-03 17:49:25 시작 fig1
+2026-11-03 17:49:27 끝 fig1
+2026-11-03 17:49:28 phase1 완료 — 결과 /c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr5/_fig1.md
+[env] torch 2.10.0.dev20251204+cu128 cuda True gpus 4
+2026-11-03 17:49:48 배치 qr5_ extend LICS-SERVER a9d154b feat(fig1): let VESSEL_F_GPU take a GPU list so one batch can use two cards 결과사본=/c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr5 action_mode=course 흉내=0 시드=[47]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qr5
+2026-11-03 17:49:48 연장 시드: 47 · 16056320 → 24051712
+2026-11-03 17:49:48 시작 ext_branches
+2026-11-03 19:41:36 끝 ext_branches
+2026-11-03 19:41:37 시작 keep16
+2026-11-03 19:41:39 끝 keep16
+2026-11-03 19:41:40 시작 ext_eval
+2026-11-03 20:45:28 끝 ext_eval
+2026-11-03 20:45:29 시작 ext_curve
+2026-11-03 21:41:57 끝 ext_curve
+2026-11-03 21:41:58 시작 ext_fig1
+2026-11-03 21:42:01 끝 ext_fig1
+2026-11-03 21:42:02 extend 완료 — 결과 /c/Users/OSH/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr5/_fig1_mean.md(끝점 24051712) · 16M = *_16M.md
+===== 2026-11-03 21:42:04 driver exit rc=0 =====

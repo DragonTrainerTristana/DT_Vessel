@@ -1,0 +1,10 @@
+curve_qr5_off_s47_18M.txt rc=0
+curve_qr5_off_s47_22M.txt rc=0
+curve_qr5_off_s47_24.0517M.txt rc=0
+curve_qr5_off_s47_20M.txt rc=0
+curve_qr5_off_s47_24M.txt rc=0
+curve_qr5_comm_s47_18M.txt rc=0
+curve_qr5_comm_s47_20M.txt rc=0
+curve_qr5_comm_s47_22M.txt rc=0
+curve_qr5_comm_s47_24M.txt rc=0
+curve_qr5_comm_s47_24.0517M.txt rc=0

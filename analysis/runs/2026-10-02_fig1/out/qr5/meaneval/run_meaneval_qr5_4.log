@@ -1,0 +1,18 @@
+2026-11-03 21:42:38 meaneval qr5_ [trunk_d6] s47 ARPA=56 far=0/full a9d154b feat(fig1): let VESSEL_F_GPU take a GPU list so one batch can use two cards GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qr5/meaneval
+qr5_trunk_d6_s47.step2M.pt         steps=2031616 logstd0=-2.181 -1.970 -1.922 -1.906 -1.968 mean=-1.990 sigma_course=16.4deg
+qr5_trunk_d6_s47.step4M.pt         steps=4063232 logstd0=-2.132 -1.960 -2.031 -1.918 -2.004 mean=-2.009 sigma_course=16.1deg
+qr5_trunk_d6_s47.step6M.pt         steps=6029312 logstd0=-2.168 -1.993 -2.089 -1.998 -2.035 mean=-2.057 sigma_course=15.3deg
+qr5_trunk_d6_s47.step8M.pt         steps=8060928 logstd0=-2.216 -1.992 -2.218 -2.079 -2.047 mean=-2.111 sigma_course=14.5deg
+qr5_trunk_d6_s47.pt                steps=9043968 logstd0=-2.259 -1.995 -2.244 -2.102 -2.032 mean=-2.126 sigma_course=14.3deg
+  표본 = 기존 curve 재사용 curve_qr5_trunk_d6_s47_4M.txt
+2026-11-03 22:01:42 trunk_d6 4M 끝
+# 무학습 재평가 qr5_ — 표본 행동 vs 평균 행동 (기록용, 판정 아님. 시드 1개 = 단독 주장 금지)
+| run | 체크포인트 | 도착 % 표본 / 평균 (차) | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+| trunk_d6 | 4M | 61.2 / 59.1 (-2.1) | 38.7 / 40.8 | 762 / 951 |
+
+## 마지막 K 점 평균 (갈래 = 분기 뒤 체크포인트 전부, trunk = 2M 이후 전부)
+| run | K | 도착 % 표본 / 평균 | 배 충돌 % 표본 / 평균 | epReward 표본 / 평균 |
+|---|---|---|---|---|
+| trunk_d6 | 1 | 61.2 / 59.1 | 38.7 / 40.8 | 762 / 951 |
+2026-11-03 22:01:44 끝 → /c/work/DT_Vessel_v3/Python/_repro_out_qr5/meaneval/_meaneval_qr5_.md
