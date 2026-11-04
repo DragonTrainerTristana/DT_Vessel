@@ -8,6 +8,7 @@
 #   CUDA_VISIBLE_DEVICES=1 VESSEL_F_REWARD_RANGE=56 VESSEL_F_SEED=43 bash Python/runs_fig1/2026-10-02_fig1/lrm_eval.sh qd_ comm
 #   표만: VESSEL_F_SEED=43 bash .../lrm_eval.sh qd_ --table
 # 결과 = Python/_repro_out_<prefix>/lrm_<prefix><arm>_s<seed>.txt · _fig1_mean.md
+# ★2026-11-04 VESSEL_F_KIND=lrmb = 이진 COLREGs 준수율(스펙 2026-11-02 §9) 재평가 전용 — 같은 명령으로 lrmb_*.txt 에 따로 씀(기존 lrm_ 은 안 건드림), 표 = _fig1_lrmb.md
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 PRE=${1:?사용: lrm_eval.sh <prefix> [off comm|--table]}; shift
 RUNS=${*:-off comm}
@@ -19,6 +20,7 @@ PY=${VESSEL_PY:-$HOME/anaconda3/envs/mltest/python.exe}
 export PYTHONIOENCODING=utf-8
 CK=${VESSEL_CKPT_DIR:-$HOME/VESSEL_checkpoints/comm_intent}
 SEED=${VESSEL_F_SEED:-43}
+KIND=${VESSEL_F_KIND:-lrm}
 O="$PWD/_repro_out_${PRE%_}"
 SDROP="$R/Python/runs_fig1/2026-10-01_scripted"
 # ── env = meaneval_ckpts.sh 와 같음 ──
@@ -42,13 +44,15 @@ if [ "$RUNS" != "--table" ]; then
     else
       export VESSEL_COMM_FIELDS=state VESSEL_PARTNER_RANGE=56
     fi
-    out="$O/lrm_${PRE}${a}_s$SEED.txt"
-    grep -q "R8=" "$out" 2>/dev/null && { echo "건너뜀 $out (이미 있음)"; continue; }
+    out="$O/${KIND}_${PRE}${a}_s$SEED.txt"
+    DONE="R8="; [ "$KIND" = lrmb ] && DONE="binary-COLREGs"   # ★2026-11-04 이진 재평가는 이진 줄까지 있어야 끝난 것
+    grep -q "$DONE" "$out" 2>/dev/null && { echo "건너뜀 $out (이미 있음)"; continue; }
     f="$CK/${PRE}${a}_s$SEED.pt"; [ -f "$f" ] || { echo "★멈춤: 체크포인트 없음 $f"; exit 1; }
     "$PY" -u "$SDROP/eval_scripted.py" --py_root "$R/Python" --policy learned --mean_action -- \
       --ckpt "$f" --arm ON --envs 256 --eval_decisions 10000 --burnin 2400 --seed 999 > "$out" 2>&1
-    grep -q "R8=" "$out" || { echo "★FAIL lrm 평가 실패 $out"; exit 1; }
+    grep -q "$DONE" "$out" || { echo "★FAIL $KIND 평가 실패 $out"; exit 1; }
     echo "$(date '+%F %T') $a 끝 → $out" | tee -a "$O/_lrm_log.txt"
   done
 fi
-"$PY" "$HERE/summarize_fig1.py" "$O" "$PRE" lrm | tee "$O/_fig1_mean.md"
+if [ "$KIND" = lrm ]; then "$PY" "$HERE/summarize_fig1.py" "$O" "$PRE" lrm | tee "$O/_fig1_mean.md"
+else "$PY" "$HERE/summarize_fig1.py" "$O" "$PRE" "$KIND" | tee "$O/_fig1_$KIND.md"; fi

@@ -42,6 +42,9 @@ W_ROLE_RE = {k: re.compile(k + r"=\s*([\d.na]+)%\(") for k in ('giveway', 'heado
 MODE_RE = re.compile(r"\[scripted-mode\] (.*?) \(ship-decisions")
 
 
+BIN_RE = re.compile(r'\[binary-COLREGs\] rate=\s*([0-9.]+)%')
+
+
 def parse_all(f):
     r = parse_eval(f)
     s = open(f, encoding='utf-8', errors='replace').read()
@@ -64,6 +67,9 @@ def parse_all(f):
                 r['w_' + k] = float(m.group(1))
             except ValueError:
                 pass
+    m = BIN_RE.search(s)   # ★2026-11-04 binary compliance (spec 2026-11-02 §9)
+    if m:
+        r['bin'] = float(m.group(1))
     m = MODE_RE.search(s)
     r['mode'] = m.group(1) if m else None
     return r

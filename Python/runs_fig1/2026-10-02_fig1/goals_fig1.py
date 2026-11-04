@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from summarize_fig1 import load, fmt  # noqa: E402  (same eval-file parser as the Fig1 table)
 
 T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262}
-GOALS = [('w_score', 'a) COLREGs(Woerner) %', +1), ('dcpa', 'b) DCPA(통과거리) m', +1), ('rud_abs', 'c) 평균 타각 크기 °', -1)]
+GOALS = [('bin', 'a) COLREGs 이진 준수율 %', +1), ('w_score', 'a2) COLREGs Woerner %', +1),   # ★2026-11-04 §9: a) = 이진, Woerner 는 같이 판정·보고
+         ('dcpa', 'b) DCPA(통과거리) m', +1), ('rud_abs', 'c) 평균 타각 크기 °', -1)]
 GUARD = [('goal', '도착 %', +1), ('vColl', '배끼리 충돌 %', -1)]
 MARGIN, NEED_WIN, N_SEEDS = 3.0, 4, 5
 
@@ -52,6 +53,10 @@ def main(pairs, subsets=(), kind='lrm'):
         d, pre = dp.rsplit(':', 1)
         off.update(load(d, pre, 'off', kind))
         comm.update(load(d, pre, 'comm', kind))
+        for arm, dst in (('off', off), ('comm', comm)):   # ★2026-11-04 이진 준수율 = 같은 끝 모델 재평가 파일 <kind>b_*(lrmb_) 에서만 가져옴
+            for s, r in load(d, pre, arm, kind + 'b').items():
+                if s in dst and r.get('bin') is not None:
+                    dst[s]['bin'] = r['bin']
         curve.update(curve_m(d))
     seeds = sorted(set(off) & set(comm))
     full = len(seeds) == N_SEEDS
@@ -77,7 +82,7 @@ def main(pairs, subsets=(), kind='lrm'):
                 ok = full and len(ss) == N_SEEDS and sg * m >= -MARGIN
             verdict[k] = ok
             ci = f"[{fmt(lo, 2)}, {fmt(hi, 2)}]" if lo is not None else '[n/a]'
-            tag = ('**성공**' if ok else '불성공') if kind == 'goal' else ('가드 통과' if ok else '★가드 불통과')
+            tag = ('**성공**' if ok else '불성공') if kind == 'goal' else ('가드 통과' if ok else '★가드 불통과')   # noqa: kind = 행 종류(goal/guard)
             print(f"| {lab} | {fmt(sum(off[s][k] for s in ss) / len(ss))} ({'·'.join(fmt(off[s][k]) for s in ss)}) "
                   f"| {fmt(sum(comm[s][k] for s in ss) / len(ss))} ({'·'.join(fmt(comm[s][k]) for s in ss)}) "
                   f"| {'·'.join(f'{x:+.1f}' for x in dd)} | {w}/{len(ss)} | {fmt(m, 2)} {ci} | {tag if full else '–'} |")

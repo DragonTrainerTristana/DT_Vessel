@@ -40,6 +40,11 @@ Scores (1 = fully compliant):
   give-way (crossing)  = S · D · A · T · W      head-on = S · D · A · T · P · W      overtaking = S · D · A · W
   stand-on (crossing or overtaken) = S · C · V · T · W   (W = Rule 8 small alterations, below; added 2026-10-02)
 Also reported: bow-crossing share of give-way encounters (i passed ahead of j: |bearing of i from j's bow| < 90° at CPA).
+★2026-11-04 binary compliance (author request; spec 2026-11-02 §9, fixed before any binary value was computed): same encounters,
+  one yes/no per encounter, window = the whole encounter from its 300 m start, threshold BIN_DEG = 10°:
+  give-way / head-on  = (max starboard heading change >= 10° or speed cut >= 50 %) and max port change <= 10° and no collision
+  stand-on            = |heading change|max <= 10° (excused: late action at tcpa <= RULE_17B_TIME or another give-way duty, as C) and no collision
+  overtaking          = no collision and closest range >= R_NM (12 m)
 """
 
 import torch
@@ -48,6 +53,7 @@ R_ENC = 300.0
 R_NM, R_PREF = 12.0, 24.0
 MAN_DEG = 2.0
 APP_DEG = 30.0
+BIN_DEG = 10.0     # ★2026-11-04 binary compliance threshold (spec 2026-11-02 §9)
 
 
 def build(vg):
@@ -175,6 +181,12 @@ def build(vg):
                 slow = (self.v0 - self.vmin).clamp(min=0)
                 V = torch.where(slow < 0.2, torch.ones_like(pc), (1.0 - 0.5 * slow / self.v0.clamp(min=1e-6)).clamp(0, 1))
                 bow = self.ocpa.abs() < 90.0
+                # ★2026-11-04 binary compliance (§9): one yes/no per encounter over the whole 300 m window
+                give_ok = ((self.dmax >= BIN_DEG) | (dv >= 0.5)) & (-self.dmin <= BIN_DEG)
+                so_ok = (maxabs <= BIN_DEG) | self.multi | late
+                ov_ok = self.rcpa >= R_NM
+                binok = torch.where((self.role == SIT_GIVEWAY) | (self.role == SIT_HEADON), give_ok,
+                        torch.where(self.role == SIT_OVERTAKING, ov_ok, so_ok)) & (~collided)
                 score = torch.where(self.role == SIT_GIVEWAY, S * D * A * T * W,
                         torch.where(self.role == SIT_HEADON, S * D * A * T * P * W,
                         torch.where(self.role == SIT_OVERTAKING, S * D * A * W, S * C * V * Ts * Ws)))
@@ -185,11 +197,12 @@ def build(vg):
                     if n == 0:
                         continue
                     a = self.acc.setdefault(nm, {'n': 0.0, 'score': 0.0, 'S': 0.0, 'D': 0.0, 'A': 0.0, 'T': 0.0, 'P': 0.0,
-                                                 'C': 0.0, 'Craw': 0.0, 'V': 0.0, 'R8': 0.0, 'bow': 0.0, 'multi': 0.0, 'coll': 0.0, 'man': 0.0})
+                                                 'C': 0.0, 'Craw': 0.0, 'V': 0.0, 'R8': 0.0, 'bow': 0.0, 'multi': 0.0, 'coll': 0.0, 'man': 0.0,
+                                                 'bin': 0.0})
                     a['n'] += n
                     for key, val in (('score', score), ('S', S), ('D', D), ('A', A), ('T', T if nm != 'standon' else Ts),
                                      ('P', P), ('C', C), ('Craw', Craw), ('V', V), ('R8', Wr), ('bow', bow.float()), ('multi', self.multi.float()),
-                                     ('coll', collided.float()), ('man', (self.rman >= 0).float())):
+                                     ('coll', collided.float()), ('man', (self.rman >= 0).float()), ('bin', binok.float())):
                         a[key] += float(val[k].sum())
             self.act = self.act & ~end
 
@@ -212,6 +225,11 @@ def build(vg):
                     parts.append(f"{nm}={pc(a, 'score'):5.1f}%(n={a['n']:.0f} S={pc(a, 'S'):.1f} D={pc(a, 'D'):.1f} A={pc(a, 'A'):.1f} R8={pc(a, 'R8'):.1f} "
                                  f"T={pc(a, 'T'):.1f}" + (f" P={pc(a, 'P'):.1f}" if nm == 'headon' else '')
                                  + f" 선수횡단={pc(a, 'bow'):.1f}% 충돌={pc(a, 'coll'):.1f}%)")
-            return head + "\n   [woerner-COLREGs/역할] " + ' '.join(parts)
+            tot_b = sum(a.get('bin', 0.0) for a in self.acc.values())
+            kr = {'giveway': '양보', 'headon': '정면', 'overtaking': '추월', 'standon': '유지'}
+            bparts = ' '.join(f"{kr[nm]}={pc(self.acc[nm], 'bin'):5.1f}%(n={self.acc[nm]['n']:.0f})" for nm in kr if nm in self.acc)
+            binl = (f"\n   [binary-COLREGs] rate={100.0 * tot_b / tot_n if tot_n else float('nan'):5.1f}% (n={tot_n:.0f} 조우, 300 m 조우 전체, "
+                    f"문턱 {BIN_DEG:.0f}°, 스펙 2026-11-02 §9) {bparts}")
+            return head + "\n   [woerner-COLREGs/역할] " + ' '.join(parts) + binl
 
     return WoernerTracker
