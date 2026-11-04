@@ -1,0 +1,34 @@
+2026-11-03 21:22:51 배치 qr3_ phase1 DESKTOP-JA8O9SS 27f1ae0 docs(spec): correct the times of the first JOBS=1 attempt on LICS-SERVER 결과사본=/c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr3 action_mode=course 흉내=0 시드=[45]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qr3
+2026-11-03 21:22:51 시작 smoke
+2026-11-03 21:26:32 끝 smoke
+2026-11-03 21:26:32 시작 rankov
+2026-11-03 21:26:33 끝 rankov
+2026-11-03 21:26:33 시작 trunk
+2026-11-03 22:12:11 끝 trunk
+2026-11-03 22:12:12 시작 gate
+2026-11-03 22:12:13 끝 gate
+2026-11-03 22:12:13 갈래 시드: 45
+2026-11-03 22:12:13 시작 codec
+2026-11-03 22:14:49 끝 codec
+2026-11-03 22:14:49 시작 branches
+2026-11-03 23:30:54 끝 branches
+2026-11-03 23:30:54 시작 eval
+2026-11-04 02:08:01 끝 eval
+2026-11-04 02:08:02 시작 curve
+2026-11-04 05:24:41 끝 curve
+2026-11-04 05:24:42 시작 fig1
+2026-11-04 05:24:43 끝 fig1
+2026-11-04 05:24:43 phase1 완료 — 결과 /c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr3/_fig1.md
+2026-11-04 05:24:49 배치 qr3_ extend DESKTOP-JA8O9SS 27f1ae0 docs(spec): correct the times of the first JOBS=1 attempt on LICS-SERVER 결과사본=/c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr3 action_mode=course 흉내=0 시드=[45]·관문1 갈래=[off comm] ARPA=56 보상반경=56 관문설정=v5 extra=[VESSEL_ENTROPY_BONUS=0 VESSEL_LOGSTD_MIN=-3.0 VESSEL_LOGSTD_INIT0=-2.0 VESSEL_GRAD_TELEMETRY=1] OFF선생님=vo56h150 통신선생님=vo300i K=8 OUT=/c/work/DT_Vessel_v3/Python/_repro_out_qr3
+2026-11-04 05:24:49 연장 시드: 45 · 16056320 → 24051712
+2026-11-04 05:24:49 시작 ext_branches
+2026-11-04 06:52:53 끝 ext_branches
+2026-11-04 06:52:54 시작 keep16
+2026-11-04 06:52:55 끝 keep16
+2026-11-04 06:52:56 시작 ext_eval
+2026-11-04 08:23:51 끝 ext_eval
+2026-11-04 08:23:51 시작 ext_curve
+2026-11-04 10:35:48 끝 ext_curve
+2026-11-04 10:35:48 시작 ext_fig1
+2026-11-04 10:35:50 끝 ext_fig1
+2026-11-04 10:35:50 extend 완료 — 결과 /c/Users/sengh/Dropbox/Private_Paper_Project/0702_NewVessel/runs/2026-10-02_fig1/out/qr3/_fig1_mean.md(끝점 24051712) · 16M = *_16M.md

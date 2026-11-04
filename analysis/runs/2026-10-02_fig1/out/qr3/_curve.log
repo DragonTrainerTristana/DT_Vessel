@@ -1,0 +1,21 @@
+  curve_qr3_trunk_d6_s45_2M.txt → GPU 0
+  curve_qr3_trunk_d6_s45_4M.txt → GPU 0
+  curve_qr3_trunk_d6_s45_6M.txt → GPU 0
+  curve_qr3_trunk_d6_s45_8M.txt → GPU 0
+  curve_qr3_trunk_d6_s45_9.04397M.txt → GPU 0
+  curve_qr3_off_s45_10M.txt → GPU 0
+  curve_qr3_off_s45_12M.txt → GPU 0
+  curve_qr3_off_s45_14M.txt → GPU 0
+  curve_qr3_off_s45_16M.txt → GPU 0
+  curve_qr3_off_s45_16.0563M.txt → GPU 0
+  curve_qr3_comm_s45_10M.txt → GPU 0
+  curve_qr3_comm_s45_12M.txt → GPU 0
+  curve_qr3_comm_s45_14M.txt → GPU 0
+  curve_qr3_comm_s45_16M.txt → GPU 0
+  curve_qr3_comm_s45_16.0563M.txt → GPU 0
+# 고정 장면 체크포인트 곡선 (qr3_) — epReward, M = 최대 하락 ≤ 0.1 × (최고 − 첫 값)
+| 팔 | 시드 | 점 수 | 첫 값 | 최고 | 끝 | 최대 하락 | M |
+|---|---|---|---|---|---|---|---|
+| comm | 45 | 10 | 562.4 | 1019.3 | 1019.3 | 58.4 | ★불통과 |
+| off | 45 | 10 | 562.4 | 774.9 | 607.8 | 167.1 | ★불통과 |
+M 통과: off 0/1 · comm 0/1

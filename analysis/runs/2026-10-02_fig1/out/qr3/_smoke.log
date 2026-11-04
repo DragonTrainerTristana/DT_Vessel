@@ -1,0 +1,63 @@
+> ★ 골든 비트동일 불통과 — 저자 결정으로 면제 (2026-11-03 21:24:47, DESKTOP-JA8O9SS)
+> 저자 결정: 저자 11-02: 새 기계(DESKTOP-JA8O9SS, torch 2.6.0+cu124) 골든 비트동일 불통과는 CPU·torch 차이 — 다른 14종 PASS·학습 코드 = c034422 라 면제하고 진행
+> 학습·평가 코드 = c034422 와 같음(서버 골든 ALL PASS 커밋) · 이 기계 torch 2.6.0+cu124
+> 골든   PASS   config 기본값 == YUGIOH
+> 골든   불통과  default_ON               차이 369건 (state_dict 319텐서)
+> 골든   불통과  default_OFF              차이 279건 (state_dict 319텐서)
+> 골든   불통과  batch_2026_09_04_ON      차이 218건 (state_dict 289텐서)
+> 골든   불통과  batch_shared_all_ON      차이 203건 (state_dict 289텐서)
+> 골든   불통과  batch_shared_actor_ON    차이 210건 (state_dict 289텐서)
+> 골든 VERDICT: 불통과
+>   PASS  PPO 미러
+>   PASS  통신 미러
+>   PASS  vessel_gym 충실도
+>   PASS  동역학 프로필
+>   PASS  sim 스냅샷
+>   PASS  COMM_EXT
+>   PASS  grounded latent
+>   PASS  역할 약속
+>   PASS  p12 코덱
+>   PASS  p6 차분
+>   PASS  p50 코덱
+>   PASS  보상 v3
+>   PASS  역할 약속 v2
+>   PASS  판정기 v2 토글
+재현 실행 [smoke]
+  python      : /c/Users/sengh/AppData/Local/Programs/Python/Python310/python.exe
+  체크포인트  : /c/Users/sengh/VESSEL_checkpoints/comm_intent
+  출력        : /c/work/DT_Vessel_v3/Python/_repro_out_qr3
+  시드        : 43
+  GPU 수      : 1   동시 실행: 8
+  분기점      : 9043968 결정 (trunk → 갈래, 워밍업 2400)
+  프로필      : dyn=imo obstacles=none crossing=0 radar=56
+  통신 구조   : comm_ext=1  이름 접두어='qr3_'
+  eval 창     : envs=256 × 결정/에이전트=10000 (+burn-in 2400) = 40M 결정/건
+
+  override 축: DYN_PROFILE=imo   ★기본(agile) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: OBSTACLES_MODE=none   ★기본(grid3x3) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: RADAR_RANGE=56.0
+  override 축: COMM_EXT=True   ★기본(False) 아님 — 이 값 전용 trunk 로만 쓸 것
+  override 축: COLREGS_FAR_RANGE=0.0
+  override 축: COLREGS_FAR_MODE=full
+  override 축: ROLE_PROMISE_PEN=20.0   ★기본(0.0) 아님 — 이 값 전용 trunk 로만 쓸 것
+  YUGIOH 드리프트: PASS (common_env == config 기본값)
+[preflight] 검사 동시 실행 (지문 5f658d247d16f4678fe4)
+  (VESSEL_SKIP_GOLDEN=1 — 골든·충실도·동역학·sim·COMM_EXT 건너뜀, 미러만)
+  PASS  PPO 미러
+  PASS  통신 미러
+  검사 2종 동시 실행 28s
+
+[branch] 분기점 65536 · 총 131072 결정 · 워밍업 8 · dim: 6 · 팔: off a6
+  smoke_qr3_trunk_d6_s43 → GPU 0
+  smoke_qr3_off_s43 → GPU 0
+  smoke_qr3_a6_s43 → GPU 0
+[branch] 분기 검사
+  체크포인트                        arm      seed  dim      steps  branch_at  trunk  dyn/obst  ext:변형
+  smoke_qr3_off_s43.pt         OFF        43    6     131072      65536  smoke_qr3_trunk_d6_s43.pt (0f838bfdd19e)  imo/none  1:latent
+  smoke_qr3_a6_s43.pt          ON         43    6     131072      65536  smoke_qr3_trunk_d6_s43.pt (0f838bfdd19e)  imo/none  1:intent,L0,aux0,cdc:decode:fbe4c71a
+  BRANCH CHECK: ALL PASS (2개 체크포인트, trunk 1개)
+  분기 검사 ALL PASS
+스모크 완료 — /c/work/DT_Vessel_v3/Python/_repro_out_qr3/_status_train.txt 의 rc 가 전부 0 이어야 함
+smoke_qr3_trunk_d6_s43 rc=0
+smoke_qr3_off_s43 rc=0
+smoke_qr3_a6_s43 rc=0

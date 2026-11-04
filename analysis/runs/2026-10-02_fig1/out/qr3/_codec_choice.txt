@@ -1,0 +1,7 @@
+s45: k4=불통과 k6=불통과 k8=통과 k12=통과
+   k4 {'heading_deg_p90': 13.866891860961914, 'speed_ms_p90': 0.12261975556612015, 'intent_deg_p90': 1.9011753797531128, 'role_acc': 0.9316961765289307, 'role_n': 42106, 'n': 76800}
+   k6 {'heading_deg_p90': 3.168398141860962, 'speed_ms_p90': 0.11312093585729599, 'intent_deg_p90': 1.0478613376617432, 'role_acc': 0.9999280571937561, 'role_n': 41712, 'n': 76800}
+   k8 {'heading_deg_p90': 1.9768844842910767, 'speed_ms_p90': 0.020538222044706345, 'intent_deg_p90': 0.45382630825042725, 'role_acc': 1.0, 'role_n': 41712, 'n': 76800}
+   k12 {'heading_deg_p90': 1.32057523727417, 'speed_ms_p90': 0.011033877730369568, 'intent_deg_p90': 0.3398066461086273, 'role_acc': 0.9998801350593567, 'role_n': 41712, 'n': 76800}
+CHOSEN_K=8
+CODEC_s45=C:/work/DT_Vessel_v3/Python/_repro_out_qr3/codec/s45/p46_k8_s0.pt SHA=5be047a50fa0f3ca

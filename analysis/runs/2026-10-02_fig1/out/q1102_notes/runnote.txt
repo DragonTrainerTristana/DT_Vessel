@@ -62,3 +62,12 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - qr2_ trunk meaneval(HANDOFF §4-1, VESSEL_PY·VESSEL_F_SEED=44): 11-03 23:31 – 11-04 02:10 (qr3_ phase1 eval 단계와 같이 돌림, VRAM 시작 3.1 GB)
   9.04M 도착 표본 53.3 / 평균 57.3 % · 마지막 5점 평균 52.6 / 57.8 % (기록, 판정 아님)
   같이 돌린 탓에 meaneval 159분(시드 43 은 48분), qr3_ eval 23:30–02:08 157분(qr2_ 75분)으로 둘 다 느려짐
+
+## qr3_ (시드 45) phase1 + extend, 결과 out/qr3/ (16M = *_16M.md · lr16_/lrm16_), 같은 체인(run_qr23b.log, 27f1ae0, EVAL_JOBS=3)
+- phase1: 11-03 21:22:51 smoke → trunk 21:26–22:12 · 관문 s45 goal=65.0 vColl=34.8 oColl=0.0 창=4 통과 | G1(마지막 창 goal 63.0 · vColl 36.7 · oColl 0.0) 미충족
+  · codec 22:12–22:14 · 갈래 22:14–23:30 · eval 23:30–02:08(157분, qr2_ meaneval 과 겹침) · 곡선 02:08–05:24(196분) · 05:24:43 phase1 완료
+- extend: ext_branches 05:24–06:52 · keep16 · ext_eval 06:52–08:23(91분) · ext_curve 08:23–10:35 · 11-04 10:35:50 extend 완료, 체인 정상 종료
+- ★멈춤·★FAIL 없음. qr4_·qr5_ 는 이 기계에서 시작하지 않음(저자 정정)
+- 평균 행동 주 지표(_fig1_mean.md, 시드 1개 = 단독 주장 아님): 24M 5/6(연료 1038→1044 불통과) · 16M 6/6
+  표본 행동(_fig1.md): 24M 6/6 · 16M 5/6
+- trunk meaneval: 10:36 시작(학습 끝난 뒤 혼자) → 끝나면 out/qr3/meaneval/ 추가

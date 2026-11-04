@@ -1,0 +1,10 @@
+curve_qr3_off_s45_18M.txt rc=0
+curve_qr3_off_s45_20M.txt rc=0
+curve_qr3_off_s45_22M.txt rc=0
+curve_qr3_off_s45_24M.txt rc=0
+curve_qr3_off_s45_24.0517M.txt rc=0
+curve_qr3_comm_s45_18M.txt rc=0
+curve_qr3_comm_s45_20M.txt rc=0
+curve_qr3_comm_s45_22M.txt rc=0
+curve_qr3_comm_s45_24M.txt rc=0
+curve_qr3_comm_s45_24.0517M.txt rc=0
