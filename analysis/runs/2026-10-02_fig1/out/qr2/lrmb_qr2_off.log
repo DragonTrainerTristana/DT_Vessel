@@ -1,0 +1,32 @@
+2026-11-05 11:01:29 lrm qr2_ [off] s44 90ab3e0 docs(spec): interim three-seed verdict while the server is unreachable GPU=0
+2026-11-05 12:10:20 off 끝 → /c/work/DT_Vessel_v3/Python/_repro_out_qr2/lrmb_qr2_off_s44.txt
+# Fig1 — 통신(comm) vs OFF (같은 trunk 짝 0개: [])
+
+판정(결과 전 고정): 같은 시드 짝 전부 승 + |평균차| > N, N = max(OFF 시드 범위, |offb − off| 평균(offb 없으면 빠짐), 고정 하한)
+
+최선 OFF 풀(goal ≥ 50 만): ['off', 't_off']
+
+## 주 지표
+
+| 지표 | off 평균 (시드별) | comm 평균 (시드별) | 승/짝 | 평균차 | N | 통과 |
+|---|---|---|---|---|---|---|
+| 배끼리 충돌 % | n/a | n/a | n/a | n/a | n/a | n/a |
+| 도착 % | n/a | n/a | n/a | n/a | n/a | n/a |
+| DCPA(통과거리) m | n/a | n/a | n/a | n/a | n/a | n/a |
+| COLREGs(Woerner) % | n/a | n/a | n/a | n/a | n/a | n/a |
+| 연료(도착 ep) | n/a | n/a | n/a | n/a | n/a | n/a |
+| 도착 1회당 함대 연료 | n/a | n/a | n/a | n/a | n/a | n/a |
+
+## 보조 지표
+
+| 지표 | off 평균 (시드별) | comm 평균 (시드별) | 승/짝 | 평균차 | N | 통과 |
+|---|---|---|---|---|---|---|
+| 방향 바꾼 총량 ° | n/a | n/a | n/a | n/a | n/a | n/a |
+| 타 이동량 °/ep | n/a | n/a | n/a | n/a | n/a | n/a |
+| 평균 타각 크기 ° | n/a | n/a | n/a | n/a | n/a | n/a |
+| 옛 COLREGs % | n/a | n/a | n/a | n/a | n/a | n/a |
+| 시간초과 % | n/a | n/a | n/a | n/a | n/a | n/a |
+| 벽 충돌 % | n/a | n/a | n/a | n/a | n/a | n/a |
+| epReward | n/a | n/a | n/a | n/a | n/a | n/a |
+
+주 지표 통과: 0/6

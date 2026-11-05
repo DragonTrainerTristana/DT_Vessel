@@ -73,3 +73,13 @@ Dropbox 결과 사본 경로 있음: $HOME/Dropbox/Private_Paper_Project/0702_Ne
 - trunk meaneval: 10:36 시작(학습 끝난 뒤 혼자) → 끝나면 out/qr3/meaneval/ 추가
 - qr3_ trunk meaneval(VESSEL_PY·VESSEL_F_SEED=45): 11-04 10:36–11:25(49분, 혼자): 9.04M 도착 표본 58.4 / 평균 57.6 % · 마지막 5점 평균 60.2 / 62.6 % (기록, 판정 아님)
 - 이 기계 몫(43·44·45) 끝. 남은 학습·평가 프로세스 없음
+
+## 이진 COLREGs 준수율 재평가 (스펙 2026-11-02 §9, 학습 없음), 90ab3e0 (≥ ea60ca8), 결과 out/<qr|qr2|qr3>/lrmb_*.txt · _fig1_lrmb.md
+- 11-05 학습·평가 python 0개 확인(VRAM 1.0 GB) → git pull(27f1ae0 → 90ab3e0)
+- 명령 = 저자 11-05 그대로(xargs -P 3, VESSEL_F_KIND=lrmb, VESSEL_PY=Python310), 11:01:29 시작 → 13:26 6개 모두 '끝 →', ★FAIL 없음. 로그 lrmb_<p><arm>.log, lrmb_desktop.log(빈 파일)
+- 시드마다 --table → _fig1_lrmb.md. 기존 lrm_*·_fig1_mean.md 는 안 건드림(시각 그대로 확인)
+- 주의: _fig1_lrmb.md 표에는 이진 줄이 없음(summarize_fig1.py 가 binary-COLREGs 줄을 읽지 않음) → 다른 지표 값은 lrm_ 표와 같음. 이진 값은 lrmb_*.txt 의 [binary-COLREGs] 줄
+- 이진 준수율 % (off → comm, 짝 차; 기록, 판정은 goals_fig1.py):
+  s43 63.4 → 63.0 (−0.4) · s44 61.3 → 62.1 (+0.8) · s45 62.7 → 61.5 (−1.2)
+  역할별 양보선 s43 29.5→28.7 · s44 23.3→26.7 · s45 28.6→22.5 / 정면 31.1→25.0 · 23.8→25.4 · 28.1→30.7
+- 시드 46·47: 저자 11-05 "서버 원자료 전부 파손" → 46·47 이진 값 없음(하드웨어, 스펙 §10 문구). 저자: 앞으로 이 기계에서만, 시드 43–45
