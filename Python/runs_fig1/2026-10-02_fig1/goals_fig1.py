@@ -1,12 +1,12 @@
-"""goals_fig1.py — author success criteria, 5-seed verdict (spec docs/superpowers/specs/2026-11-02-author-goals-criteria.md, fixed before results).
+"""goals_fig1.py — author success criteria, 3-seed verdict (spec §11, was 5 seeds; spec docs/superpowers/specs/2026-11-02-author-goals-criteria.md, fixed before results).
 
 Reads, per batch, lrm_<prefix>{off,comm}_s<seed>.txt (mean-action main eval, end model) and _curve.md (curve M).
-Goal metrics a) Woerner COLREGs, b) DCPA, c) mean |rudder|: success = comm wins >= 4/5 paired seeds AND the 95 % t-CI
-(df n-1) of the paired difference excludes 0 on comm's side. Goal 1 (reward curve rises): comm arm passes curve M in >= 4/5.
+Goal metrics a) Woerner COLREGs, b) DCPA, c) mean |rudder|: success = comm wins >= 3/3 paired seeds AND the 95 % t-CI
+(df n-1) of the paired difference excludes 0 on comm's side. Goal 1 (reward curve rises): comm arm passes curve M in >= 3/3.
 Guard: mean paired difference arrival >= -3 pt and ship collision <= +3 pt; if it fails, no a-c superiority claim.
 Report only (no verdict): optional seed subsets, e.g. healthy trunks by qd_ spec §2 (--subset 'trunk 건강=43,45').
 
-Usage: python goals_fig1.py <out_dir>:<prefix> [...] [--subset NAME=s1,s2 ...] [--kind lrm16]   e.g. _repro_out_qr:qr_ ... _repro_out_qr5:qr5_
+Usage: python goals_fig1.py <out_dir>:<prefix> [...] [--subset NAME=s1,s2 ...] [--kind lrm16]   e.g. _repro_out_qr:qr_ _repro_out_qr2:qr2_ _repro_out_qr3:qr3_
        --kind lrm16 = 16M (original endpoint) files kept by `_run_f.sh extend`; default lrm = current end model (24M after extend)
        python goals_fig1.py --selftest
 """
@@ -22,7 +22,7 @@ T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8:
 GOALS = [('bin', 'a) COLREGs 이진 준수율 %', +1), ('w_score', 'a2) COLREGs Woerner %', +1),   # ★2026-11-04 §9: a) = 이진, Woerner 는 같이 판정·보고
          ('dcpa', 'b) DCPA(통과거리) m', +1), ('rud_abs', 'c) 평균 타각 크기 °', -1)]
 GUARD = [('goal', '도착 %', +1), ('vColl', '배끼리 충돌 %', -1)]
-MARGIN, NEED_WIN, N_SEEDS = 3.0, 4, 5
+MARGIN, NEED_WIN, N_SEEDS = 3.0, 3, 3   # ★2026-11-05 스펙 §11: 시드 43–45(Windows DESKTOP) 3개 · 승 3/3 (전 = 5 시드 · 4/5)
 
 
 def paired(diffs):
@@ -63,7 +63,7 @@ def main(pairs, subsets=(), kind='lrm'):
     print(f"# 저자 성공 지표 — 통신 vs OFF, 주 평가 {kind}(lrm = 평균 행동) (짝 {len(seeds)}개: {seeds})\n")
     print(f"판정(결과 전 고정, 스펙 2026-11-02): 지표마다 승 ≥ {NEED_WIN}/{N_SEEDS} + 95 % t-CI 가 0 을 안 걸침 · "
           f"가드 = 짝 차 평균 도착 ≥ −{MARGIN:g} pt · 배 충돌 ≤ +{MARGIN:g} pt"
-          + ('' if full else f" — ★시드 {len(seeds)}개라 판정 안 함(5 시드 필요), 값만 적음") + "\n")
+          + ('' if full else f" — ★시드 {len(seeds)}개라 판정 안 함({N_SEEDS} 시드 필요), 값만 적음") + "\n")
     print('| 지표 | off (시드별) | comm (시드별) | 짝 차 (시드별) | 승/짝 | 평균차 [95 % CI] | 판정 |')
     print('|---|---|---|---|---|---|---|')
     verdict = {}
@@ -126,7 +126,7 @@ if __name__ == '__main__':
         opt = {'--subset', '--kind', '--interim'}
         if '--interim' in a:   # ★2026-11-05 스펙 §10: 서버 시드(46·47) 접근 불가 동안 시드 3개 중간 판정 = 승 3/3 + 95 % t-CI(df 2)
             N_SEEDS = NEED_WIN = int(a[a.index('--interim') + 1])
-            print(f"> ★ 중간 판정(스펙 §10): 시드 {N_SEEDS}개 · 승 {NEED_WIN}/{N_SEEDS} + 95 % t-CI — 최종 판정은 5 시드\n")
+            print(f"> ★ 시드 {N_SEEDS}개 · 승 {NEED_WIN}/{N_SEEDS} + 95 % t-CI (스펙 §10·§11, §11 부터 기본값과 같음)\n")
         subs = [(v.split('=')[0], tuple(int(x) for x in v.split('=')[1].split(','))) for k, v in zip(a, a[1:]) if k == '--subset']
         kind = next((v for k, v in zip(a, a[1:]) if k == '--kind'), 'lrm')
         main([x for i, x in enumerate(a) if x not in opt and (i == 0 or a[i - 1] not in opt)], subs, kind)
