@@ -1,4 +1,0 @@
-curve_qd_off_s43_16.0563M.txt rc=0
-curve_qd_comm_s43_16M.txt rc=0
-curve_qd_comm_s43_14M.txt rc=0
-curve_qd_comm_s43_16.0563M.txt rc=0

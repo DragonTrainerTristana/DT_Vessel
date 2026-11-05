@@ -1,2 +1,0 @@
-> 2단계(스펙 2026-10-30): trunk = qd_ 배치 그대로(관문 기록 /c/work/DT_Vessel_v3/Python/_repro_out_qd/_seeds.txt) · 코덱 = qd_ 선택 재사용(CHOSEN_K=8) — trunk 관문·순위 관문 재실행 없음(qd_ 기록·10-29 저자 결정 따름)
-> 2단계 보상 = qd_ 보상 + 원거리 COLREGs 위반 벌점(VESSEL_COLREGS_FAR_RANGE=300 · FAR_MODE=penalty), 두 팔 동일. 곡선은 trunk 점도 이 보상으로 평가(--sim_from_env COLREGS_FAR_RANGE,COLREGS_FAR_MODE)

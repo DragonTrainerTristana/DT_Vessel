@@ -1,3 +1,0 @@
-smoke_qd3_trunk_d6_s43 rc=0
-smoke_qd3_off_s43 rc=0
-smoke_qd3_a6_s43 rc=0

@@ -1,8 +1,0 @@
-2026-10-30 20:46:18 meaneval qd4_ [trunk_d6] s46 ARPA=56 far=0/full c034422 feat(stage2): far-range COLREGs penalty branches from validated trunks GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qd4/meaneval
-2026-10-30 20:46:18 meaneval qd4_ [trunk_d6] s46 ARPA=56 far=0/full c034422 feat(stage2): far-range COLREGs penalty branches from validated trunks GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qd4/meaneval
-2026-10-30 20:46:18 meaneval qd4_ [trunk_d6] s46 ARPA=56 far=0/full c034422 feat(stage2): far-range COLREGs penalty branches from validated trunks GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qd4/meaneval
-2026-10-30 20:46:19 meaneval qd4_ [trunk_d6] s46 ARPA=56 far=0/full c034422 feat(stage2): far-range COLREGs penalty branches from validated trunks GPU=3 → /c/work/DT_Vessel_v3/Python/_repro_out_qd4/meaneval
-2026-10-30 21:17:49 trunk_d6 9.04397M 끝
-2026-10-30 21:17:50 trunk_d6 4M 끝
-2026-10-30 21:18:19 trunk_d6 9.04397M 끝
-2026-10-30 21:18:32 trunk_d6 4M 끝
