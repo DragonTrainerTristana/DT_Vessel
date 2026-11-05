@@ -123,7 +123,10 @@ if __name__ == '__main__':
         selftest()
     elif len(sys.argv) > 1:
         a = sys.argv[1:]
-        opt = {'--subset', '--kind'}
+        opt = {'--subset', '--kind', '--interim'}
+        if '--interim' in a:   # ★2026-11-05 스펙 §10: 서버 시드(46·47) 접근 불가 동안 시드 3개 중간 판정 = 승 3/3 + 95 % t-CI(df 2)
+            N_SEEDS = NEED_WIN = int(a[a.index('--interim') + 1])
+            print(f"> ★ 중간 판정(스펙 §10): 시드 {N_SEEDS}개 · 승 {NEED_WIN}/{N_SEEDS} + 95 % t-CI — 최종 판정은 5 시드\n")
         subs = [(v.split('=')[0], tuple(int(x) for x in v.split('=')[1].split(','))) for k, v in zip(a, a[1:]) if k == '--subset']
         kind = next((v for k, v in zip(a, a[1:]) if k == '--kind'), 'lrm')
         main([x for i, x in enumerate(a) if x not in opt and (i == 0 or a[i - 1] not in opt)], subs, kind)
