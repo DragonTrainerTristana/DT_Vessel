@@ -107,6 +107,8 @@ def main():
     ap.add_argument('--policy', required=True, choices=sorted(POLICIES) + [LEARNED])
     ap.add_argument('--mean_action', action='store_true',
                     help='★2026-10-30 learned 전용: 신경망이 tanh(mean) 으로 몲(표본 잡음 없음, runs_fig1 eval_mean.py 와 같은 감쌈)')
+    ap.add_argument('--colregs_diag', action='store_true',
+                    help='★2026-11-09 COLREGs 진단 줄 추가(이진 탈락 사유·첫 변침 거리·흔들림, colregs_woerner.py 머리말). 기존 줄은 그대로')
     ap.add_argument('rest', nargs=argparse.REMAINDER, help='-- then eval_ckpt.py args')
     a = ap.parse_args()
     if a.mean_action and a.policy != LEARNED:
@@ -144,7 +146,7 @@ def main():
         # ★2026-10-01 타 점검: 배마다 에피소드 동안 실제 타각 이동량 Σ|Δδ| 와 Σ|δ| (burn-in 뒤 시작한 에피소드만)
         st['trav'], st['abs'], st['n'] = z.clone(), z.clone(), z.clone()
         st['ep0'] = torch.zeros(env.E, env.N, device=env.pos.device, dtype=torch.long)
-        st['woer'] = WoernerTracker(env.E, env.N, env.pos.device, burnin)
+        st['woer'] = WoernerTracker(env.E, env.N, env.pos.device, burnin, diag=a.colregs_diag)
         st['course'] = None                               # 방송된 계획 침로(절대 deg), 첫 결정에서 현재 침로로 초기화
         _step = env.step
 
@@ -233,6 +235,8 @@ def main():
           f"rudderTravel={_d(acc['a_trav'], acc['a_n']):.1f}deg/ep meanAbsRudder={_d(acc['a_abs'], acc['a_dec']):.2f}deg "
           f"(actual rudder, episodes started after burn-in {burnin})", flush=True)
     print(st['woer'].report(), flush=True)
+    if a.colregs_diag:
+        print(st['woer'].diag_report(), flush=True)
     if sum(mode_cnt) > 0:
         tot = sum(mode_cnt)
         print("   [scripted-mode] " + ' '.join(f"{nm}={100.0 * c / tot:.1f}%" for nm, c in zip(MODE_NAMES, mode_cnt))

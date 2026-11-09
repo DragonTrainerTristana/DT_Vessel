@@ -9,6 +9,7 @@
 #   표만: VESSEL_F_SEED=43 bash .../lrm_eval.sh qd_ --table
 # 결과 = Python/_repro_out_<prefix>/lrm_<prefix><arm>_s<seed>.txt · _fig1_mean.md
 # ★2026-11-04 VESSEL_F_KIND=lrmb = 이진 COLREGs 준수율(스펙 2026-11-02 §9) 재평가 전용 — 같은 명령으로 lrmb_*.txt 에 따로 씀(기존 lrm_ 은 안 건드림), 표 = _fig1_lrmb.md
+# ★2026-11-09 VESSEL_F_KIND=lrmd = COLREGs 진단(이진 탈락 사유·첫 변침 거리·흔들림, eval_scripted.py --colregs_diag) — lrmd_*.txt 에 따로 씀, 판정 아님
 export FOR_DISABLE_CONSOLE_CTRL_HANDLER=1
 PRE=${1:?사용: lrm_eval.sh <prefix> [off comm|--table]}; shift
 RUNS=${*:-off comm}
@@ -46,9 +47,10 @@ if [ "$RUNS" != "--table" ]; then
     fi
     out="$O/${KIND}_${PRE}${a}_s$SEED.txt"
     DONE="R8="; [ "$KIND" = lrmb ] && DONE="binary-COLREGs"   # ★2026-11-04 이진 재평가는 이진 줄까지 있어야 끝난 것
+    XARG=""; [ "$KIND" = lrmd ] && { DONE="colregs-diag/"; XARG="--colregs_diag"; }   # ★2026-11-09 진단 줄까지 있어야 끝난 것
     grep -q "$DONE" "$out" 2>/dev/null && { echo "건너뜀 $out (이미 있음)"; continue; }
     f="$CK/${PRE}${a}_s$SEED.pt"; [ -f "$f" ] || { echo "★멈춤: 체크포인트 없음 $f"; exit 1; }
-    "$PY" -u "$SDROP/eval_scripted.py" --py_root "$R/Python" --policy learned --mean_action -- \
+    "$PY" -u "$SDROP/eval_scripted.py" --py_root "$R/Python" --policy learned --mean_action $XARG -- \
       --ckpt "$f" --arm ON --envs 256 --eval_decisions 10000 --burnin 2400 --seed 999 > "$out" 2>&1
     grep -q "$DONE" "$out" || { echo "★FAIL $KIND 평가 실패 $out"; exit 1; }
     echo "$(date '+%F %T') $a 끝 → $out" | tee -a "$O/_lrm_log.txt"
